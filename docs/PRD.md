@@ -456,6 +456,13 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
 
 ### 9.2 Baselines
 - **R9.5** `run start` records the set of already-failing tests per project.
+- **R9.5a** A baseline that observed nothing is refused, not recorded: a project whose files
+  all failed to collect, or whose baseline run executed no tests despite collection finding
+  some. Because R9.6 subtracts the baseline from every later failure set, an empty one that
+  merely looks clean is worse than no run at all — every pre-existing failure reads as a
+  regression, at every close sweep, for the life of the run. The check runs before the run row
+  is written, so a refusal leaves nothing behind to block the next attempt. A project with no
+  test files and no collection errors is not an error; it simply has no suite yet.
 - **R9.6** Baseline failures are subtracted from `other_failures` in every subsequent invocation.
 - **R9.7** A baseline failure that starts passing is recorded, not ignored.
 

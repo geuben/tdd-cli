@@ -260,6 +260,32 @@ def cmd_run_start(args) -> Envelope:
     if contract_row["status"] == "undeclared" and not args.allow_undeclared:
         return failure("contract is undeclared; pass --allow-undeclared")
 
+    # Probe every project before the run exists (R9.5a). A baseline is subtracted from
+    # every later failure set, so an untrustworthy one is worse than none: it reports
+    # pre-existing failures as regressions for the life of the run. Refusing here also
+    # leaves no half-started run behind to block the next attempt.
+    probes = {}
+    for name, project in cfg.projects.items():
+        adapter = adapters.build(project, worktree)
+        probes[name] = (adapter.run(None), adapter.collect())
+    for name, (verdict, collection) in probes.items():
+        if not collection.tests and collection.failed_files:
+            sample = sorted(collection.failed_files)[0]
+            return failure(
+                f"{name}: no test could be collected — {len(collection.failed_files)}"
+                f" file(s) failed to collect, starting with {sample}. The baseline would"
+                " record no failures and every pre-existing failure would then read as a"
+                " regression. Fix the environment (dependencies installed?) and retry.",
+                project=name, failed_files=sorted(collection.failed_files),
+            )
+        if collection.tests and not verdict.passed and not verdict.failed:
+            return failure(
+                f"{name}: the suite collected {len(collection.tests)} test(s) but the"
+                " baseline run executed no tests, so it observed nothing. Check"
+                " `test_command` in tdd.toml and retry.",
+                project=name, collected=len(collection.tests),
+            )
+
     executor = identity.resolve(worktree, args.executor)
     run_id = ledger.insert(
         "run",
@@ -277,15 +303,13 @@ def cmd_run_start(args) -> Envelope:
     if blob_changed:
         ledger.event(run_id, None, "plan_blob_changed", rel)
 
-    # Baselines and the collection snapshot, per project (R9.5, R8.9).
-    for name, project in cfg.projects.items():
-        adapter = adapters.build(project, worktree)
-        verdict = adapter.run(None)
+    # Baselines and the collection snapshot, per project (R9.5, R8.9) — from the probe
+    # above, so the suite is not run twice.
+    for name, (verdict, collection) in probes.items():
         ledger.insert(
             "baseline", run_id=run_id, project=name,
             failing=json.dumps(sorted(verdict.failed)), captured_at=now(),
         )
-        collection = adapter.collect()
         ledger.insert(
             "collection_snapshot", run_id=run_id, project=name,
             tests=json.dumps(sorted(collection.tests)),
