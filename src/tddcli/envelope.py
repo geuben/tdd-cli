@@ -58,6 +58,9 @@ class Envelope:
     result: dict = field(default_factory=dict)
     next_action: NextAction | None = None
     error: str | None = None
+    #: Set by commands that have already written human-readable output. The envelope
+    #: is still returned (tests assert on it) but is not printed alongside the prose.
+    silent: bool = False
 
     def to_dict(self) -> dict:
         out: dict = {"ok": self.ok}
@@ -69,8 +72,9 @@ class Envelope:
         return out
 
     def emit(self) -> int:
-        json.dump(self.to_dict(), sys.stdout, indent=2, default=str)
-        sys.stdout.write("\n")
+        if not self.silent:
+            json.dump(self.to_dict(), sys.stdout, indent=2, default=str)
+            sys.stdout.write("\n")
         return 0 if self.ok else 1
 
 

@@ -63,9 +63,8 @@ def write_plan(repo: Path, body: str, name: str = "tasks/plan.md") -> str:
     return name
 
 
-def run_cli(repo: Path, *argv: str) -> dict:
-    """Invoke the CLI in-process with cwd set to the repo."""
-    import json
+def run_cli_text(repo: Path, *argv: str) -> str:
+    """Invoke the CLI in-process, returning raw stdout."""
     import io
     import contextlib
 
@@ -79,4 +78,11 @@ def run_cli(repo: Path, *argv: str) -> dict:
             main(list(argv))
     finally:
         os.chdir(prev)
-    return json.loads(buf.getvalue())
+    return buf.getvalue()
+
+
+def run_cli(repo: Path, *argv: str) -> dict:
+    """Invoke the CLI and parse its JSON envelope."""
+    import json
+
+    return json.loads(run_cli_text(repo, *argv))

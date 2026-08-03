@@ -594,7 +594,37 @@ def cmd_log_render(args) -> Envelope:
             next_action=NextAction(Verb.COMPLETE, f"Friction log written to {args.out}."),
         )
     sys.stdout.write(text)
-    return Envelope(result={"rendered": True}, next_action=NextAction(Verb.COMPLETE, "Rendered."))
+    return Envelope(
+        result={"rendered": True},
+        next_action=NextAction(Verb.COMPLETE, "Rendered."),
+        silent=True,
+    )
+
+
+def cmd_progress(args) -> Envelope:
+    """Human-readable progress. `status` remains the agent's machine view."""
+    worktree, cfg, ledger, run = _context(require_run=False)
+    if run is None:
+        run = ledger.one(
+            "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1",
+            (str(worktree),),
+        )
+    if run is None:
+        return failure("no runs recorded for this worktree")
+    if args.json:
+        engine = _engine(worktree, cfg, ledger, run)
+        cycle = ledger.open_cycle(run["id"])
+        return Envelope(
+            run=engine.run_state(cycle) if cycle else {"id": run["id"], "phase": CLOSED},
+            result=render.metrics(ledger, str(worktree)),
+            next_action=NextAction(Verb.COMPLETE, "Progress reported."),
+        )
+    sys.stdout.write(render.progress(ledger, run))
+    return Envelope(
+        result={"rendered": True},
+        next_action=NextAction(Verb.COMPLETE, "Progress rendered."),
+        silent=True,
+    )
 
 
 def cmd_metrics(args) -> Envelope:
@@ -674,6 +704,10 @@ def build_parser() -> argparse.ArgumentParser:
     s = log.add_parser("render")
     s.add_argument("--out")
     s.set_defaults(fn=cmd_log_render)
+
+    s = sub.add_parser("progress", help="human-readable plan progress")
+    s.add_argument("--json", action="store_true", help="machine output instead")
+    s.set_defaults(fn=cmd_progress)
 
     s = sub.add_parser("metrics")
     s.set_defaults(fn=cmd_metrics)

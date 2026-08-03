@@ -124,6 +124,100 @@ def friction_log(ledger: Ledger, run) -> str:
     return "\n".join(lines) + "\n"
 
 
+PHASE_SHORT = {
+    "AWAITING_TEST": "writing test",
+    "AWAITING_PIN": "writing pin",
+    "AWAITING_IMPL": "implementing",
+    "AWAITING_REFACTOR": "refactoring",
+    "SENSITIVITY_REQUIRED": "sensitivity check",
+}
+
+
+def _elapsed(start: str, end: str | None) -> str:
+    from datetime import datetime, timezone
+
+    began = datetime.fromisoformat(start)
+    finished = datetime.fromisoformat(end) if end else datetime.now(timezone.utc)
+    total = int((finished - began).total_seconds())
+    hours, rem = divmod(total, 3600)
+    mins, secs = divmod(rem, 60)
+    return f"{hours}h{mins:02d}m" if hours else f"{mins}m{secs:02d}s"
+
+
+def progress(ledger: Ledger, run) -> str:
+    """A human's view of where the run is. Never consulted by an agent."""
+    contract = ledger.one(
+        "SELECT * FROM plan_contract WHERE id = ?", (run["plan_contract_id"],)
+    )
+    declared = json.loads(contract["declared_cycles"])
+    rows = {c["ordinal"]: c for c in ledger.cycles(run["id"])}
+
+    out: list[str] = []
+    a = out.append
+    name = contract["plan_path"].rsplit("/", 1)[-1].removesuffix(".md")
+    state = run["outcome"] or "running"
+    a(f"{name} · run {run['id']} · {run['executor_model']} ({run['executor_source']}) · {state}")
+    a(f"{len(declared)} cycles · elapsed {_elapsed(run['started_at'], run['ended_at'])}")
+    a("")
+
+    closed = skipped = 0
+    for decl in declared:
+        ordinal = decl["n"]
+        row = rows.get(ordinal)
+        title = (decl.get("title") or "").strip()[:46]
+        kind = decl["kind"]
+
+        if row is None:
+            a(f"    {ordinal:>2}  {kind:<8}  {title}")
+            continue
+        if row["phase"] == "SKIPPED":
+            skipped += 1
+            a(f"  ⊘ {ordinal:>2}  {kind:<8}  {title}")
+            a(f"          skipped — {row['skip_reason']}")
+            continue
+
+        runs = len(ledger.invocations(row["id"]))
+        commits = ledger.all(
+            "SELECT phase, sha FROM commit_record WHERE cycle_id = ? ORDER BY id",
+            (row["id"],),
+        )
+        events = ledger.all(
+            "SELECT kind FROM integrity_event WHERE cycle_id = ?", (row["id"],)
+        )
+        detail = f"{runs} suite run{'' if runs == 1 else 's'}"
+        if commits:
+            detail += "  " + " ".join(f"{c['phase']}:{c['sha'][:7]}" for c in commits)
+
+        if row["phase"] == "CLOSED":
+            closed += 1
+            a(f"  ✓ {ordinal:>2}  {kind:<8}  {title}")
+        else:
+            phase = PHASE_SHORT.get(row["phase"], row["phase"])
+            a(f"  ▸ {ordinal:>2}  {kind:<8}  {title}")
+            a(f"          NOW: {phase}")
+        a(f"          {detail}")
+        for e in events:
+            a(f"          ! {e['kind']}")
+
+    a("")
+    total_events = ledger.all(
+        "SELECT kind, COUNT(*) n FROM integrity_event WHERE run_id = ? GROUP BY kind",
+        (run["id"],),
+    )
+    summary = f"{closed}/{len(declared)} closed"
+    if skipped:
+        summary += f" · {skipped} skipped"
+    summary += (
+        " · no integrity events" if not total_events
+        else " · " + ", ".join(f"{e['kind']}×{e['n']}" for e in total_events)
+    )
+    blockers = ledger.all("SELECT kind, detail FROM blocker WHERE run_id = ?", (run["id"],))
+    a(summary)
+    for b in blockers:
+        a(f"BLOCKED ({b['kind']}): {b['detail']}")
+    return "\n".join(out) + "\n"
+
+
 def metrics(ledger: Ledger, worktree: str) -> dict:
     runs = ledger.all(
         "SELECT * FROM run WHERE worktree_path = ? ORDER BY id", (worktree,)
