@@ -203,6 +203,9 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
         engine.ledger.event(
             engine.run["id"], cycle["id"], "red_first_violation", json.dumps(targets)
         )
+        # The phase must move, or the verified check is never read: _handle_sensitivity
+        # is reachable only from SENSITIVITY_REQUIRED, so staying here asks forever.
+        engine.transition(cycle, SENSITIVITY_REQUIRED)
         return _reply(
             engine, cycle, Verb.RUN_SENSITIVITY_CHECK,
             "The test passed before any implementation. Run a sensitivity check to prove"

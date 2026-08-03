@@ -134,7 +134,28 @@ def test_passing_on_arrival_demands_a_sensitivity_check(repo):
     (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
     out = run_cli(repo, "advance")
     assert out["next_action"]["verb"] == "run_sensitivity_check", out
-    assert out["run"]["phase"] == "AWAITING_TEST"
+    assert out["run"]["phase"] == "SENSITIVITY_REQUIRED"
+
+
+def test_passing_on_arrival_reaches_refactor_once_the_check_is_verified(repo):
+    """Demanding the check while staying in AWAITING_TEST is a livelock: the verified
+    check is only ever read from SENSITIVITY_REQUIRED, so the cycle asks forever."""
+    start(repo)
+    (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    run_cli(repo, "advance")
+
+    run_cli(repo, "sensitivity", "begin")
+    (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return 0\n")
+    assert run_cli(repo, "sensitivity", "check")["ok"]
+    assert run_cli(repo, "sensitivity", "end")["result"]["restored_ok"] is True
+
+    moved = run_cli(repo, "advance")
+    assert moved["run"]["phase"] == "AWAITING_REFACTOR", moved
+
+    # R6.4 — it is still a violation, and recorded once, not once per lap.
+    metrics = run_cli(repo, "metrics")["result"]["runs"][0]
+    assert metrics["integrity_events"]["red_first_violation"] == 1
 
 
 def test_sensitivity_check_verifies_restore(repo):

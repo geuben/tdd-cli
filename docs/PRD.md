@@ -227,6 +227,10 @@ AWAITING_PIN ──advance──▶ SENSITIVITY_REQUIRED ──advance──▶ 
 - **R6.4** A standard cycle whose test passes on arrival is still a violation, still requires a
   sensitivity check, and is **not** silently reclassified as a pin. The kind is declared by the
   plan in advance, never inferred from the outcome.
+- **R6.5** It nonetheless routes through `SENSITIVITY_REQUIRED`, exactly as a pin does — the
+  violation is recorded once, on entry. A demand the phase does not follow is a livelock: the
+  verified check is only ever read on leaving `SENSITIVITY_REQUIRED`, so a cycle that demands
+  one while remaining in `AWAITING_TEST` re-demands it for as long as the agent keeps obeying.
 
 ---
 
