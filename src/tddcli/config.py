@@ -7,6 +7,7 @@ which suite runs.
 
 from __future__ import annotations
 
+import hashlib
 import tomllib
 from dataclasses import dataclass, field
 from fnmatch import fnmatch
@@ -152,6 +153,19 @@ class Config:
 
     def full_sweep_projects(self) -> list[str]:
         return sorted(self.projects)
+
+
+def config_sha(worktree: Path) -> str:
+    """Hash of tdd.toml as it stands in the working tree.
+
+    The registry is deliberately a reviewed, branch-scoped file rather than ledger
+    state — but that makes it editable mid-run, and one edit is load-bearing:
+    widening `test_paths` to match implementation files would silently disable the
+    RED-commit classification that detects implementation written during RED. The
+    ledger pins this hash at run start so the drift surfaces.
+    """
+    path = worktree / CONFIG_NAME
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else ""
 
 
 def find_config(start: Path) -> Path | None:

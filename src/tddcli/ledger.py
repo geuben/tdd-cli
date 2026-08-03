@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS run (
     ended_at TEXT,
     outcome TEXT,                       -- complete | blocked | abandoned
     allow_dirty INTEGER NOT NULL DEFAULT 0,
-    preexisting_dirty TEXT NOT NULL     -- json: excluded from authorship forever (R9.21)
+    preexisting_dirty TEXT NOT NULL,    -- json: excluded from authorship forever (R9.21)
+    config_sha TEXT                     -- tdd.toml as of run start; drift is an event
 );
 
 CREATE TABLE IF NOT EXISTS baseline (

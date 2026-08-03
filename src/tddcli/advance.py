@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from . import adapters, gitutil, staging
+from . import adapters, config as config_mod, gitutil, staging
 from .adapters.base import FAILED, NOT_COLLECTED, NOT_FOUND, PASSED
 from .envelope import Envelope, NextAction, Verb
 from .ledger import now
@@ -315,7 +315,33 @@ HANDLERS = {
 }
 
 
+def _check_config_drift(engine: Engine, cycle) -> None:
+    """The registry is a reviewed file, not ledger state — so pin it and watch it.
+
+    Widening `test_paths` mid-run would reclassify implementation as tests and
+    silently disable the RED-commit detection in R9.14.
+    """
+    pinned = engine.run["config_sha"]
+    if not pinned:
+        return
+    current = config_mod.config_sha(engine.worktree)
+    if current == pinned:
+        return
+    already = engine.ledger.one(
+        "SELECT id FROM integrity_event WHERE run_id = ? AND kind = 'config_changed'"
+        " AND detail = ?",
+        (engine.run["id"], current),
+    )
+    if already is None:
+        engine.ledger.event(
+            engine.run["id"], cycle["id"], "config_changed",
+            current,
+        )
+
+
 def advance(engine: Engine, cycle, retry: bool = False) -> Envelope:
+    _check_config_drift(engine, cycle)
+
     if engine.ledger.open_sensitivity(cycle["id"]) is not None:
         return _reply(
             engine, cycle, Verb.RUN_SENSITIVITY_CHECK,

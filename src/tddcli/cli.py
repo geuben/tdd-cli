@@ -236,6 +236,7 @@ def cmd_run_start(args) -> Envelope:
         started_at=now(),
         allow_dirty=int(bool(args.allow_dirty)),
         preexisting_dirty=json.dumps(dirty),
+        config_sha=config_mod.config_sha(worktree),
     )
     run = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
     if blob_changed:
