@@ -207,6 +207,63 @@ def test_friction_log_and_metrics_render_from_the_ledger(repo):
     assert "not comparable" in metrics["result"]["note"]
 
 
+PLAN_UNDECLARED_STUB = """---
+cycles:
+  - n: 1
+    project: backend
+    title: "adding two numbers"
+    test: "tests/test_add.py::test_add_two_numbers"
+    commit_red: "test: adding two numbers"
+    commit_green: "feat: add()"
+---
+
+# Plan
+"""
+
+
+def start_undeclared_stub(repo):
+    plan = write_plan(repo, PLAN_UNDECLARED_STUB)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    assert run_cli(repo, "run", "start", "--plan", plan)["ok"]
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    asked = run_cli(repo, "advance")
+    assert asked["next_action"]["verb"] == "create_stub", asked
+
+
+def test_a_stub_the_tool_demanded_is_not_implementation_during_red(repo):
+    """The plan failed to declare it, so the tool asked for it — then convicted the
+    agent for complying. The directive is the sanction."""
+    start_undeclared_stub(repo)
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    raise NotImplementedError\n"
+    )
+
+    red = run_cli(repo, "advance")
+    assert red["next_action"]["verb"] == "write_implementation", red
+    assert red["result"]["implementation_during_red"] is None
+    # It is a stub, so it belongs in the RED commit with the test.
+    assert set(red["result"]["staged"]) == {
+        "backend/tests/test_add.py", "backend/app/calc.py"
+    }
+
+    events = run_cli(repo, "metrics")["result"]["runs"][0]["integrity_events"]
+    assert events["stub_adopted"] == 1
+    assert "implementation_during_red" not in events
+
+
+def test_a_stub_directive_does_not_sanction_editing_an_existing_file(repo):
+    """Only a new file answers an uncollectable import; the rest is implementation."""
+    start_undeclared_stub(repo)
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    raise NotImplementedError\n"
+    )
+    (repo / "backend" / "app" / "__init__.py").write_text("SNEAKED = 1\n")
+
+    red = run_cli(repo, "advance")
+    assert red["result"]["implementation_during_red"] == ["backend/app/__init__.py"]
+    assert "backend/app/__init__.py" not in red["result"]["staged"]
+
+
 def test_doctor_ignores_nested_checkouts(repo):
     """A worktree under .claude/worktrees/ is a separate checkout with its own work."""
     nested = repo / ".claude" / "worktrees" / "other" / "backend"

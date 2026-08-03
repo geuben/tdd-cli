@@ -56,6 +56,14 @@ def show_at_head(worktree: Path, rel_path: str) -> str:
     return git(worktree, "show", f"HEAD:{rel_path}")
 
 
+def tracked_at_head(worktree: Path, paths: list[str]) -> set[str]:
+    """Which of `paths` exist in the HEAD commit — so a path absent here is a new file."""
+    if not paths:
+        return set()
+    out = git(worktree, "ls-tree", "-r", "--name-only", "-z", "HEAD", "--", *paths)
+    return {p for p in out.split("\0") if p}
+
+
 def status_porcelain(worktree: Path) -> list[tuple[str, str]]:
     out = git(worktree, "status", "--porcelain=v1", "-uall")
     entries = []

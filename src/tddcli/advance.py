@@ -51,16 +51,43 @@ def _adopt_target(engine: Engine, cycle, missing: list[str]) -> tuple[list[str],
     return new_tests, missing
 
 
+def _stub_directive_issued(engine: Engine, cycle) -> bool:
+    return engine.ledger.one(
+        "SELECT id FROM integrity_event WHERE cycle_id = ? AND kind = 'stub_directive_issued'",
+        (cycle["id"],),
+    ) is not None
+
+
+def _sanctioned_stubs(engine: Engine, cycle, implementation: list[str]) -> list[str]:
+    """The files that answer a `create_stub` directive the tool itself issued.
+
+    Only *new* files qualify: an uncollectable import is satisfied by a module that
+    did not exist, so a change to a file already at HEAD is implementation however
+    the cycle arrived here.
+    """
+    if not implementation or not _stub_directive_issued(engine, cycle):
+        return []
+    at_head = gitutil.tracked_at_head(engine.worktree, implementation)
+    return [p for p in implementation if p not in at_head]
+
+
 def _stage_and_commit(engine: Engine, cycle, phase: str, declared) -> tuple[str | None, list[str], object]:
     changed = engine.authored_changes(cycle)
     classification = staging.classify(
         engine.config, changed, json.loads(cycle["projects"]), declared, engine.excluded
     )
-    if phase == staging.RED and classification.implementation:
-        engine.ledger.event(
-            engine.run["id"], cycle["id"], "implementation_during_red",
-            json.dumps(classification.implementation),
-        )
+    if phase == staging.RED:
+        adopted = _sanctioned_stubs(engine, cycle, classification.implementation)
+        if adopted:
+            classification.adopt_stubs(adopted)
+            engine.ledger.event(
+                engine.run["id"], cycle["id"], "stub_adopted", json.dumps(adopted),
+            )
+        if classification.implementation:
+            engine.ledger.event(
+                engine.run["id"], cycle["id"], "implementation_during_red",
+                json.dumps(classification.implementation),
+            )
     if classification.outside:
         engine.ledger.event(
             engine.run["id"], cycle["id"], "undeclared_file_touched",
@@ -129,10 +156,18 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
 
     not_collected = [t for t, o in outcomes.items() if o == NOT_COLLECTED]
     if not_collected:
+        if not _stub_directive_issued(engine, cycle):
+            engine.ledger.event(
+                engine.run["id"], cycle["id"], "stub_directive_issued",
+                json.dumps(not_collected),
+            )
         return _reply(
             engine, cycle, Verb.CREATE_STUB,
             f"{not_collected[0]} could not be collected — the module it imports does not"
-            " exist yet. Create the stub, then run `tdd advance`.",
+            " exist yet. Create the stub and nothing else: no logic, no behaviour, just"
+            " enough for the import and the type checker (`raise NotImplementedError`)."
+            " It is staged with the test in the RED commit, not counted as"
+            " implementation. Then run `tdd advance`.",
             not_collected=not_collected, failure=failure,
         )
 

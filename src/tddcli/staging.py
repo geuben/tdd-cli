@@ -36,6 +36,17 @@ class Classification:
     def undeclared_impl(self) -> list[str]:
         return self.implementation
 
+    def adopt_stubs(self, paths: list[str]) -> None:
+        """Move tool-sanctioned stubs out of implementation and into the RED commit.
+
+        The plan declares stubs it foresaw; this covers the ones the *tool* demanded
+        after an uncollectable target (R9.14) — leaving them classified as
+        implementation would report the agent for doing exactly as it was told.
+        """
+        chosen = set(paths)
+        self.implementation = [p for p in self.implementation if p not in chosen]
+        self.stubs = sorted(set(self.stubs) | chosen)
+
 
 def classify(
     config: Config,

@@ -484,6 +484,13 @@ The CLI stages; it never delegates staging to the agent, and it never runs `git 
 - **R9.14** If the RED commit's staged set would contain a file that is neither a test nor a
   declared stub, that is the "implementation written during RED" violation. It is detected here,
   exactly, in both languages, with no source parsing.
+- **R9.14a** A file created in answer to the tool's own `create_stub` directive is exempt from
+  R9.14 and joins the RED commit as a stub, recorded as `stub_adopted`. The exemption is narrow:
+  it applies only in the cycle where the directive was issued, and only to paths absent from
+  HEAD — an uncollectable import is answered by a module that did not exist, so a change to an
+  existing file remains implementation. Without this, an undeclared `stub_expected` makes the
+  tool instruct the agent and then convict it for complying, and an alarm that fires on correct
+  work is one that gets ignored.
 - **R9.15** Nothing outside a registered project root is ever staged. Plan files, friction logs
   and repository documentation are committed separately, at plan completion.
 - **R9.16** Files modified inside a project root matching neither classification are left
