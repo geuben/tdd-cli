@@ -28,6 +28,9 @@ from .machine import CLOSED, SKIPPED, Engine
 BLOCKER_KINDS = {
     "regression", "target_unfixable", "bad_red", "plan_defect", "tooling",
     "context_exhausted",
+    # Failing, but not caused by this run — a flake, or something the baseline missed.
+    # Distinct from `regression`, which records a defect the run introduced.
+    "pre_existing_failure",
 }
 
 
@@ -448,11 +451,48 @@ def cmd_blocker(args) -> Envelope:
     )
 
 
+def _accept_failures_into_baseline(ledger: Ledger, run_id: int) -> dict[str, list[str]]:
+    """Fold the failures the last close sweep saw into the baseline (R9.5b).
+
+    A run whose baseline missed a failure cannot otherwise recover: unblocking returns
+    it to the phase it blocked in, and the next sweep finds the same failure. Only a
+    human reaches this, only by asking, and what was accepted is recorded.
+    """
+    latest = ledger.all(
+        "SELECT project, other_failures FROM invocation WHERE id IN ("
+        "  SELECT MAX(id) FROM invocation WHERE run_id = ? AND phase_at = 'CLOSE_SWEEP'"
+        "  GROUP BY project)",
+        (run_id,),
+    )
+    rows = {
+        r["project"]: r
+        for r in ledger.all("SELECT * FROM baseline WHERE run_id = ?", (run_id,))
+    }
+    accepted: dict[str, list[str]] = {}
+    for sweep in latest:
+        row = rows.get(sweep["project"])
+        if row is None:
+            continue
+        known = set(json.loads(row["failing"]))
+        new = sorted(set(json.loads(sweep["other_failures"])) - known)
+        if not new:
+            continue
+        ledger.update("baseline", row["id"], failing=json.dumps(sorted(known | set(new))))
+        accepted[sweep["project"]] = new
+    if accepted:
+        ledger.event(run_id, None, "baseline_amended", json.dumps(accepted))
+    return accepted
+
+
 def cmd_resume(args) -> Envelope:
     worktree = _worktree()
     cfg = config_mod.load(worktree)
     ledger = Ledger(gitutil.repo_identity(worktree))
     run = ledger.active_run(str(worktree))
+    accepted: dict[str, list[str]] = {}
+
+    if args.accept_failures and not args.unblock:
+        return failure("--accept-failures applies to --unblock")
 
     if args.unblock:
         if run is not None:
@@ -470,6 +510,8 @@ def cmd_resume(args) -> Envelope:
         ledger.insert(
             "human_intervention", run_id=blocked["id"], note=args.note, at=now()
         )
+        if args.accept_failures:
+            accepted = _accept_failures_into_baseline(ledger, blocked["id"])
         run = ledger.one("SELECT * FROM run WHERE id = ?", (blocked["id"],))
 
     if run is None:
@@ -482,9 +524,12 @@ def cmd_resume(args) -> Envelope:
             run={"id": run["id"], "phase": CLOSED},
             next_action=NextAction(Verb.COMPLETE, "Run complete."),
         )
+    result = {"resumed": True}
+    if accepted:
+        result["accepted_into_baseline"] = accepted
     return Envelope(
         run=engine.run_state(cycle),
-        result={"resumed": True},
+        result=result,
         next_action=NextAction(
             Verb.REFACTOR_OR_ADVANCE,
             f"Resumed at cycle {cycle['ordinal']}, phase {cycle['phase']}. Run `tdd advance`.",
@@ -722,6 +767,12 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("resume")
     s.add_argument("--unblock", action="store_true")
     s.add_argument("--note")
+    s.add_argument(
+        "--accept-failures",
+        action="store_true",
+        help="fold the failures the last close sweep saw into the baseline, so a run"
+        " whose baseline missed them can proceed; recorded as baseline_amended",
+    )
     s.set_defaults(fn=cmd_resume)
 
     s = sub.add_parser("sensitivity")

@@ -21,6 +21,28 @@ cycles:
 """
 
 
+TEST_ADD = """from app.calc import add
+
+
+def test_add_two_numbers():
+    assert add(2, 3) == 5
+"""
+
+
+def reach_refactor(repo):
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    assert run_cli(repo, "run", "start", "--plan", plan)["ok"]
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    raise NotImplementedError\n"
+    )
+    run_cli(repo, "advance")
+    (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    out = run_cli(repo, "advance")
+    assert out["run"]["phase"] == "AWAITING_REFACTOR", out
+
+
 def set_test_command(repo, command: str) -> None:
     toml = (repo / "tdd.toml").read_text()
     (repo / "tdd.toml").write_text(toml + f'test_command = "{command}"\n')
@@ -74,3 +96,53 @@ def test_a_project_with_no_tests_at_all_is_not_an_error(repo):
 
     assert out["ok"], out
     assert out["result"]["baselines"]["backend"] == 0
+
+
+def test_a_failure_the_baseline_missed_has_its_own_blocker_kind(repo):
+    """Filing it as `regression` is the only option today, which mislabels the run's
+    integrity record as a defect the agent caused."""
+    reach_refactor(repo)
+    (repo / "backend" / "tests" / "test_smoke.py").write_text(
+        "def test_smoke():\n    assert False\n"
+    )
+    assert run_cli(repo, "advance")["next_action"]["verb"] == "fix_regression"
+
+    out = run_cli(repo, "blocker", "--kind", "pre_existing_failure", "--detail", "flaky")
+    assert out["ok"], out
+    assert out["result"]["kind"] == "pre_existing_failure"
+
+
+def test_unblocking_can_accept_the_failures_into_the_baseline(repo):
+    """Without this the run cannot recover: unblock returns to AWAITING_REFACTOR, the
+    next advance re-runs the same sweep, finds the same failure, and blocks again."""
+    reach_refactor(repo)
+    (repo / "backend" / "tests" / "test_smoke.py").write_text(
+        "def test_smoke():\n    assert False\n"
+    )
+    run_cli(repo, "advance")
+    run_cli(repo, "blocker", "--kind", "pre_existing_failure", "--detail", "flaky")
+
+    resumed = run_cli(
+        repo, "resume", "--unblock", "--note", "verified against main", "--accept-failures"
+    )
+    assert resumed["ok"], resumed
+    accepted = resumed["result"]["accepted_into_baseline"]
+    assert accepted == {"backend": ["backend::tests/test_smoke.py::test_smoke"]}, resumed
+
+    closed = run_cli(repo, "advance")
+    assert closed["next_action"]["verb"] == "complete", closed
+
+
+def test_unblocking_without_accept_failures_leaves_the_baseline_alone(repo):
+    """The escape hatch is explicit, or every unblock quietly launders a regression."""
+    reach_refactor(repo)
+    (repo / "backend" / "tests" / "test_smoke.py").write_text(
+        "def test_smoke():\n    assert False\n"
+    )
+    run_cli(repo, "advance")
+    run_cli(repo, "blocker", "--kind", "pre_existing_failure", "--detail", "flaky")
+
+    resumed = run_cli(repo, "resume", "--unblock", "--note", "looking into it")
+    assert resumed["ok"], resumed
+    assert "accepted_into_baseline" not in resumed["result"]
+    assert run_cli(repo, "advance")["next_action"]["verb"] == "fix_regression"

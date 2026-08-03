@@ -163,7 +163,12 @@ Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mism
 `off_protocol_invocation`, `stale_artifact`, `plan_blob_changed`.
 
 ### Blocker
-Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `context_exhausted`.
+Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `context_exhausted`,
+`pre_existing_failure`.
+
+`pre_existing_failure` is failing-but-not-caused-here: a flake, or something the baseline missed.
+Without it the only available label is `regression`, which records a defect the run introduced —
+so the agent must either misreport its own work or leave the failure unfiled.
 
 ---
 
@@ -463,6 +468,12 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   regression, at every close sweep, for the life of the run. The check runs before the run row
   is written, so a refusal leaves nothing behind to block the next attempt. A project with no
   test files and no collection errors is not an error; it simply has no suite yet.
+- **R9.5b** `resume --unblock --accept-failures` folds the failures the last close sweep saw into
+  the baseline, recorded as `baseline_amended` alongside the mandatory `--note`. A run whose
+  baseline missed a failure cannot otherwise recover: unblocking returns it to the phase it
+  blocked in, and the next sweep finds the same failure and blocks again. The flag is explicit
+  and human-only precisely because it launders a failure into the accepted set — an unblock must
+  never do it silently.
 - **R9.6** Baseline failures are subtracted from `other_failures` in every subsequent invocation.
 - **R9.7** A baseline failure that starts passing is recorded, not ignored.
 
