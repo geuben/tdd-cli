@@ -492,7 +492,9 @@ The CLI stages; it never delegates staging to the agent, and it never runs `git 
   tool instruct the agent and then convict it for complying, and an alarm that fires on correct
   work is one that gets ignored.
 - **R9.15** Nothing outside a registered project root is ever staged. Plan files, friction logs
-  and repository documentation are committed separately, at plan completion.
+  and repository documentation are committed separately, at plan completion. Paths the agent
+  supplies for these — `log render --out` — are resolved from the worktree root, never the
+  current directory, which is wherever the agent happened to be standing.
 - **R9.16** Files modified inside a project root matching neither classification are left
   unstaged and recorded as `undeclared_file_touched`, and named in `next_action`. Per P2 this
   does not block.

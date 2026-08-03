@@ -588,10 +588,18 @@ def cmd_log_render(args) -> Envelope:
         return failure("no runs recorded for this worktree")
     text = render.friction_log(ledger, run)
     if args.out:
-        Path(args.out).write_text(text)
+        # R9.15 — a relative --out is worktree-relative, never cwd-relative: the
+        # command is run from wherever the agent happens to be standing, and
+        # `tasks/friction-logs/` means the one at the root of the repo.
+        out = Path(args.out)
+        if not out.is_absolute():
+            out = worktree / out
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text)
+        written = str(out.relative_to(worktree)) if not Path(args.out).is_absolute() else str(out)
         return Envelope(
-            result={"written": args.out},
-            next_action=NextAction(Verb.COMPLETE, f"Friction log written to {args.out}."),
+            result={"written": written, "path": str(out)},
+            next_action=NextAction(Verb.COMPLETE, f"Friction log written to {out}."),
         )
     sys.stdout.write(text)
     return Envelope(
@@ -702,7 +710,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     log = sub.add_parser("log").add_subparsers(dest="log_command", required=True)
     s = log.add_parser("render")
-    s.add_argument("--out")
+    s.add_argument(
+        "--out",
+        help="write here instead of stdout; a relative path is resolved from the"
+        " worktree root, not the current directory",
+    )
     s.set_defaults(fn=cmd_log_render)
 
     s = sub.add_parser("progress", help="human-readable plan progress")

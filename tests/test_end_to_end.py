@@ -264,6 +264,16 @@ def test_a_stub_directive_does_not_sanction_editing_an_existing_file(repo):
     assert "backend/app/__init__.py" not in red["result"]["staged"]
 
 
+def test_log_render_out_is_relative_to_the_worktree_not_the_cwd(repo):
+    """`tasks/friction-logs/` means the one at the repo root, wherever the agent stands."""
+    start(repo)
+    out = run_cli(repo / "backend", "log", "render", "--out", "tasks/friction-logs/x.md")
+    assert out["ok"], out
+    assert (repo / "tasks" / "friction-logs" / "x.md").exists()
+    assert not (repo / "backend" / "tasks").exists()
+    assert out["result"]["written"] == "tasks/friction-logs/x.md"
+
+
 def test_doctor_ignores_nested_checkouts(repo):
     """A worktree under .claude/worktrees/ is a separate checkout with its own work."""
     nested = repo / ".claude" / "worktrees" / "other" / "backend"
