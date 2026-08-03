@@ -47,7 +47,8 @@ class VitestAdapter(Adapter):
 
     def run(self, target: str | None = None) -> Verdict:
         verdict = Verdict(project=self.project.name, adapter=self.name, target=target)
-        code, out, err = run_command("npx vitest run --reporter=json", self.root)
+        base = self.project.test_command or "npx vitest run"
+        code, out, err = run_command(f"{base} --reporter=json", self.root)
         report = _extract_json(out)
         if report is None:
             verdict.error = f"vitest produced no JSON output: {(err or out)[:500]}"
@@ -108,8 +109,9 @@ class VitestAdapter(Adapter):
         result = Collection()
         for path in self._test_files():
             rel = path.relative_to(self.root)
+            base = self.project.collect_command or "npx vitest list"
             code, out, err = run_command(
-                f"npx vitest list {shlex.quote(str(rel))} --reporter=json", self.root
+                f"{base} {shlex.quote(str(rel))} --reporter=json", self.root
             )
             payload = _extract_json(out)
             if payload is None:

@@ -51,6 +51,14 @@ class Project:
     lint: list[str] = field(default_factory=list)
     typecheck: list[str] = field(default_factory=list)
     in_close_sweep: bool = True
+    #: The project's own suite command. Without this the tool runs its adapter's
+    #: default invocation, which can differ from what the project actually runs —
+    #: parallelism, plugins, markers — so the suite under TDD is not the suite the
+    #: team trusts. The adapter appends only its reporting flags.
+    test_command: str | None = None
+    #: Per-file collection. Must not be parallelised: collection is cheap and xdist
+    #: adds startup cost per file.
+    collect_command: str | None = None
 
     def owns(self, rel_path: str) -> bool:
         return rel_path == self.root or rel_path.startswith(self.root.rstrip("/") + "/")
@@ -196,6 +204,8 @@ def load(worktree: Path) -> Config:
             lint=body.get("lint", []),
             typecheck=body.get("typecheck", []),
             in_close_sweep=body.get("in_close_sweep", True),
+            test_command=body.get("test_command"),
+            collect_command=body.get("collect_command"),
         )
 
     artifacts: dict[str, Artifact] = {}

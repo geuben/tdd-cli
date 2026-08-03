@@ -34,13 +34,24 @@ class PytestAdapter(Adapter):
     def _base_cmd(self) -> str:
         return "uv run pytest" if (self.root / "pyproject.toml").is_file() else "pytest"
 
+    def _test_cmd(self) -> str:
+        """The project's own suite command, so the suite under TDD is the real one."""
+        return self.project.test_command or self._base_cmd()
+
+    def _collect_cmd(self) -> str:
+        return self.project.collect_command or self._base_cmd()
+
     def run(self, target: str | None = None) -> Verdict:
         verdict = Verdict(project=self.project.name, adapter=self.name, target=target)
         with tempfile.TemporaryDirectory(prefix="tdd-pytest-") as tmp:
             report_path = Path(tmp) / "report.json"
+            # Only reporting flags are appended — parallelism, markers and plugins
+            # stay exactly as the project declared them. json-report is xdist-safe:
+            # `collectors` is omitted when nothing fails to collect, and present with
+            # the failing entry when something does, which is when it is consulted.
             cmd = (
-                f"{self._base_cmd()} --json-report"
-                f" --json-report-file={shlex.quote(str(report_path))} -q"
+                f"{self._test_cmd()} --json-report"
+                f" --json-report-file={shlex.quote(str(report_path))}"
             )
             code, out, err = run_command(cmd, self.root)
             if not report_path.is_file():
@@ -111,7 +122,8 @@ class PytestAdapter(Adapter):
         for path in self._test_files():
             rel = path.relative_to(self.root)
             code, out, err = run_command(
-                f"{self._base_cmd()} --collect-only -q {shlex.quote(str(rel))}", self.root
+                f"{self._collect_cmd()} --collect-only -q {shlex.quote(str(rel))}",
+                self.root,
             )
             if code != 0:
                 result.failed_files[str(rel)] = (err or out).strip()[:800]
