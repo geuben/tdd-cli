@@ -1,0 +1,88 @@
+"""Adapter contract (§10). Adding an adapter requires no change to core logic."""
+
+from __future__ import annotations
+
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+
+NOT_FOUND = "not_found"
+NOT_COLLECTED = "not_collected"
+PASSED = "passed"
+FAILED = "failed"
+
+
+@dataclass
+class Verdict:
+    project: str
+    adapter: str
+    target: str | None = None
+    target_outcome: str = NOT_FOUND
+    target_failure: str = ""
+    passed: list[str] = field(default_factory=list)
+    failed: list[str] = field(default_factory=list)
+    duration_ms: int = 0
+    error: str | None = None
+
+
+@dataclass
+class GateResult:
+    ok: bool
+    output: str = ""
+
+
+@dataclass
+class Collection:
+    """Per-file collection (R10.3): one uncollectable file must not destroy the set."""
+
+    tests: set[str] = field(default_factory=set)
+    failed_files: dict[str, str] = field(default_factory=dict)
+
+
+def run_command(command: str, cwd: Path, timeout: int = 1800) -> tuple[int, str, str]:
+    proc = subprocess.run(
+        command,
+        shell=True,
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+class Adapter:
+    name = "base"
+
+    def __init__(self, project, worktree: Path):
+        self.project = project
+        self.worktree = worktree
+        self.root = worktree / project.root
+
+    def qualify(self, raw_id: str) -> str:
+        """Namespace a runner-native id with its project (R9.12)."""
+        return f"{self.project.name}::{raw_id}"
+
+    def strip(self, qualified: str) -> str:
+        prefix = f"{self.project.name}::"
+        return qualified[len(prefix):] if qualified.startswith(prefix) else qualified
+
+    def run(self, target: str | None = None) -> Verdict:
+        raise NotImplementedError
+
+    def collect(self) -> Collection:
+        raise NotImplementedError
+
+    def lint(self) -> GateResult:
+        return self._gate(self.project.lint)
+
+    def typecheck(self) -> GateResult:
+        return self._gate(self.project.typecheck)
+
+    def _gate(self, commands: list[str]) -> GateResult:
+        chunks = []
+        for cmd in commands:
+            code, out, err = run_command(cmd, self.root)
+            if code != 0:
+                chunks.append(f"$ {cmd}\n{out}\n{err}".strip())
+        return GateResult(ok=not chunks, output="\n\n".join(chunks)[:4000])
