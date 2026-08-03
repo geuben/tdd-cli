@@ -134,7 +134,8 @@ def metrics(ledger: Ledger, worktree: str) -> dict:
     )}
     for run in runs:
         cycles = ledger.cycles(run["id"])
-        standard = [c for c in cycles if c["kind"] != "pin"]
+        # Pin cycles pass on arrival by design; refactor cycles have no test at all.
+        standard = [c for c in cycles if c["kind"] not in ("pin", "refactor")]
         red_violations = ledger.all(
             "SELECT * FROM integrity_event WHERE run_id = ? AND kind = 'red_first_violation'",
             (run["id"],),

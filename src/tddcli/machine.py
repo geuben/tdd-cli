@@ -20,8 +20,8 @@ from pathlib import Path
 from . import adapters, contract as contract_mod, gitutil, staging
 from .adapters.base import FAILED, NOT_COLLECTED, NOT_FOUND, PASSED
 from .config import Config
-from .contract import PIN, DeclaredCycle
-from .envelope import Envelope, NextAction, Verb
+from .contract import PIN, REFACTOR, DeclaredCycle
+from .envelope import Verb
 from .ledger import Ledger, now
 
 AWAITING_TEST = "AWAITING_TEST"
@@ -32,7 +32,9 @@ SENSITIVITY_REQUIRED = "SENSITIVITY_REQUIRED"
 CLOSED = "CLOSED"
 SKIPPED = "SKIPPED"
 
-OPENING_PHASE = {PIN: AWAITING_PIN}
+#: A refactor cycle has no test of its own, so it opens straight into the refactor
+#: phase: the existing suite plus the close sweep are its only guard.
+OPENING_PHASE = {PIN: AWAITING_PIN, REFACTOR: AWAITING_REFACTOR}
 
 
 @dataclass
@@ -151,10 +153,18 @@ class Engine:
                 )
         return outcomes, others, verdicts, failure_text
 
-    def sweep(self, cycle_row, touched: set[str]) -> SweepOutcome:
-        """R9.2 — cycle projects plus anything downstream of an artifact it touched."""
+    def sweep(self, cycle_row, touched: set[str], skip_own: bool = False) -> SweepOutcome:
+        """R9.2 — cycle projects plus anything downstream of an artifact it touched.
+
+        `skip_own` drops the cycle's own suites when the tree is unchanged since GREEN:
+        they just passed on an identical tree. Downstream projects still run, having
+        not run at all yet. Never set for a refactor cycle, where the existing suite
+        is the only guard there is.
+        """
         cycle_projects = json.loads(cycle_row["projects"])
         names = self.config.close_sweep_projects(cycle_projects, touched)
+        if skip_own:
+            names = [n for n in names if n not in cycle_projects]
         baselines = self._baselines()
         failures: list[str] = []
         gates: list[tuple[str, str, str]] = []
@@ -323,6 +333,26 @@ class Engine:
             message=message,
             files=json.dumps(files),
             at=now(),
+        )
+
+    def opening_action(self, cycle_row) -> tuple[Verb, str]:
+        """What the agent must do first in a newly opened cycle, by kind."""
+        ordinal = cycle_row["ordinal"]
+        title = cycle_row["title"] or "untitled"
+        targets = json.loads(cycle_row["target_tests"])
+        if cycle_row["kind"] == REFACTOR:
+            return Verb.REFACTOR_OR_ADVANCE, (
+                f"Cycle {ordinal} ({title}) is behaviour-preserving: perform the"
+                " migration, then `tdd advance`. The existing suite is the guard."
+            )
+        if cycle_row["kind"] == PIN:
+            return Verb.WRITE_TEST, (
+                f"Cycle {ordinal} ({title}) is a pin cycle: write a characterisation"
+                " test that passes on arrival."
+            )
+        target = targets[0] if targets else "the declared test"
+        return Verb.WRITE_TEST, (
+            f"Cycle {ordinal} ({title}): write the failing test {target}."
         )
 
     def missing_annotations(self, cycle_row) -> list[str]:

@@ -106,7 +106,7 @@ cycles:
     tests: ["a::x", "b::y"]
 ---
 """
-    with pytest.raises(ContractError, match="both a pin and a contract"):
+    with pytest.raises(ContractError, match="kinds are exclusive"):
         parse(body, "tasks/p.md")
 
 

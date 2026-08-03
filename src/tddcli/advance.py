@@ -257,7 +257,17 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
         touched = set(staged) | touched
 
     regenerated = engine.check_artifacts(cycle)
-    outcome = engine.sweep(cycle, touched)
+
+    # §6.1 — when nothing changed since GREEN, the cycle's own suites just passed on an
+    # identical tree. A refactor cycle never skips: its suite is the only guard.
+    prior = engine.ledger.invocations(cycle["id"], AWAITING_IMPL)
+    skip_own = bool(
+        cycle["kind"] != "refactor"
+        and sha is None
+        and prior
+        and prior[-1]["tree_hash"] == engine.tree_hash(json.loads(cycle["projects"]))
+    )
+    outcome = engine.sweep(cycle, touched, skip_own=skip_own)
 
     if not outcome.ok:
         if outcome.failures:
@@ -289,19 +299,11 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
                 Verb.COMPLETE, "All declared cycles are complete. Run `tdd log render`."
             ),
         )
-    declared_next = engine.declared_for(nxt["ordinal"])
-    verb = Verb.WRITE_TEST
-    detail = (
-        f"Cycle {cycle['ordinal']} closed. Cycle {nxt['ordinal']}"
-        f" ({declared_next.title or 'untitled'}): write the failing test"
-        f" {json.loads(nxt['target_tests'])[0]}."
+    verb, opening = engine.opening_action(nxt)
+    return _reply(
+        engine, nxt, verb, f"Cycle {cycle['ordinal']} closed. {opening}",
+        commit=sha, regenerated=regenerated or None,
     )
-    if nxt["kind"] == "pin":
-        detail = (
-            f"Cycle {cycle['ordinal']} closed. Cycle {nxt['ordinal']} is a pin cycle:"
-            " write a characterisation test that passes on arrival."
-        )
-    return _reply(engine, nxt, verb, detail, commit=sha, regenerated=regenerated or None)
 
 
 # -- entry point ---------------------------------------------------------

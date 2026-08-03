@@ -264,17 +264,8 @@ def cmd_run_start(args) -> Envelope:
         return failure("contract declares no cycles")
     cycle = engine.open_cycle(first.ordinal)
 
-    verb = Verb.WRITE_TEST
-    detail = (
-        f"Run {run_id} started ({executor.model}, via {executor.source})."
-        f" Cycle {cycle['ordinal']}: write the failing test"
-        f" {json.loads(cycle['target_tests'])[0]}."
-    )
-    if cycle["kind"] == "pin":
-        detail = (
-            f"Run {run_id} started. Cycle {cycle['ordinal']} is a pin cycle: write a"
-            " characterisation test that passes on arrival."
-        )
+    verb, opening = engine.opening_action(cycle)
+    detail = f"Run {run_id} started ({executor.model}, via {executor.source}). {opening}"
     return Envelope(
         run=engine.run_state(cycle),
         result={
@@ -352,13 +343,12 @@ def cmd_cycle_skip(args) -> Envelope:
             next_action=NextAction(Verb.COMPLETE, "Final cycle skipped; run complete."),
         )
     nxt = engine.open_cycle(nxt_declared.ordinal)
+    verb, opening = engine.opening_action(nxt)
     return Envelope(
         run=engine.run_state(nxt),
         result={"skipped": cycle["ordinal"], "reason": args.reason},
         next_action=NextAction(
-            Verb.WRITE_TEST,
-            f"Cycle {cycle['ordinal']} skipped. Cycle {nxt['ordinal']}: write"
-            f" {json.loads(nxt['target_tests'])[0]}.",
+            verb, f"Cycle {cycle['ordinal']} skipped. {opening}"
         ),
     )
 

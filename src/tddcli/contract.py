@@ -21,6 +21,7 @@ FENCE = "---"
 STANDARD = "standard"
 PIN = "pin"
 CONTRACT = "contract"
+REFACTOR = "refactor"
 
 
 class ContractError(RuntimeError):
@@ -107,16 +108,36 @@ def parse_cycle(raw: dict, config: Config | None) -> DeclaredCycle:
     if not isinstance(ordinal, int):
         raise ContractError(f"cycle ordinal must be an integer, got {ordinal!r}")
 
-    is_pin = bool(raw.get("pin_cycle"))
-    is_contract = bool(raw.get("contract_cycle"))
-    if is_pin and is_contract:
-        raise ContractError(f"cycle {ordinal}: cannot be both a pin and a contract cycle")
-    kind = PIN if is_pin else CONTRACT if is_contract else STANDARD
+    flags = [
+        name for name, key in (
+            (PIN, "pin_cycle"),
+            (CONTRACT, "contract_cycle"),
+            (REFACTOR, "refactor_cycle"),
+        ) if raw.get(key)
+    ]
+    if len(flags) > 1:
+        raise ContractError(
+            f"cycle {ordinal}: cycle kinds are exclusive, got {flags}"
+        )
+    kind = flags[0] if flags else STANDARD
 
     tests = _as_list(raw.get("tests") or raw.get("test"), "test", ordinal)
     projects = _as_list(raw.get("projects") or raw.get("project"), "project", ordinal)
     if not projects:
         raise ContractError(f"cycle {ordinal}: no project declared")
+
+    # A refactor cycle changes structure without changing behaviour: existing tests are
+    # the guard, so it has no target of its own and opens straight into refactor.
+    if kind == REFACTOR and tests:
+        raise ContractError(
+            f"cycle {ordinal}: a refactor cycle declares no test — the existing suite"
+            " is the guard. Use a pin cycle if new behaviour must be characterised first."
+        )
+    if kind != REFACTOR and not tests:
+        raise ContractError(
+            f"cycle {ordinal}: no test declared. Mark it `refactor_cycle: true` if it"
+            " is behaviour-preserving with no new test."
+        )
 
     if len(tests) > 1 and kind != CONTRACT:
         raise ContractError(
