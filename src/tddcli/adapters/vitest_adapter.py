@@ -105,22 +105,54 @@ class VitestAdapter(Adapter):
                         found.add(path)
         return sorted(found)
 
+    def _parse_list_output(self, out: str, path: Path) -> set[str]:
+        """Parse `vitest list` text output into ids matching those `run()` produces.
+
+        `vitest list` ignores `--reporter=json` (checked against vitest 4.1.0) and
+        emits one line per test:
+
+            relative/file.test.ts > describe > nested describe > it name
+
+        `run()` reports the same test with `fullName`, which is the ancestor titles
+        and the title joined by a **space**. Splitting on " > " and rejoining the
+        name parts with a space reproduces that exactly; keeping the arrows would
+        yield ids that never match a verdict.
+        """
+        found: set[str] = set()
+        for line in out.splitlines():
+            line = line.strip()
+            if " > " not in line:
+                continue
+            _, _, remainder = line.partition(" > ")
+            full_name = " ".join(part.strip() for part in remainder.split(" > "))
+            if full_name:
+                found.add(self._id_for(str(path), full_name))
+        return found
+
     def collect(self) -> Collection:
         result = Collection()
         for path in self._test_files():
             rel = path.relative_to(self.root)
             base = self.project.collect_command or "npx vitest list"
-            code, out, err = run_command(
-                f"{base} {shlex.quote(str(rel))} --reporter=json", self.root
-            )
+            code, out, err = run_command(f"{base} {shlex.quote(str(rel))}", self.root)
+
             payload = _extract_json(out)
-            if payload is None:
-                if code != 0:
-                    result.failed_files[str(rel)] = (err or out).strip()[:800]
+            if payload is not None:
+                entries = payload if isinstance(payload, list) else payload.get("tests", [])
+                for entry in entries or []:
+                    name = entry.get("fullName") or entry.get("name")
+                    if name:
+                        result.tests.add(self._id_for(str(path), name))
                 continue
-            entries = payload if isinstance(payload, list) else payload.get("tests", [])
-            for entry in entries or []:
-                name = entry.get("fullName") or entry.get("name")
-                if name:
-                    result.tests.add(self._id_for(str(path), name))
+
+            names = self._parse_list_output(out, path)
+            if names:
+                result.tests.update(names)
+            else:
+                # Zero tests from a file that exists is a tooling failure, not an
+                # empty file — record it rather than silently collecting nothing.
+                result.failed_files[str(rel)] = (
+                    f"no tests parsed from `{base}` (exit {code}): "
+                    + (err or out).strip()[:600]
+                )
         return result
