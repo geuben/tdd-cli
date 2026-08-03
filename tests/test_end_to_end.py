@@ -205,3 +205,20 @@ def test_friction_log_and_metrics_render_from_the_ledger(repo):
     metrics = run_cli(repo, "metrics")
     assert metrics["result"]["runs"][0]["cycles_declared"] == 2
     assert "not comparable" in metrics["result"]["note"]
+
+
+def test_doctor_ignores_nested_checkouts(repo):
+    """A worktree under .claude/worktrees/ is a separate checkout with its own work."""
+    nested = repo / ".claude" / "worktrees" / "other" / "backend"
+    nested.mkdir(parents=True)
+    (nested / ".tdd-state.json").write_text("{}")
+    (repo / ".claude" / "worktrees" / "other" / ".git").write_text("gitdir: elsewhere\n")
+
+    out = run_cli(repo, "doctor")
+    legacy = next(c for c in out["result"]["checks"] if c["check"] == "no legacy state artifacts")
+    assert legacy["ok"] is True, legacy
+
+    (repo / "backend" / ".tdd-state.json").write_text("{}")
+    out = run_cli(repo, "doctor")
+    legacy = next(c for c in out["result"]["checks"] if c["check"] == "no legacy state artifacts")
+    assert legacy["ok"] is False

@@ -92,6 +92,41 @@ def cmd_init(args) -> Envelope:
     )
 
 
+LEGACY_ARTIFACTS = (".pytest_report.json", ".tdd-state.json")
+SKIP_DIRS = {"node_modules", ".venv", "venv", "__pycache__", ".git"}
+
+
+def _legacy_artifacts(worktree: Path) -> list[Path]:
+    """Find stale artifacts in *this* worktree only.
+
+    Nested worktrees under `.claude/worktrees/` are separate checkouts with their own
+    in-flight work; scanning into them reports another branch's live files as this
+    worktree's problem.
+    """
+    found: list[Path] = []
+
+    def walk(directory: Path, depth: int = 0) -> None:
+        if depth > 8:
+            return
+        try:
+            entries = list(directory.iterdir())
+        except OSError:
+            return
+        for entry in entries:
+            if entry.is_dir():
+                if entry.name in SKIP_DIRS:
+                    continue
+                # A nested checkout owns its own state.
+                if (entry / ".git").exists():
+                    continue
+                walk(entry, depth + 1)
+            elif entry.name in LEGACY_ARTIFACTS:
+                found.append(entry)
+
+    walk(worktree)
+    return sorted(found)
+
+
 def cmd_doctor(args) -> Envelope:
     worktree = _worktree()
     checks: list[dict] = []
@@ -126,7 +161,7 @@ def cmd_doctor(args) -> Envelope:
     for art in cfg.artifacts.values():
         check(f"artifact {art.name}: has check or regenerate", bool(art.check or art.regenerate))
 
-    stale = list(worktree.rglob(".pytest_report.json")) + list(worktree.rglob(".tdd-state.json"))
+    stale = _legacy_artifacts(worktree)
     check("no legacy state artifacts", not stale, ", ".join(str(s) for s in stale[:5]))
     check("worktree clean", not gitutil.is_dirty(worktree))
 
