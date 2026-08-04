@@ -756,21 +756,28 @@ def cmd_progress(args) -> Envelope:
         # A baseline can take minutes; a claim with no run row yet is in-flight, not
         # "never started" (issue #2). `ok: true` — a polling agent must not see
         # repeated exit-1, the signal that caused the re-runs in the first place.
+        # Leaving the human form saying "no runs recorded" while JSON says
+        # "collecting" would be the same ambiguity in a new place.
         claim = ledger.active_claim(str(worktree))
         if claim is not None:
-            return Envelope(
-                result={
-                    "status": "collecting_baseline",
-                    "projects_done": claim["projects_done"],
-                    "projects_total": claim["projects_total"],
-                    "current_project": claim["current_project"],
-                    "elapsed_s": _claim_elapsed_s(claim),
-                },
-                next_action=NextAction(
-                    Verb.AWAIT_BASELINE,
-                    "A baseline is being collected; poll `tdd progress` again.",
-                ),
+            result = {
+                "status": "collecting_baseline",
+                "projects_done": claim["projects_done"],
+                "projects_total": claim["projects_total"],
+                "current_project": claim["current_project"],
+                "elapsed_s": _claim_elapsed_s(claim),
+            }
+            next_action = NextAction(
+                Verb.AWAIT_BASELINE, "A baseline is being collected; poll `tdd progress` again.",
             )
+            if args.json:
+                return Envelope(result=result, next_action=next_action)
+            current = f" (current: {result['current_project']})" if result["current_project"] else ""
+            sys.stdout.write(
+                f"collecting baseline: {result['projects_done']}/{result['projects_total']}"
+                f" projects{current} — {result['elapsed_s']}s elapsed\n"
+            )
+            return Envelope(result=result, next_action=next_action, silent=True)
         return failure("no runs recorded for this worktree")
     if args.json:
         engine = _engine(worktree, cfg, ledger, run)
