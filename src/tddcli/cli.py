@@ -232,8 +232,12 @@ def cmd_run_start(args) -> Envelope:
     cfg = config_mod.load(worktree)
     ledger = Ledger(gitutil.repo_identity(worktree))
 
-    if ledger.active_run(str(worktree)) is not None:
-        return failure("a run is already active in this worktree")
+    active = ledger.active_run(str(worktree))
+    if active is not None:
+        return failure(
+            "a run is already active in this worktree",
+            reason="run_already_active", run_id=active["id"], started_at=active["started_at"],
+        )
 
     rel = str(Path(args.plan))
     contract_row = ledger.one(
