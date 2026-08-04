@@ -25,7 +25,9 @@ def test_doctor_attributes_a_collection_failure_to_its_project(repo_broken):
     checks = out["result"]["checks"]
     verify_checks = [c for c in checks if c.get("detail", "").find("yaml_does_not_exist") != -1]
     assert verify_checks, checks
-    named = [c for c in verify_checks if "verify" in c.get("check", "")]
+    # cycle 16.5 replaced the `f"{name}: ..."` prefix convention with an explicit
+    # `project=` field on the check dict.
+    named = [c for c in verify_checks if c.get("project") == "verify"]
     assert named, verify_checks
 
 
