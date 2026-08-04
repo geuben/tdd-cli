@@ -198,3 +198,39 @@ def test_an_old_cross_host_claim_is_stale(repo):
 
     claim = led.active_claim(str(repo))
     assert claim["stale"] is True, claim
+
+
+def test_a_failed_update_does_not_strand_the_write_lock(repo):
+    """`update` must roll back on failure, exactly as `insert` does.
+
+    Python's sqlite3 module does not roll back a failed statement, so the
+    connection's implicit transaction stays open and holds SQLite's write lock
+    until the connection is garbage collected. `insert` was fixed when the
+    concurrent-start race exposed it; `update` has the same hazard on any
+    constraint violation, and nothing exercised it.
+    """
+    import sqlite3
+
+    from tddcli.ledger import now
+
+    led = Ledger(gitutil.repo_identity(repo))
+    led.claim(str(repo) + "-a", hostname="h", pid=1, projects_total=1)
+    second = led.insert(
+        "baseline_claim", worktree_path=str(repo) + "-b",
+        hostname="h", pid=2, started_at=now(),
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        led.update("baseline_claim", second, worktree_path=str(repo) + "-a")
+
+    # A short timeout so a stranded lock fails fast rather than after 30s.
+    other = sqlite3.connect(led.path, timeout=0.5)
+    try:
+        other.execute(
+            "INSERT INTO baseline_claim(worktree_path, hostname, pid, started_at)"
+            " VALUES (?, 'h', 3, ?)",
+            (str(repo) + "-c", now()),
+        )
+        other.commit()
+    finally:
+        other.close()
