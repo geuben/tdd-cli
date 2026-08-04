@@ -126,9 +126,11 @@ class Engine:
             # Unconditional, not past a duration threshold — a conditional heartbeat
             # goes silent exactly when a run is slow for an unexpected reason.
             # Distinct event name from `baseline_captured`: same channel, different
-            # meaning. One insertion point covers every phase, close sweeps included.
+            # meaning. `phase` separates these from the close sweep's own lines,
+            # which `sweep()` emits — it does not route through here.
             heartbeat(
-                event="project_completed", project=name, elapsed_s=round(elapsed, 2),
+                event="project_completed", project=name, phase=phase,
+                elapsed_s=round(elapsed, 2),
             )
 
             base = baselines.get(name, set())
@@ -182,7 +184,12 @@ class Engine:
         for name in names:
             project = self.config.project(name)
             adapter = adapters.build(project, self.worktree)
+            started = time.monotonic()
             verdict = adapter.run(None)
+            heartbeat(
+                event="project_completed", project=name, phase="CLOSE_SWEEP",
+                elapsed_s=round(time.monotonic() - started, 2),
+            )
             base = baselines.get(name, set())
             failures.extend(f for f in verdict.failed if f not in base)
             self.ledger.insert(
