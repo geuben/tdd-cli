@@ -39,6 +39,15 @@ def test_malformed_yaml_hard_fails():
         parse("---\ncycles: [ unclosed\n---\n", "tasks/p.md")
 
 
+def test_await_baseline_is_a_non_terminal_verb():
+    from tddcli.envelope import TERMINAL_VERBS, NextAction, Verb
+
+    assert Verb.AWAIT_BASELINE
+    assert Verb.AWAIT_BASELINE not in TERMINAL_VERBS
+    action = NextAction(Verb.AWAIT_BASELINE, "collecting baseline; poll again")
+    assert action.to_dict()["verb_set_version"] == 2
+
+
 def test_front_matter_without_cycles_hard_fails():
     with pytest.raises(ContractError, match="declares no `cycles`"):
         parse("---\ntitle: nope\n---\n", "tasks/p.md")
