@@ -231,6 +231,27 @@ def cmd_plan_register(args) -> Envelope:
     )
 
 
+def _probe_projects(cfg, worktree, ledger, on_progress):
+    """Probe every project's baseline (R9.5a): run + collect, timing each, emitting a
+    `baseline_captured` heartbeat, and calling `on_progress(done, name)` — extracted
+    from `cmd_run_start`, which carried claiming, timing, heartbeating and progress
+    updates inline past the point of legibility. Returns `{name: (verdict, collection)}`.
+    """
+    probes = {}
+    for done, (name, project) in enumerate(cfg.projects.items(), start=1):
+        adapter = adapters.build(project, worktree)
+        started = time.monotonic()
+        verdict, collection = adapter.run(None), adapter.collect()
+        elapsed = time.monotonic() - started
+        probes[name] = (verdict, collection)
+        heartbeat(
+            event="baseline_captured", project=name,
+            test_count=len(collection.tests), elapsed_s=round(elapsed, 2),
+        )
+        on_progress(done, name)
+    return probes
+
+
 def cmd_run_start(args) -> Envelope:
     worktree = _worktree()
     cfg = config_mod.load(worktree)
@@ -299,21 +320,12 @@ def cmd_run_start(args) -> Envelope:
         # Refusing here also leaves no half-started run behind to block the next
         # attempt — and must release the claim too, or the retry it invites is itself
         # refused.
-        probes = {}
-        for done, (name, project) in enumerate(cfg.projects.items(), start=1):
-            adapter = adapters.build(project, worktree)
-            started = time.monotonic()
-            verdict, collection = adapter.run(None), adapter.collect()
-            elapsed = time.monotonic() - started
-            probes[name] = (verdict, collection)
-            heartbeat(
-                event="baseline_captured", project=name,
-                test_count=len(collection.tests), elapsed_s=round(elapsed, 2),
-            )
-            # `projects_done` counts *completed* probes: after the first project
-            # finishes, the next `adapters.build` call (for the second project) must
-            # see 1, not 0.
-            ledger.update_claim(str(worktree), projects_done=done, current_project=name)
+        probes = _probe_projects(
+            cfg, worktree, ledger,
+            on_progress=lambda done, name: ledger.update_claim(
+                str(worktree), projects_done=done, current_project=name,
+            ),
+        )
         for name, (verdict, collection) in probes.items():
             if not collection.tests and collection.failed_files:
                 sample = sorted(collection.failed_files)[0]
