@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import socket
 import sys
 from pathlib import Path
 
@@ -267,6 +269,14 @@ def cmd_run_start(args) -> Envelope:
     if contract_row["status"] == "undeclared" and not args.allow_undeclared:
         return failure("contract is undeclared; pass --allow-undeclared")
 
+    # Claim the worktree before probing (issue #4/#2): two `run start` calls against
+    # one worktree must not both pass the baseline window. `Ledger.claim`'s `UNIQUE`
+    # insert is the lock.
+    ledger.claim(
+        str(worktree), hostname=socket.gethostname(), pid=os.getpid(),
+        projects_total=len(cfg.projects),
+    )
+
     # Probe every project before the run exists (R9.5a). A baseline is subtracted from
     # every later failure set, so an untrustworthy one is worse than none: it reports
     # pre-existing failures as regressions for the life of the run. Refusing here also
@@ -293,55 +303,58 @@ def cmd_run_start(args) -> Envelope:
                 project=name, collected=len(collection.tests),
             )
 
-    executor = identity.resolve(worktree, args.executor)
-    run_id = ledger.insert(
-        "run",
-        plan_contract_id=contract_row["id"],
-        executor_model=executor.model,
-        executor_session=executor.session,
-        executor_source=executor.source,
-        worktree_path=str(worktree),
-        started_at=now(),
-        allow_dirty=int(bool(args.allow_dirty)),
-        preexisting_dirty=json.dumps(dirty),
-        config_sha=config_mod.config_sha(worktree),
-    )
-    run = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
-    if blob_changed:
-        ledger.event(run_id, None, "plan_blob_changed", rel)
-
-    # Baselines and the collection snapshot, per project (R9.5, R8.9) — from the probe
-    # above, so the suite is not run twice.
-    for name, (verdict, collection) in probes.items():
-        ledger.insert(
-            "baseline", run_id=run_id, project=name,
-            failing=json.dumps(sorted(verdict.failed)), captured_at=now(),
+    try:
+        executor = identity.resolve(worktree, args.executor)
+        run_id = ledger.insert(
+            "run",
+            plan_contract_id=contract_row["id"],
+            executor_model=executor.model,
+            executor_session=executor.session,
+            executor_source=executor.source,
+            worktree_path=str(worktree),
+            started_at=now(),
+            allow_dirty=int(bool(args.allow_dirty)),
+            preexisting_dirty=json.dumps(dirty),
+            config_sha=config_mod.config_sha(worktree),
         )
-        ledger.insert(
-            "collection_snapshot", run_id=run_id, project=name,
-            tests=json.dumps(sorted(collection.tests)),
-            failed_files=json.dumps(collection.failed_files), captured_at=now(),
-        )
+        run = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
+        if blob_changed:
+            ledger.event(run_id, None, "plan_blob_changed", rel)
 
-    engine = Engine(ledger, cfg, worktree, run)
-    engine.check_artifacts(None)
-    first = engine.declared[0] if engine.declared else None
-    if first is None:
-        return failure("contract declares no cycles")
-    cycle = engine.open_cycle(first.ordinal)
+        # Baselines and the collection snapshot, per project (R9.5, R8.9) — from the
+        # probe above, so the suite is not run twice.
+        for name, (verdict, collection) in probes.items():
+            ledger.insert(
+                "baseline", run_id=run_id, project=name,
+                failing=json.dumps(sorted(verdict.failed)), captured_at=now(),
+            )
+            ledger.insert(
+                "collection_snapshot", run_id=run_id, project=name,
+                tests=json.dumps(sorted(collection.tests)),
+                failed_files=json.dumps(collection.failed_files), captured_at=now(),
+            )
 
-    verb, opening = engine.opening_action(cycle)
-    detail = f"Run {run_id} started ({executor.model}, via {executor.source}). {opening}"
-    return Envelope(
-        run=engine.run_state(cycle),
-        result={
-            "baselines": {
-                n: len(v) for n, v in ledger.baselines(run_id).items()
+        engine = Engine(ledger, cfg, worktree, run)
+        engine.check_artifacts(None)
+        first = engine.declared[0] if engine.declared else None
+        if first is None:
+            return failure("contract declares no cycles")
+        cycle = engine.open_cycle(first.ordinal)
+
+        verb, opening = engine.opening_action(cycle)
+        detail = f"Run {run_id} started ({executor.model}, via {executor.source}). {opening}"
+        return Envelope(
+            run=engine.run_state(cycle),
+            result={
+                "baselines": {
+                    n: len(v) for n, v in ledger.baselines(run_id).items()
+                },
+                "executor_source": executor.source,
             },
-            "executor_source": executor.source,
-        },
-        next_action=NextAction(verb, detail),
-    )
+            next_action=NextAction(verb, detail),
+        )
+    finally:
+        ledger.release_claim(str(worktree))
 
 
 def cmd_status(args) -> Envelope:

@@ -313,10 +313,25 @@ class Ledger:
     # -- baseline claim (issue #4 / #2) -----------------------------------
 
     def claim(self, worktree: str, hostname: str, pid: int, projects_total: int) -> int:
-        raise NotImplementedError
+        """Insert the claim row. The insert is the lock (Finding 4): `worktree_path`
+        carries `UNIQUE`, so a second claim on the same worktree raises
+        `sqlite3.IntegrityError` rather than racing a read-then-write check."""
+        return self.insert(
+            "baseline_claim",
+            worktree_path=worktree,
+            hostname=hostname,
+            pid=pid,
+            projects_total=projects_total,
+            projects_done=0,
+            current_project=None,
+            started_at=now(),
+        )
 
     def release_claim(self, worktree: str) -> None:
-        raise NotImplementedError
+        self.db.execute("DELETE FROM baseline_claim WHERE worktree_path = ?", (worktree,))
+        self.db.commit()
 
     def active_claim(self, worktree: str) -> sqlite3.Row | None:
-        raise NotImplementedError
+        return self.one(
+            "SELECT * FROM baseline_claim WHERE worktree_path = ?", (worktree,)
+        )
