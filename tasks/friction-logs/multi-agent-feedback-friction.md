@@ -429,9 +429,9 @@ Plan File: tasks/multi-agent-feedback.md
 ### New Work Raised
 | Item | Evidence (file:symbol) | Why it matters | Severity |
 |---|---|---|---|
-| `Ledger.insert`/`update` leave the connection's transaction open on any exception, not only the `IntegrityError` this plan patched around | `src/tddcli/ledger.py:Ledger.insert` (fixed here); `Ledger.update` still lacks the same rollback | Any future caller that lets an `insert`/`update` fail (constraint violation, disk full, etc.) under concurrent access can reproduce cycle 4's ~65s lock-contention hang | Medium |
-| `test_only_reporting_flags_are_appended` in `tests/test_project_commands.py` is flaky — a random `tempfile.TemporaryDirectory` suffix occasionally collides with the CLI-flag substrings it asserts against (`-q` and similar) | `tests/test_project_commands.py:test_only_reporting_flags_are_appended` (unrelated to this plan; hit twice during full-suite runs in cycles 7 and 18) | A CI run can fail for a reason with nothing to do with the change under review, wasting a human's time chasing it | Low |
-| `Engine.sweep` (CLOSE_SWEEP phase) does not emit a `project_completed` heartbeat — only `Engine.run_projects` (RED/GREEN checks) does, despite cycle 10's own prose claiming "close sweeps included" | `src/tddcli/machine.py:Engine.sweep` vs `Engine.run_projects` | A close sweep on a large multi-project plan is exactly the kind of slow, silent operation issue #1 is about; it currently has no heartbeat at all | Medium |
+| ~~`Ledger.insert`/`update` leave the connection's transaction open on any exception~~ — closed as follow-up: every write now routes through one rollback-safe `Ledger._write` helper, per this log's own top recommendation | `src/tddcli/ledger.py:Ledger._write`; `tests/test_run_claim.py:test_a_failed_update_does_not_strand_the_write_lock` | Reproduced the hang deterministically (`database is locked`) before fixing, so the RED was real rather than reasoned | Resolved |
+| ~~`test_only_reporting_flags_are_appended` is flaky~~ — closed as follow-up. Root cause: `tempfile` draws its suffix from `[a-z0-9_]` and the prefix ends in a hyphen, so a name beginning `q` puts a literal `-q` in the report path (~1 run in 37). The report path is now pinned to that worst case and the assertion matches whole arguments via `shlex.split` | `tests/test_project_commands.py:test_only_reporting_flags_are_appended` | The worst case is now permanent rather than occasional, so the assertion can never regress to substring matching unnoticed | Resolved |
+| ~~`Engine.sweep` does not emit a `project_completed` heartbeat~~ — closed as follow-up. `sweep()` now heartbeats per project, and both it and `run_projects` carry a `phase` field so the two are distinguishable on the shared stderr channel | `src/tddcli/machine.py:Engine.sweep`; `tests/test_heartbeat.py:test_close_sweep_emits_a_project_completed_line` | This was a defect in the plan's cycle 10 prose, not in its execution — the executor correctly stayed inside the cycle's stated production target and flagged it | Resolved |
 | ~~`Ledger.active_claim`'s cross-host staleness fallback (60-minute age) was untested~~ — closed during the `raise-pr` pseudo-mutation gate with `test_a_fresh_cross_host_claim_is_not_stale` / `test_an_old_cross_host_claim_is_stale` | `src/tddcli/ledger.py:Ledger.active_claim`; `tests/test_run_claim.py` | The Decisions table calls this branch out explicitly (PIDs meaningless across hosts) | Resolved |
 
 ### Plan Quality
@@ -451,6 +451,9 @@ Plan File: tasks/multi-agent-feedback.md
   second source of truth. Docked one point for `Ledger`'s inconsistent transaction
   hygiene (see New Work Raised) — a preexisting condition this plan worked around
   in one spot rather than fixing at the root.
+* **Follow-up status:** all three open items above were completed on this branch
+  after the PR was raised, each as its own RED/GREEN pair. The top recommendation
+  below was taken as written rather than patched per-call-site.
 * **Top refactoring recommendation:** Make `Ledger.insert`/`update`/`db.execute`
   transactionally safe uniformly (e.g. a `_write()` wrapper or `with self.db:`
   used everywhere), rather than the ad hoc `try/except: rollback(); raise` this
