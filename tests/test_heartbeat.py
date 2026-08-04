@@ -108,3 +108,36 @@ def test_claim_records_projects_done_as_each_completes(repo_multi, monkeypatch):
     assert second is not None
     assert second["projects_done"] == 1, second
     assert second["projects_total"] == 2, second
+
+
+TEST_ADD = """from app.calc import add
+
+
+def test_add_two_numbers():
+    assert add(2, 3) == 5
+"""
+
+
+def test_sweep_emits_a_project_completed_line(repo, capsys):
+    plan = register(repo)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    raise NotImplementedError\n"
+    )
+    capsys.readouterr()  # discard the run-start heartbeats
+
+    red = run_cli(repo, "advance")
+    assert red["next_action"]["verb"] == "write_implementation", red
+
+    captured = capsys.readouterr()
+    lines = [
+        line for line in _heartbeat_lines(captured.err)
+        if line.get("event") == "project_completed"
+    ]
+    assert lines, "no project_completed line in stderr"
+    backend = next((line for line in lines if line.get("project") == "backend"), None)
+    assert backend is not None, lines
+    assert isinstance(backend["elapsed_s"], (int, float))
