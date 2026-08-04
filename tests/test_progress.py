@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import socket
 
 from conftest import run_cli, run_cli_text, write_plan
+from tddcli import gitutil
+from tddcli.ledger import Ledger
 
 PLAN = """---
 cycles:
@@ -110,3 +114,24 @@ def test_progress_json_flag_returns_machine_output(repo):
     start(repo)
     out = run_cli_text(repo, "progress", "--json")
     assert '"next_action"' in out
+
+
+def open_claim(repo, projects_total=1, projects_done=0, current_project="backend"):
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    led = Ledger(gitutil.repo_identity(repo))
+    led.claim(
+        str(repo), hostname=socket.gethostname(), pid=os.getpid(),
+        projects_total=projects_total,
+    )
+    if projects_done:
+        led.update_claim(str(repo), projects_done=projects_done, current_project=current_project)
+    return plan
+
+
+def test_progress_reports_collecting_baseline_when_a_claim_is_open(repo):
+    open_claim(repo)
+    out = run_cli(repo, "progress", "--json")
+    assert out["ok"], out
+    assert out["result"]["status"] == "collecting_baseline"
+    assert out["next_action"]["verb"] == "await_baseline"
