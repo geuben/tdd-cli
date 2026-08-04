@@ -365,7 +365,9 @@ def cmd_run_start(args) -> Envelope:
         )
     except sqlite3.IntegrityError:
         return failure(
-            "a baseline is already being collected in this worktree",
+            "a baseline is already being collected in this worktree; do not re-run"
+            " `run start` — poll `tdd progress` instead, which reports"
+            " `collecting_baseline` with per-project counters until it finishes",
             reason="baseline_in_progress",
         )
 
