@@ -42,6 +42,22 @@ def test_declared_test_command_is_used_verbatim(tmp_path):
 
 
 def test_only_reporting_flags_are_appended(tmp_path, monkeypatch):
+    """The appended flags must not change which tests run or how.
+
+    The report path is pinned to the worst case the real one can produce.
+    `tempfile` draws its suffix from `[a-z0-9_]` and the prefix ends in a hyphen,
+    so roughly one run in thirty-seven produces `tdd-pytest-q...` — a literal `-q`
+    inside the report path. A substring check over the whole command then fails for
+    a reason that has nothing to do with the flags, which is how this test came to
+    fail intermittently in CI. Pinning the name makes that case permanent rather
+    than occasional, and the assertion below matches whole arguments.
+    """
+    forced = tmp_path / "tdd-pytest-q1x2m3k4"
+    forced.mkdir()
+    monkeypatch.setattr(
+        adapters.pytest_adapter.tempfile, "mkdtemp", lambda *a, **k: str(forced)
+    )
+
     project = project_with(tmp_path, 'test_command = "uv run pytest tests/ -v -n auto"\n')
     adapter = adapters.build(project, tmp_path)
     seen = {}
