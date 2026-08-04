@@ -51,3 +51,13 @@ def test_doctor_names_a_missing_node_modules(repo_multi):
     for c in node_modules_checks:
         assert "at Vitest" not in c["detail"]
         assert "at async" not in c["detail"]
+
+
+def test_doctor_does_not_check_node_modules_for_a_pytest_project(repo_multi):
+    """The `node_modules present` check is vitest-specific — a pytest project has no
+    `node_modules` either, and must not be flagged for lacking one."""
+    out = run_cli(repo_multi, "doctor")
+    checks = out["result"]["checks"]
+    backend_checks = [c for c in checks if c.get("project") == "backend"]
+    assert backend_checks, checks
+    assert not any(c["check"] == "node_modules present" for c in backend_checks), backend_checks
