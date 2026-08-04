@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SCHEMA_VERSION = 2
@@ -347,7 +348,31 @@ class Ledger:
         self.db.execute("DELETE FROM baseline_claim WHERE worktree_path = ?", (worktree,))
         self.db.commit()
 
-    def active_claim(self, worktree: str) -> sqlite3.Row | None:
-        return self.one(
-            "SELECT * FROM baseline_claim WHERE worktree_path = ?", (worktree,)
-        )
+    def active_claim(self, worktree: str) -> dict | None:
+        """Read-only, per the store's append-only contract — `cmd_progress` and
+        `cmd_status` call this as pure observers. Only `cmd_run_start` acts on the
+        computed `stale` flag (release + reclaim); nothing here deletes a row."""
+        row = self.one("SELECT * FROM baseline_claim WHERE worktree_path = ?", (worktree,))
+        if row is None:
+            return None
+        claim = dict(row)
+        if claim["hostname"] == socket.gethostname():
+            try:
+                os.kill(claim["pid"], 0)
+                stale = False
+            except ProcessLookupError:
+                # Same host, pid no longer running (e.g. a `SIGKILL`ed `run start`).
+                stale = True
+            except PermissionError:
+                # Pid exists but is owned by someone else — alive.
+                stale = False
+        else:
+            # A pid is meaningless from another host, and reused pids would make a
+            # host-crossing liveness check actively wrong. Fall back to age: a false
+            # "alive" bricks the worktree, a false "dead" reopens the bug (Decisions).
+            started = datetime.fromisoformat(claim["started_at"])
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            stale = datetime.now(timezone.utc) - started > timedelta(minutes=60)
+        claim["stale"] = stale
+        return claim

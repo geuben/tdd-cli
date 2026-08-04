@@ -273,7 +273,13 @@ def cmd_run_start(args) -> Envelope:
     # Claim the worktree before probing (issue #4/#2): two `run start` calls against
     # one worktree must not both pass the baseline window. `Ledger.claim`'s `UNIQUE`
     # insert is the lock — do not read-then-write, which is the race this closes
-    # (Finding 4, P6).
+    # (Finding 4, P6). A claim whose owner is gone (e.g. a `SIGKILL`ed `run start`)
+    # is reclaimed rather than obeyed, or one dead process bricks the worktree
+    # forever; `active_claim` only computes staleness, it never deletes.
+    existing = ledger.active_claim(str(worktree))
+    if existing is not None and existing["stale"]:
+        ledger.release_claim(str(worktree))
+
     try:
         ledger.claim(
             str(worktree), hostname=socket.gethostname(), pid=os.getpid(),
