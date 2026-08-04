@@ -40,3 +40,14 @@ def test_doctor_reports_a_per_project_result_map(repo_broken):
 def test_doctor_fails_when_a_check_fails(repo_broken):
     out = run_cli(repo_broken, "doctor")
     assert out["ok"] is False, out
+
+
+def test_doctor_names_a_missing_node_modules(repo_multi):
+    out = run_cli(repo_multi, "doctor")
+    checks = out["result"]["checks"]
+    frontend_checks = [c for c in checks if c.get("project") == "frontend"]
+    node_modules_checks = [c for c in frontend_checks if "node_modules" in c.get("detail", "")]
+    assert node_modules_checks, frontend_checks
+    for c in node_modules_checks:
+        assert "at Vitest" not in c["detail"]
+        assert "at async" not in c["detail"]
