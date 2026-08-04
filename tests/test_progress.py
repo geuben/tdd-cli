@@ -135,3 +135,10 @@ def test_progress_reports_collecting_baseline_when_a_claim_is_open(repo):
     assert out["ok"], out
     assert out["result"]["status"] == "collecting_baseline"
     assert out["next_action"]["verb"] == "await_baseline"
+
+
+def test_bare_progress_reports_collecting_baseline(repo):
+    open_claim(repo, projects_total=2, projects_done=1, current_project="frontend")
+    text = run_cli_text(repo, "progress")
+    assert "collecting baseline" in text
+    assert "1" in text and "2" in text
