@@ -8,6 +8,7 @@ serial. That is both far slower and not the same suite the team trusts.
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 from tddcli import adapters
@@ -69,11 +70,14 @@ def test_only_reporting_flags_are_appended(tmp_path, monkeypatch):
     monkeypatch.setattr(adapters.pytest_adapter, "run_command", fake_run)
     adapter.run("backend::tests/a.py::test_x")
 
-    assert seen["command"].startswith("uv run pytest tests/ -v -n auto ")
+    base = "uv run pytest tests/ -v -n auto"
+    assert seen["command"].startswith(base + " ")
     assert "--json-report" in seen["command"]
-    # Nothing that would change which tests run or how.
-    for flag in ("-q", "-p ", "-k ", "-m "):
-        assert flag not in seen["command"].replace("uv run pytest tests/ -v -n auto", "")
+    # Whole arguments, not substrings: the report path is an argument in its own
+    # right and may legitimately contain any of these sequences.
+    appended = shlex.split(seen["command"][len(base):])
+    for flag in ("-q", "-p", "-k", "-m"):
+        assert flag not in appended, appended
 
 
 def test_collect_command_is_separate_so_collection_is_not_parallelised(tmp_path):
