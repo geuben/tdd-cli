@@ -285,33 +285,36 @@ def cmd_run_start(args) -> Envelope:
             reason="baseline_in_progress",
         )
 
-    # Probe every project before the run exists (R9.5a). A baseline is subtracted from
-    # every later failure set, so an untrustworthy one is worse than none: it reports
-    # pre-existing failures as regressions for the life of the run. Refusing here also
-    # leaves no half-started run behind to block the next attempt.
-    probes = {}
-    for name, project in cfg.projects.items():
-        adapter = adapters.build(project, worktree)
-        probes[name] = (adapter.run(None), adapter.collect())
-    for name, (verdict, collection) in probes.items():
-        if not collection.tests and collection.failed_files:
-            sample = sorted(collection.failed_files)[0]
-            return failure(
-                f"{name}: no test could be collected — {len(collection.failed_files)}"
-                f" file(s) failed to collect, starting with {sample}. The baseline would"
-                " record no failures and every pre-existing failure would then read as a"
-                " regression. Fix the environment (dependencies installed?) and retry.",
-                project=name, failed_files=sorted(collection.failed_files),
-            )
-        if collection.tests and not verdict.passed and not verdict.failed:
-            return failure(
-                f"{name}: the suite collected {len(collection.tests)} test(s) but the"
-                " baseline run executed no tests, so it observed nothing. Check"
-                " `test_command` in tdd.toml and retry.",
-                project=name, collected=len(collection.tests),
-            )
-
     try:
+        # Probe every project before the run exists (R9.5a). A baseline is subtracted
+        # from every later failure set, so an untrustworthy one is worse than none: it
+        # reports pre-existing failures as regressions for the life of the run.
+        # Refusing here also leaves no half-started run behind to block the next
+        # attempt — and must release the claim too, or the retry it invites is itself
+        # refused.
+        probes = {}
+        for name, project in cfg.projects.items():
+            adapter = adapters.build(project, worktree)
+            probes[name] = (adapter.run(None), adapter.collect())
+        for name, (verdict, collection) in probes.items():
+            if not collection.tests and collection.failed_files:
+                sample = sorted(collection.failed_files)[0]
+                return failure(
+                    f"{name}: no test could be collected — {len(collection.failed_files)}"
+                    f" file(s) failed to collect, starting with {sample}. The baseline"
+                    " would record no failures and every pre-existing failure would then"
+                    " read as a regression. Fix the environment (dependencies"
+                    " installed?) and retry.",
+                    project=name, failed_files=sorted(collection.failed_files),
+                )
+            if collection.tests and not verdict.passed and not verdict.failed:
+                return failure(
+                    f"{name}: the suite collected {len(collection.tests)} test(s) but"
+                    " the baseline run executed no tests, so it observed nothing. Check"
+                    " `test_command` in tdd.toml and retry.",
+                    project=name, collected=len(collection.tests),
+                )
+
         executor = identity.resolve(worktree, args.executor)
         run_id = ledger.insert(
             "run",
