@@ -27,3 +27,9 @@ def test_doctor_attributes_a_collection_failure_to_its_project(repo_broken):
     assert verify_checks, checks
     named = [c for c in verify_checks if "verify" in c.get("check", "")]
     assert named, verify_checks
+
+
+def test_doctor_reports_a_per_project_result_map(repo_broken):
+    out = run_cli(repo_broken, "doctor")
+    projects = out["result"]["projects"]
+    assert projects["verify"]["ok"] is False, projects
