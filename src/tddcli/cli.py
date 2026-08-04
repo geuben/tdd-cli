@@ -198,6 +198,19 @@ def cmd_doctor(args) -> Envelope:
             )
             check("pytest-json-report installed", code == 0, (err or "")[:200], project=name)
 
+        # Run before `collectable()` (cycle 18) so this actionable message wins over
+        # vitest's stack trace: a git worktree does not inherit `node_modules`
+        # (it isn't tracked), and `npx vitest` fails with a wall of noise that
+        # doesn't say why.
+        if project.adapter == "vitest" and not (root / "node_modules").is_dir():
+            check(
+                "node_modules present", False,
+                "git worktrees do not inherit `node_modules` (it isn't tracked)."
+                " Symlink it from the main checkout, e.g."
+                f" `ln -s <main-checkout>/{project.root}/node_modules {root}/node_modules`.",
+                project=name,
+            )
+
         # Whole-suite `--collect-only`/`vitest list` (§10, cycle 15) — a single, cheap
         # probe (P3: 0.04s on a broken project) that attributes a collection failure
         # to its project. Nothing shells out to doctor today, so this is the only
