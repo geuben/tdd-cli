@@ -300,7 +300,7 @@ def cmd_run_start(args) -> Envelope:
         # attempt — and must release the claim too, or the retry it invites is itself
         # refused.
         probes = {}
-        for name, project in cfg.projects.items():
+        for done, (name, project) in enumerate(cfg.projects.items(), start=1):
             adapter = adapters.build(project, worktree)
             started = time.monotonic()
             verdict, collection = adapter.run(None), adapter.collect()
@@ -310,6 +310,10 @@ def cmd_run_start(args) -> Envelope:
                 event="baseline_captured", project=name,
                 test_count=len(collection.tests), elapsed_s=round(elapsed, 2),
             )
+            # `projects_done` counts *completed* probes: after the first project
+            # finishes, the next `adapters.build` call (for the second project) must
+            # see 1, not 0.
+            ledger.update_claim(str(worktree), projects_done=done, current_project=name)
         for name, (verdict, collection) in probes.items():
             if not collection.tests and collection.failed_files:
                 sample = sorted(collection.failed_files)[0]

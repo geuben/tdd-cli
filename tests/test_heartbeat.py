@@ -107,3 +107,4 @@ def test_claim_records_projects_done_as_each_completes(repo_multi, monkeypatch):
     second = seen[1]
     assert second is not None
     assert second["projects_done"] == 1, second
+    assert second["projects_total"] == 2, second

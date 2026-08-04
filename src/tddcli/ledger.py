@@ -349,7 +349,14 @@ class Ledger:
         self.db.commit()
 
     def update_claim(self, worktree: str, projects_done: int, current_project: str) -> None:
-        raise NotImplementedError
+        """Counters and progress only — no per-project timing history, that lives in
+        the stderr heartbeat lines."""
+        self.db.execute(
+            "UPDATE baseline_claim SET projects_done = ?, current_project = ?"
+            " WHERE worktree_path = ?",
+            (projects_done, current_project, worktree),
+        )
+        self.db.commit()
 
     def active_claim(self, worktree: str) -> dict | None:
         """Read-only, per the store's append-only contract — `cmd_progress` and
