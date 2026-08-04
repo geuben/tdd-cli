@@ -35,3 +35,8 @@ def test_doctor_reports_a_per_project_result_map(repo_broken):
     out = run_cli(repo_broken, "doctor")
     projects = out["result"]["projects"]
     assert projects["verify"]["ok"] is False, projects
+
+
+def test_doctor_fails_when_a_check_fails(repo_broken):
+    out = run_cli(repo_broken, "doctor")
+    assert out["ok"] is False, out
