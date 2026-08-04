@@ -73,6 +73,9 @@ class Adapter:
     def collect(self) -> Collection:
         raise NotImplementedError
 
+    def collectable(self) -> GateResult:
+        raise NotImplementedError
+
     def lint(self) -> GateResult:
         return self._gate(self.project.lint)
 
