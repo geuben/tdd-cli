@@ -7,7 +7,10 @@ from __future__ import annotations
 
 import os
 import socket
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
+
+import pytest
 
 from conftest import run_cli, write_plan
 from tddcli import adapters, gitutil
@@ -136,3 +139,22 @@ def test_a_refused_baseline_leaves_no_claim(repo):
 
     led = Ledger(gitutil.repo_identity(repo))
     assert led.all("SELECT * FROM baseline_claim") == []
+
+
+def test_a_claim_from_a_dead_process_is_reclaimed(repo):
+    """A `run start` that was `SIGKILL`ed leaves a claim behind naming a pid that is
+    no longer running. Without reclaim, that blocks the worktree forever."""
+    proc = subprocess.Popen(["true"])
+    proc.wait()
+    dead_pid = proc.pid
+    with pytest.raises(ProcessLookupError):
+        os.kill(dead_pid, 0)
+
+    plan = register(repo)
+    led = Ledger(gitutil.repo_identity(repo))
+    led.claim(
+        str(repo), hostname=socket.gethostname(), pid=dead_pid, projects_total=1,
+    )
+
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"] is True, out
