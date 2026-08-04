@@ -142,3 +142,10 @@ def test_bare_progress_reports_collecting_baseline(repo):
     text = run_cli_text(repo, "progress")
     assert "collecting baseline" in text
     assert "1" in text and "2" in text
+
+
+def test_status_reports_collecting_baseline(repo):
+    open_claim(repo)
+    out = run_cli(repo, "status")
+    assert out["result"]["status"] == "collecting_baseline"
+    assert out["next_action"]["verb"] == "await_baseline"
