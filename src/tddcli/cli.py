@@ -217,7 +217,7 @@ def cmd_doctor(args) -> Envelope:
 
     ok = all(c["ok"] for c in checks)
     return Envelope(
-        ok=True,
+        ok=ok,
         result={"checks": checks, "projects": projects, "healthy": ok},
         next_action=NextAction(
             Verb.CONFIRM_CYCLE_APPLICABLE if ok else Verb.RESOLVE_BLOCKER,

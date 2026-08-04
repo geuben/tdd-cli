@@ -396,7 +396,7 @@ not start had no verb telling it to wait rather than re-run. `await_baseline` is
 | Command | Behaviour |
 |---|---|
 | `tdd init` | scaffold `tdd.toml` from detected projects, for human review |
-| `tdd doctor` | preflight: registry valid, adapters runnable, reporters installed, worktree resolvable, no stale report artifacts, tree clean enough |
+| `tdd doctor` | preflight: registry valid, adapters runnable, reporters installed, worktree resolvable, no stale report artifacts, tree clean enough. `ok` mirrors `healthy` (cycle 17) — a failing check is a non-zero exit, not `ok: true` with `healthy: false` buried in `result` |
 
 ### 8.2 Registration
 | Command | Behaviour |
