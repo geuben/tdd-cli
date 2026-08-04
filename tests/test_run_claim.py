@@ -90,14 +90,33 @@ def test_start_is_rejected_while_a_baseline_is_collecting(repo):
 
 def test_only_one_of_two_concurrent_starts_wins(repo):
     """P1, reproduced as a test. Assert on returned envelopes only — `run_cli`
-    redirects stdout process-globally and threaded output interleaves (P1 caveat)."""
+    redirects stdout process-globally and threaded output interleaves (P1 caveat).
+
+    Calls `cmd_run_start` directly rather than through `run_cli`: `contextlib.
+    redirect_stdout` is itself process-global, and two threads entering/exiting it
+    concurrently can hand one thread an empty buffer before either envelope is ever
+    inspected — a capture-layer race, not the claim race this test targets. `cwd` is
+    set once, outside the thread pool, since both attempts target the same worktree
+    and need no per-call `chdir`.
+    """
+    import os as os_mod
+
+    from tddcli.cli import build_parser, cmd_run_start
+
     plan = register(repo)
+    parser = build_parser()
 
     def attempt(_):
-        return run_cli(repo, "run", "start", "--plan", plan)
+        args = parser.parse_args(["run", "start", "--plan", plan])
+        return cmd_run_start(args).to_dict()
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(attempt, range(2)))
+    prev = os_mod.getcwd()
+    os_mod.chdir(repo)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(attempt, range(2)))
+    finally:
+        os_mod.chdir(prev)
 
     oks = [r["ok"] for r in results]
     assert oks.count(True) == 1, results

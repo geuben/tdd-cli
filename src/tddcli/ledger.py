@@ -214,7 +214,13 @@ class Ledger:
     def __init__(self, repo_path: Path):
         self.repo_path = repo_path
         self.path = ledger_path(repo_path)
-        self.db = sqlite3.connect(self.path)
+        # A generous busy timeout: two `run start` calls against one worktree open
+        # separate connections and both write (claim, then run/baseline rows).
+        # SQLite's default 5s timeout can be exceeded while one holds the write lock
+        # through a real baseline probe (subprocess pytest/vitest calls), surfacing
+        # as `sqlite3.OperationalError: database is locked` instead of the intended
+        # `IntegrityError` rejection path.
+        self.db = sqlite3.connect(self.path, timeout=30.0)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA foreign_keys=ON")
@@ -230,11 +236,21 @@ class Ledger:
     def insert(self, table: str, **cols) -> int:
         keys = ", ".join(cols)
         marks = ", ".join("?" for _ in cols)
-        cur = self.db.execute(
-            f"INSERT INTO {table} ({keys}) VALUES ({marks})", tuple(cols.values())
-        )
-        self.db.commit()
-        return cur.lastrowid
+        try:
+            cur = self.db.execute(
+                f"INSERT INTO {table} ({keys}) VALUES ({marks})", tuple(cols.values())
+            )
+            self.db.commit()
+            return cur.lastrowid
+        except Exception:
+            # A failed statement (e.g. the `baseline_claim.worktree_path` UNIQUE
+            # violation that is the claim's lock) otherwise leaves this connection's
+            # implicit transaction open — Python's sqlite3 module does not roll back
+            # on error. An unrolled-back writer holds SQLite's write lock until this
+            # connection is garbage collected, which can starve a concurrent
+            # connection's own writes well past any reasonable busy timeout.
+            self.db.rollback()
+            raise
 
     def one(self, sql: str, params: tuple = ()) -> sqlite3.Row | None:
         return self.db.execute(sql, params).fetchone()
