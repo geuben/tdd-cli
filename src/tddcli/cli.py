@@ -66,6 +66,26 @@ def _claim_elapsed_s(claim: dict) -> float:
     return round((datetime.now(timezone.utc) - started).total_seconds(), 2)
 
 
+def _collecting_envelope(claim: dict) -> Envelope:
+    """Shared by `cmd_progress` (JSON and bare) and `cmd_status`: a claim with no run
+    row yet is an in-flight baseline (issue #2), not "never started". `status` is
+    documented as the agent's machine view; agents polled `progress` because
+    `status` gave them nothing — routing them to the human command to learn machine
+    state was the actual defect."""
+    return Envelope(
+        result={
+            "status": "collecting_baseline",
+            "projects_done": claim["projects_done"],
+            "projects_total": claim["projects_total"],
+            "current_project": claim["current_project"],
+            "elapsed_s": _claim_elapsed_s(claim),
+        },
+        next_action=NextAction(
+            Verb.AWAIT_BASELINE, "A baseline is being collected; poll `tdd progress` again.",
+        ),
+    )
+
+
 # -- commands ------------------------------------------------------------
 
 
@@ -409,6 +429,9 @@ def cmd_run_start(args) -> Envelope:
 def cmd_status(args) -> Envelope:
     worktree, cfg, ledger, run = _context(require_run=False)
     if run is None:
+        claim = ledger.active_claim(str(worktree))
+        if claim is not None:
+            return _collecting_envelope(claim)
         return Envelope(
             result={"active": False},
             next_action=NextAction(
@@ -760,24 +783,17 @@ def cmd_progress(args) -> Envelope:
         # "collecting" would be the same ambiguity in a new place.
         claim = ledger.active_claim(str(worktree))
         if claim is not None:
-            result = {
-                "status": "collecting_baseline",
-                "projects_done": claim["projects_done"],
-                "projects_total": claim["projects_total"],
-                "current_project": claim["current_project"],
-                "elapsed_s": _claim_elapsed_s(claim),
-            }
-            next_action = NextAction(
-                Verb.AWAIT_BASELINE, "A baseline is being collected; poll `tdd progress` again.",
-            )
+            envelope = _collecting_envelope(claim)
             if args.json:
-                return Envelope(result=result, next_action=next_action)
+                return envelope
+            result = envelope.result
             current = f" (current: {result['current_project']})" if result["current_project"] else ""
             sys.stdout.write(
                 f"collecting baseline: {result['projects_done']}/{result['projects_total']}"
                 f" projects{current} — {result['elapsed_s']}s elapsed\n"
             )
-            return Envelope(result=result, next_action=next_action, silent=True)
+            envelope.silent = True
+            return envelope
         return failure("no runs recorded for this worktree")
     if args.json:
         engine = _engine(worktree, cfg, ledger, run)
