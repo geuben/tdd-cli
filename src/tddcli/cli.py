@@ -193,6 +193,14 @@ def cmd_doctor(args) -> Envelope:
             )
             check(f"{name}: pytest-json-report installed", code == 0, (err or "")[:200])
 
+        # Whole-suite `--collect-only`/`vitest list` (§10, cycle 15) — a single, cheap
+        # probe (P3: 0.04s on a broken project) that attributes a collection failure
+        # to its project. Nothing shells out to doctor today, so this is the only
+        # place a `ModuleNotFoundError` like the real `pyyaml` incident surfaces.
+        adapter = adapters.build(project, worktree)
+        gate = adapter.collectable()
+        check(f"{name}: collectable", gate.ok, gate.output)
+
     for art in cfg.artifacts.values():
         check(f"artifact {art.name}: has check or regenerate", bool(art.check or art.regenerate))
 

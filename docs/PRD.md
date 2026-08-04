@@ -555,6 +555,7 @@ The CLI stages; it never delegates staging to the agent, and it never runs `git 
 ```
 Adapter.run(project, target_test | None) -> Verdict
 Adapter.collect(project)                 -> set[test_id]
+Adapter.collectable(project)             -> GateResult
 Adapter.lint(project)                    -> GateResult
 Adapter.typecheck(project)               -> GateResult
 ```
@@ -573,6 +574,13 @@ Adapter.typecheck(project)               -> GateResult
 - **R10.5** Where per-file collection still yields nothing usable, the tool falls back to the
   contract's declared test id and records the degradation.
 - **R10.6** Adding an adapter requires no change to core logic.
+- **R10.7** `collectable()` is a single **whole-suite** `--collect-only` (pytest) / `vitest list`
+  (vitest) probe used only by `tdd doctor` (§8.1, issues #3/#5) — distinct from, and never a
+  substitute for, the per-file `collect()` loop in R10.3/R10.4, which is what makes a real
+  baseline slow (issue #1). `tdd doctor` reads the subprocess's **stdout**: `uv` writes
+  environment warnings (e.g. `VIRTUAL_ENV=... does not match ...`) to stderr, while pytest writes
+  the actual collection error (e.g. `ModuleNotFoundError`) to stdout. A check that reads stderr
+  reports the wrapper's noise and loses the real error underneath it.
 
 ---
 
