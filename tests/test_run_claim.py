@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import socket
+from concurrent.futures import ThreadPoolExecutor
 
 from conftest import run_cli, write_plan
 from tddcli import adapters, gitutil
@@ -85,3 +86,18 @@ def test_start_is_rejected_while_a_baseline_is_collecting(repo):
     out = run_cli(repo, "run", "start", "--plan", plan)
     assert out["ok"] is False
     assert out["result"]["reason"] == "baseline_in_progress"
+
+
+def test_only_one_of_two_concurrent_starts_wins(repo):
+    """P1, reproduced as a test. Assert on returned envelopes only — `run_cli`
+    redirects stdout process-globally and threaded output interleaves (P1 caveat)."""
+    plan = register(repo)
+
+    def attempt(_):
+        return run_cli(repo, "run", "start", "--plan", plan)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(attempt, range(2)))
+
+    oks = [r["ok"] for r in results]
+    assert oks.count(True) == 1, results
