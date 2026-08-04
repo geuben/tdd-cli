@@ -80,3 +80,7 @@ class Envelope:
 
 def failure(error: str, **result) -> Envelope:
     return Envelope(ok=False, error=error, result=result)
+
+
+def heartbeat(**fields) -> None:
+    raise NotImplementedError
