@@ -11,6 +11,7 @@ import os
 import socket
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 from . import (
@@ -301,11 +302,13 @@ def cmd_run_start(args) -> Envelope:
         probes = {}
         for name, project in cfg.projects.items():
             adapter = adapters.build(project, worktree)
+            started = time.monotonic()
             verdict, collection = adapter.run(None), adapter.collect()
+            elapsed = time.monotonic() - started
             probes[name] = (verdict, collection)
             heartbeat(
                 event="baseline_captured", project=name,
-                test_count=len(collection.tests),
+                test_count=len(collection.tests), elapsed_s=round(elapsed, 2),
             )
         for name, (verdict, collection) in probes.items():
             if not collection.tests and collection.failed_files:
