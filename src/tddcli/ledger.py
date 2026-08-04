@@ -234,24 +234,32 @@ class Ledger:
 
     # -- generic helpers -------------------------------------------------
 
+    def _write(self, sql: str, params: tuple) -> sqlite3.Cursor:
+        """Every write goes through here, so none can strand the write lock.
+
+        Python's sqlite3 module does not roll back a failed statement, so a
+        constraint violation — the `baseline_claim.worktree_path` UNIQUE violation
+        that *is* the claim's lock, among others — leaves this connection's implicit
+        transaction open. An unrolled-back writer holds SQLite's write lock until the
+        connection is garbage collected, starving concurrent writers well past any
+        reasonable busy timeout. The claim mechanism is designed around failed writes
+        being cheap and side-effect-free, so this must hold on every path, not just
+        the one that happened to be exercised under load.
+        """
+        try:
+            cur = self.db.execute(sql, params)
+            self.db.commit()
+            return cur
+        except Exception:
+            self.db.rollback()
+            raise
+
     def insert(self, table: str, **cols) -> int:
         keys = ", ".join(cols)
         marks = ", ".join("?" for _ in cols)
-        try:
-            cur = self.db.execute(
-                f"INSERT INTO {table} ({keys}) VALUES ({marks})", tuple(cols.values())
-            )
-            self.db.commit()
-            return cur.lastrowid
-        except Exception:
-            # A failed statement (e.g. the `baseline_claim.worktree_path` UNIQUE
-            # violation that is the claim's lock) otherwise leaves this connection's
-            # implicit transaction open — Python's sqlite3 module does not roll back
-            # on error. An unrolled-back writer holds SQLite's write lock until this
-            # connection is garbage collected, which can starve a concurrent
-            # connection's own writes well past any reasonable busy timeout.
-            self.db.rollback()
-            raise
+        return self._write(
+            f"INSERT INTO {table} ({keys}) VALUES ({marks})", tuple(cols.values())
+        ).lastrowid
 
     def one(self, sql: str, params: tuple = ()) -> sqlite3.Row | None:
         return self.db.execute(sql, params).fetchone()
@@ -261,10 +269,9 @@ class Ledger:
 
     def update(self, table: str, row_id: int, **cols) -> None:
         sets = ", ".join(f"{k} = ?" for k in cols)
-        self.db.execute(
+        self._write(
             f"UPDATE {table} SET {sets} WHERE id = ?", (*cols.values(), row_id)
         )
-        self.db.commit()
 
     # -- domain queries --------------------------------------------------
 
