@@ -158,3 +158,16 @@ def test_a_claim_from_a_dead_process_is_reclaimed(repo):
 
     out = run_cli(repo, "run", "start", "--plan", plan)
     assert out["ok"] is True, out
+
+
+def test_baseline_in_progress_tells_the_agent_to_poll(repo):
+    plan = register(repo)
+    led = Ledger(gitutil.repo_identity(repo))
+    led.claim(
+        str(repo), hostname=socket.gethostname(), pid=os.getpid(), projects_total=1,
+    )
+
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"] is False
+    assert "tdd progress" in out["error"]
+    assert "do not re-run" in out["error"]
