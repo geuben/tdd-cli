@@ -309,3 +309,14 @@ class Ledger:
             detail=detail,
             at=now(),
         )
+
+    # -- baseline claim (issue #4 / #2) -----------------------------------
+
+    def claim(self, worktree: str, hostname: str, pid: int, projects_total: int) -> int:
+        raise NotImplementedError
+
+    def release_claim(self, worktree: str) -> None:
+        raise NotImplementedError
+
+    def active_claim(self, worktree: str) -> sqlite3.Row | None:
+        raise NotImplementedError
