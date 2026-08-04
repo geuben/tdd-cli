@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 import socket
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -271,11 +272,18 @@ def cmd_run_start(args) -> Envelope:
 
     # Claim the worktree before probing (issue #4/#2): two `run start` calls against
     # one worktree must not both pass the baseline window. `Ledger.claim`'s `UNIQUE`
-    # insert is the lock.
-    ledger.claim(
-        str(worktree), hostname=socket.gethostname(), pid=os.getpid(),
-        projects_total=len(cfg.projects),
-    )
+    # insert is the lock — do not read-then-write, which is the race this closes
+    # (Finding 4, P6).
+    try:
+        ledger.claim(
+            str(worktree), hostname=socket.gethostname(), pid=os.getpid(),
+            projects_total=len(cfg.projects),
+        )
+    except sqlite3.IntegrityError:
+        return failure(
+            "a baseline is already being collected in this worktree",
+            reason="baseline_in_progress",
+        )
 
     # Probe every project before the run exists (R9.5a). A baseline is subtracted from
     # every later failure set, so an untrustworthy one is worse than none: it reports
