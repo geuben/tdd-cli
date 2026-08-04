@@ -5,6 +5,9 @@ See tasks/multi-agent-feedback.md Part A.
 
 from __future__ import annotations
 
+import os
+import socket
+
 from conftest import run_cli, write_plan
 from tddcli import adapters, gitutil
 from tddcli.ledger import Ledger
@@ -70,3 +73,15 @@ def test_successful_start_leaves_no_claim(repo, monkeypatch):
 
     led = Ledger(gitutil.repo_identity(repo))
     assert led.all("SELECT * FROM baseline_claim") == []
+
+
+def test_start_is_rejected_while_a_baseline_is_collecting(repo):
+    plan = register(repo)
+    led = Ledger(gitutil.repo_identity(repo))
+    led.claim(
+        str(repo), hostname=socket.gethostname(), pid=os.getpid(), projects_total=1,
+    )
+
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"] is False
+    assert out["result"]["reason"] == "baseline_in_progress"
