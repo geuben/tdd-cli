@@ -348,6 +348,9 @@ class Ledger:
         self.db.execute("DELETE FROM baseline_claim WHERE worktree_path = ?", (worktree,))
         self.db.commit()
 
+    def update_claim(self, worktree: str, projects_done: int, current_project: str) -> None:
+        raise NotImplementedError
+
     def active_claim(self, worktree: str) -> dict | None:
         """Read-only, per the store's append-only contract — `cmd_progress` and
         `cmd_status` call this as pure observers. Only `cmd_run_start` acts on the
