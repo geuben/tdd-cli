@@ -166,8 +166,11 @@ def cmd_doctor(args) -> Envelope:
     worktree = _worktree()
     checks: list[dict] = []
 
-    def check(name, ok, detail=""):
-        checks.append({"check": name, "ok": bool(ok), "detail": detail})
+    def check(name, ok, detail="", project=None):
+        entry = {"check": name, "ok": bool(ok), "detail": detail}
+        if project is not None:
+            entry["project"] = project
+        checks.append(entry)
 
     check("worktree resolvable", True, str(worktree))
     try:
@@ -182,16 +185,18 @@ def cmd_doctor(args) -> Envelope:
     check("ledger reachable", True, str(ledger.path))
     check("ledger outside worktree", not str(ledger.path).startswith(str(worktree)), str(ledger.path))
 
+    projects: dict[str, dict] = {}
     for name, project in cfg.projects.items():
+        before = len(checks)
         root = worktree / project.root
-        check(f"{name}: root exists", root.is_dir(), str(root))
-        check(f"{name}: adapter known", project.adapter in adapters.REGISTRY, project.adapter)
-        check(f"{name}: test_paths declared", bool(project.test_paths))
+        check("root exists", root.is_dir(), str(root), project=name)
+        check("adapter known", project.adapter in adapters.REGISTRY, project.adapter, project=name)
+        check("test_paths declared", bool(project.test_paths), project=name)
         if project.adapter == "pytest":
             code, out, err = adapters.base.run_command(
                 "uv run python -c 'import pytest_jsonreport'", root
             )
-            check(f"{name}: pytest-json-report installed", code == 0, (err or "")[:200])
+            check("pytest-json-report installed", code == 0, (err or "")[:200], project=name)
 
         # Whole-suite `--collect-only`/`vitest list` (§10, cycle 15) — a single, cheap
         # probe (P3: 0.04s on a broken project) that attributes a collection failure
@@ -199,7 +204,9 @@ def cmd_doctor(args) -> Envelope:
         # place a `ModuleNotFoundError` like the real `pyyaml` incident surfaces.
         adapter = adapters.build(project, worktree)
         gate = adapter.collectable()
-        check(f"{name}: collectable", gate.ok, gate.output)
+        check("collectable", gate.ok, gate.output, project=name)
+
+        projects[name] = {"ok": all(c["ok"] for c in checks[before:])}
 
     for art in cfg.artifacts.values():
         check(f"artifact {art.name}: has check or regenerate", bool(art.check or art.regenerate))
@@ -211,7 +218,7 @@ def cmd_doctor(args) -> Envelope:
     ok = all(c["ok"] for c in checks)
     return Envelope(
         ok=True,
-        result={"checks": checks, "healthy": ok},
+        result={"checks": checks, "projects": projects, "healthy": ok},
         next_action=NextAction(
             Verb.CONFIRM_CYCLE_APPLICABLE if ok else Verb.RESOLVE_BLOCKER,
             "Environment is ready." if ok else "Resolve the failing checks above.",
