@@ -17,7 +17,7 @@ See tasks/multi-agent-feedback.md Part D.
 
 from __future__ import annotations
 
-from conftest import run_cli
+from conftest import git, run_cli
 
 
 def test_doctor_attributes_a_collection_failure_to_its_project(repo_broken):
@@ -40,6 +40,19 @@ def test_doctor_reports_a_per_project_result_map(repo_broken):
 def test_doctor_fails_when_a_check_fails(repo_broken):
     out = run_cli(repo_broken, "doctor")
     assert out["ok"] is False, out
+
+
+def test_doctor_succeeds_when_every_check_passes(repo):
+    """The other half of cycle 17's `ok = healthy`: a genuinely healthy environment
+    must still report `ok: true`, not just fail loudly when unhealthy. `uv run`'s
+    `.venv` and pytest's cache directories are gitignored so `worktree clean` can
+    actually pass — see the plan's "Fixture friction" note on `repo_broken`."""
+    (repo / ".gitignore").write_text(".venv/\n__pycache__/\n.pytest_cache/\n*.egg-info/\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "add gitignore")
+
+    out = run_cli(repo, "doctor")
+    assert out["ok"] is True, out["result"]["checks"]
 
 
 def test_doctor_names_a_missing_node_modules(repo_multi):
