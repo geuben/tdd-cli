@@ -12,10 +12,21 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS baseline_claim (
+    id INTEGER PRIMARY KEY,
+    worktree_path TEXT NOT NULL UNIQUE,
+    hostname TEXT NOT NULL,
+    pid INTEGER NOT NULL,
+    projects_total INTEGER NOT NULL DEFAULT 0,
+    projects_done INTEGER NOT NULL DEFAULT 0,
+    current_project TEXT,
+    started_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS plan_contract (
     id INTEGER PRIMARY KEY,

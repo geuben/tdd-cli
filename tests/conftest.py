@@ -54,6 +54,67 @@ def repo(tmp_path, ledger_home):
     return root
 
 
+@pytest.fixture
+def repo_multi(repo, ledger_home):
+    """`repo` plus an empty vitest `frontend` (a `package.json`, no test files).
+
+    P5 proved this starts a run cleanly: `run start` reports `baselines: {backend: 0,
+    frontend: 0}`. Used by cycles 9 and 18.
+    """
+    (repo / "frontend").mkdir()
+    (repo / "frontend" / "package.json").write_text('{"name": "frontend", "version": "1.0.0"}\n')
+    (repo / "tdd.toml").write_text(
+        '[project.backend]\n'
+        'root       = "backend"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        "lint       = []\n"
+        "typecheck  = []\n"
+        "\n"
+        "[project.frontend]\n"
+        'root       = "frontend"\n'
+        'adapter    = "vitest"\n'
+        'test_paths = ["**/*.test.ts", "**/*.test.tsx"]\n'
+        "lint       = []\n"
+        "typecheck  = []\n"
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "add empty vitest frontend")
+    return repo
+
+
+@pytest.fixture
+def repo_broken(repo, ledger_home):
+    """`repo` plus a second pytest project `verify` that cannot collect.
+
+    Mirrors the real `pyyaml` incident. P4 proved `run start` refuses this project —
+    so it must only be used by doctor cycles (15-17), which need no run.
+    """
+    (repo / "verify" / "tests").mkdir(parents=True)
+    (repo / "verify" / "tests" / "test_v.py").write_text(
+        "import yaml_does_not_exist\n\n"
+        "def test_v():\n    assert True\n"
+    )
+    (repo / "tdd.toml").write_text(
+        '[project.backend]\n'
+        'root       = "backend"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        "lint       = []\n"
+        "typecheck  = []\n"
+        "\n"
+        "[project.verify]\n"
+        'root       = "verify"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        "lint       = []\n"
+        "typecheck  = []\n"
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "add broken verify project")
+    return repo
+
+
 def write_plan(repo: Path, body: str, name: str = "tasks/plan.md") -> str:
     path = repo / name
     path.parent.mkdir(parents=True, exist_ok=True)
