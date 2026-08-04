@@ -24,7 +24,7 @@ from . import (
 )
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
-from .envelope import Envelope, NextAction, Verb, failure
+from .envelope import Envelope, NextAction, Verb, failure, heartbeat
 from .ledger import Ledger, now
 from .machine import CLOSED, SKIPPED, Engine
 
@@ -301,7 +301,12 @@ def cmd_run_start(args) -> Envelope:
         probes = {}
         for name, project in cfg.projects.items():
             adapter = adapters.build(project, worktree)
-            probes[name] = (adapter.run(None), adapter.collect())
+            verdict, collection = adapter.run(None), adapter.collect()
+            probes[name] = (verdict, collection)
+            heartbeat(
+                event="baseline_captured", project=name,
+                test_count=len(collection.tests),
+            )
         for name, (verdict, collection) in probes.items():
             if not collection.tests and collection.failed_files:
                 sample = sorted(collection.failed_files)[0]

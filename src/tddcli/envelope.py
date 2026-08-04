@@ -83,4 +83,8 @@ def failure(error: str, **result) -> Envelope:
 
 
 def heartbeat(**fields) -> None:
-    raise NotImplementedError
+    """A progress line on stderr (issue #1). Never stdout — PRD §8's envelope
+    contract lives there, and NDJSON in front of it breaks every consumer that does
+    `json.loads(stdout)`. `flush=True` is not optional: unflushed output defeats the
+    entire purpose of making a slow baseline legible while it runs."""
+    print(json.dumps(fields), file=sys.stderr, flush=True)
