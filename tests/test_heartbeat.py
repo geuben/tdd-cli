@@ -64,3 +64,18 @@ def test_baseline_captured_line_is_written_per_project(repo, capsys):
     backend = next((line for line in lines if line.get("project") == "backend"), None)
     assert backend is not None, lines
     assert isinstance(backend["test_count"], int)
+
+
+def test_baseline_heartbeat_reports_elapsed_seconds(repo, capsys):
+    plan = register(repo)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+
+    captured = capsys.readouterr()
+    lines = [
+        line for line in _heartbeat_lines(captured.err)
+        if line.get("event") == "baseline_captured"
+    ]
+    backend = next((line for line in lines if line.get("project") == "backend"), None)
+    assert backend is not None, lines
+    assert isinstance(backend["elapsed_s"], (int, float))
