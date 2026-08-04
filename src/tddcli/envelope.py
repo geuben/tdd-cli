@@ -12,7 +12,7 @@ import sys
 from dataclasses import dataclass, field
 from enum import Enum
 
-VERB_SET_VERSION = 1
+VERB_SET_VERSION = 2
 
 
 class Verb(str, Enum):
@@ -26,6 +26,7 @@ class Verb(str, Enum):
     CONFIRM_CYCLE_APPLICABLE = "confirm_cycle_applicable"
     ANNOTATE_CYCLE = "annotate_cycle"
     RESOLVE_BLOCKER = "resolve_blocker"
+    AWAIT_BASELINE = "await_baseline"
     COMPLETE = "complete"
     BLOCKED = "blocked"
 

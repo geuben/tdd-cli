@@ -378,12 +378,19 @@ human-readable and explicitly non-authoritative. Adding a verb is a specificatio
 write_test          write_implementation      create_stub
 fix_regression      run_sensitivity_check     name_target_test
 refactor_or_advance confirm_cycle_applicable  annotate_cycle
-resolve_blocker     complete (terminal)       blocked (terminal)
+resolve_blocker     await_baseline            complete (terminal)
+blocked (terminal)
 ```
 
 Any situation the tool cannot express with one of these verbs is a gap in the state machine.
 Surfacing it as a specification change — rather than as prose in a skill — is the point of
 closing the set.
+
+**`verb_set_version: 2`** — added `await_baseline` (issue #2): a baseline can take minutes on a
+real project (R10.3/R10.4's per-file collection), and a polling agent that inherited a run it did
+not start had no verb telling it to wait rather than re-run. `await_baseline` is non-terminal;
+`tdd progress` and `tdd status` emit it while a `baseline_claim` is open and no run row exists yet
+(§8.3).
 
 ### 8.1 Setup
 | Command | Behaviour |
