@@ -171,3 +171,30 @@ def test_baseline_in_progress_tells_the_agent_to_poll(repo):
     assert out["ok"] is False
     assert "tdd progress" in out["error"]
     assert "do not re-run" in out["error"]
+
+
+def test_a_fresh_cross_host_claim_is_not_stale(repo):
+    """A pid is meaningless from another host (Decisions); a fresh claim from one
+    must not be treated as dead just because it names a foreign hostname."""
+    led = Ledger(gitutil.repo_identity(repo))
+    led.claim(str(repo), hostname="some-other-host", pid=1, projects_total=1)
+
+    claim = led.active_claim(str(repo))
+    assert claim["stale"] is False, claim
+
+
+def test_an_old_cross_host_claim_is_stale(repo):
+    """Past the 60-minute age fallback, a cross-host claim is reclaimed — otherwise
+    a crashed agent on another machine bricks the worktree forever."""
+    import datetime as _dt
+
+    led = Ledger(gitutil.repo_identity(repo))
+    led.claim(str(repo), hostname="some-other-host", pid=1, projects_total=1)
+    old = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(minutes=61)).isoformat()
+    led.db.execute(
+        "UPDATE baseline_claim SET started_at = ? WHERE worktree_path = ?", (old, str(repo)),
+    )
+    led.db.commit()
+
+    claim = led.active_claim(str(repo))
+    assert claim["stale"] is True, claim
