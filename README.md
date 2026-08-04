@@ -147,6 +147,24 @@ and is never reclassified as a pin.
 | `tdd log render [--out]` | project the ledger into a friction log |
 | `tdd metrics` | fidelity, attempts, violations, interventions |
 
+## Running a long baseline
+
+`run start` probes every project's suite before a run exists (R9.5a), and on a real project
+that can take minutes — well past an agent harness's default Bash timeout. If the command
+appears to hang or time out, **do not re-run it**: a second `run start` against the same
+worktree is refused with `reason: "baseline_in_progress"`, and re-running repeatedly is exactly
+what caused the original problem this section exists to prevent. In order of preference:
+
+1. **Background it.** Run `tdd run start` in the background if your harness supports it. The
+   heartbeat (`baseline_captured` / `project_completed` lines on stderr) lands in the task log
+   as each project finishes, and most harnesses re-invoke the agent when a backgrounded command
+   exits — a real completion callback, with no timeout ceiling.
+2. **Raise the timeout.** Claude Code's Bash tool takes an explicit `timeout` (default 120000ms,
+   max 600000ms). A baseline that takes 3–8 minutes fits inside ten.
+3. **Poll.** `tdd progress` (and `tdd status`) report `collecting_baseline` with per-project
+   counters and elapsed time while a baseline is in flight, with `next_action.verb ==
+   "await_baseline"` — the fallback for an agent that inherited a run it did not start itself.
+
 ## Storage
 
 One SQLite ledger **per repository**, in `~/.local/share/tdd-cli/` (override with

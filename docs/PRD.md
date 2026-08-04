@@ -378,18 +378,25 @@ human-readable and explicitly non-authoritative. Adding a verb is a specificatio
 write_test          write_implementation      create_stub
 fix_regression      run_sensitivity_check     name_target_test
 refactor_or_advance confirm_cycle_applicable  annotate_cycle
-resolve_blocker     complete (terminal)       blocked (terminal)
+resolve_blocker     await_baseline            complete (terminal)
+blocked (terminal)
 ```
 
 Any situation the tool cannot express with one of these verbs is a gap in the state machine.
 Surfacing it as a specification change — rather than as prose in a skill — is the point of
 closing the set.
 
+**`verb_set_version: 2`** — added `await_baseline` (issue #2): a baseline can take minutes on a
+real project (R10.3/R10.4's per-file collection), and a polling agent that inherited a run it did
+not start had no verb telling it to wait rather than re-run. `await_baseline` is non-terminal;
+`tdd progress` and `tdd status` emit it while a `baseline_claim` is open and no run row exists yet
+(§8.3).
+
 ### 8.1 Setup
 | Command | Behaviour |
 |---|---|
 | `tdd init` | scaffold `tdd.toml` from detected projects, for human review |
-| `tdd doctor` | preflight: registry valid, adapters runnable, reporters installed, worktree resolvable, no stale report artifacts, tree clean enough |
+| `tdd doctor` | preflight: registry valid, adapters runnable, reporters installed, worktree resolvable, no stale report artifacts, tree clean enough. `ok` mirrors `healthy` (cycle 17) — a failing check is a non-zero exit, not `ok: true` with `healthy: false` buried in `result` |
 
 ### 8.2 Registration
 | Command | Behaviour |
@@ -548,6 +555,7 @@ The CLI stages; it never delegates staging to the agent, and it never runs `git 
 ```
 Adapter.run(project, target_test | None) -> Verdict
 Adapter.collect(project)                 -> set[test_id]
+Adapter.collectable(project)             -> GateResult
 Adapter.lint(project)                    -> GateResult
 Adapter.typecheck(project)               -> GateResult
 ```
@@ -566,6 +574,13 @@ Adapter.typecheck(project)               -> GateResult
 - **R10.5** Where per-file collection still yields nothing usable, the tool falls back to the
   contract's declared test id and records the degradation.
 - **R10.6** Adding an adapter requires no change to core logic.
+- **R10.7** `collectable()` is a single **whole-suite** `--collect-only` (pytest) / `vitest list`
+  (vitest) probe used only by `tdd doctor` (§8.1, issues #3/#5) — distinct from, and never a
+  substitute for, the per-file `collect()` loop in R10.3/R10.4, which is what makes a real
+  baseline slow (issue #1). `tdd doctor` reads the subprocess's **stdout**: `uv` writes
+  environment warnings (e.g. `VIRTUAL_ENV=... does not match ...`) to stderr, while pytest writes
+  the actual collection error (e.g. `ModuleNotFoundError`) to stdout. A check that reads stderr
+  reports the wrapper's noise and loses the real error underneath it.
 
 ---
 

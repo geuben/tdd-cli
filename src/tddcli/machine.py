@@ -14,6 +14,7 @@ in advance, never inferred from the outcome.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,7 +22,7 @@ from . import adapters, contract as contract_mod, gitutil, staging
 from .adapters.base import FAILED, NOT_COLLECTED, NOT_FOUND, PASSED
 from .config import Config
 from .contract import PIN, REFACTOR, DeclaredCycle
-from .envelope import Verb
+from .envelope import Verb, heartbeat
 from .ledger import Ledger, now
 
 AWAITING_TEST = "AWAITING_TEST"
@@ -118,8 +119,19 @@ class Engine:
             project = self.config.project(name)
             adapter = adapters.build(project, self.worktree)
             target = next((t for t in targets if t.startswith(f"{name}::")), None)
+            started = time.monotonic()
             verdict = adapter.run(target)
+            elapsed = time.monotonic() - started
             verdicts.append(verdict)
+            # Unconditional, not past a duration threshold — a conditional heartbeat
+            # goes silent exactly when a run is slow for an unexpected reason.
+            # Distinct event name from `baseline_captured`: same channel, different
+            # meaning. `phase` separates these from the close sweep's own lines,
+            # which `sweep()` emits — it does not route through here.
+            heartbeat(
+                event="project_completed", project=name, phase=phase,
+                elapsed_s=round(elapsed, 2),
+            )
 
             base = baselines.get(name, set())
             other = [f for f in verdict.failed if f not in base and f not in targets]
@@ -172,7 +184,12 @@ class Engine:
         for name in names:
             project = self.config.project(name)
             adapter = adapters.build(project, self.worktree)
+            started = time.monotonic()
             verdict = adapter.run(None)
+            heartbeat(
+                event="project_completed", project=name, phase="CLOSE_SWEEP",
+                elapsed_s=round(time.monotonic() - started, 2),
+            )
             base = baselines.get(name, set())
             failures.extend(f for f in verdict.failed if f not in base)
             self.ledger.insert(

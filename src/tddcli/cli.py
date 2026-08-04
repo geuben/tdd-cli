@@ -7,7 +7,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import socket
+import sqlite3
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import (
@@ -21,7 +26,7 @@ from . import (
 )
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
-from .envelope import Envelope, NextAction, Verb, failure
+from .envelope import Envelope, NextAction, Verb, failure, heartbeat
 from .ledger import Ledger, now
 from .machine import CLOSED, SKIPPED, Engine
 
@@ -52,6 +57,33 @@ def _context(require_run: bool = True):
 
 def _engine(worktree, cfg, ledger, run) -> Engine:
     return Engine(ledger, cfg, worktree, run)
+
+
+def _claim_elapsed_s(claim: dict) -> float:
+    started = datetime.fromisoformat(claim["started_at"])
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return round((datetime.now(timezone.utc) - started).total_seconds(), 2)
+
+
+def _collecting_envelope(claim: dict) -> Envelope:
+    """Shared by `cmd_progress` (JSON and bare) and `cmd_status`: a claim with no run
+    row yet is an in-flight baseline (issue #2), not "never started". `status` is
+    documented as the agent's machine view; agents polled `progress` because
+    `status` gave them nothing — routing them to the human command to learn machine
+    state was the actual defect."""
+    return Envelope(
+        result={
+            "status": "collecting_baseline",
+            "projects_done": claim["projects_done"],
+            "projects_total": claim["projects_total"],
+            "current_project": claim["current_project"],
+            "elapsed_s": _claim_elapsed_s(claim),
+        },
+        next_action=NextAction(
+            Verb.AWAIT_BASELINE, "A baseline is being collected; poll `tdd progress` again.",
+        ),
+    )
 
 
 # -- commands ------------------------------------------------------------
@@ -134,8 +166,11 @@ def cmd_doctor(args) -> Envelope:
     worktree = _worktree()
     checks: list[dict] = []
 
-    def check(name, ok, detail=""):
-        checks.append({"check": name, "ok": bool(ok), "detail": detail})
+    def check(name, ok, detail="", project=None):
+        entry = {"check": name, "ok": bool(ok), "detail": detail}
+        if project is not None:
+            entry["project"] = project
+        checks.append(entry)
 
     check("worktree resolvable", True, str(worktree))
     try:
@@ -150,16 +185,41 @@ def cmd_doctor(args) -> Envelope:
     check("ledger reachable", True, str(ledger.path))
     check("ledger outside worktree", not str(ledger.path).startswith(str(worktree)), str(ledger.path))
 
+    projects: dict[str, dict] = {}
     for name, project in cfg.projects.items():
+        before = len(checks)
         root = worktree / project.root
-        check(f"{name}: root exists", root.is_dir(), str(root))
-        check(f"{name}: adapter known", project.adapter in adapters.REGISTRY, project.adapter)
-        check(f"{name}: test_paths declared", bool(project.test_paths))
+        check("root exists", root.is_dir(), str(root), project=name)
+        check("adapter known", project.adapter in adapters.REGISTRY, project.adapter, project=name)
+        check("test_paths declared", bool(project.test_paths), project=name)
         if project.adapter == "pytest":
             code, out, err = adapters.base.run_command(
                 "uv run python -c 'import pytest_jsonreport'", root
             )
-            check(f"{name}: pytest-json-report installed", code == 0, (err or "")[:200])
+            check("pytest-json-report installed", code == 0, (err or "")[:200], project=name)
+
+        # Run before `collectable()` (cycle 18) so this actionable message wins over
+        # vitest's stack trace: a git worktree does not inherit `node_modules`
+        # (it isn't tracked), and `npx vitest` fails with a wall of noise that
+        # doesn't say why.
+        if project.adapter == "vitest" and not (root / "node_modules").is_dir():
+            check(
+                "node_modules present", False,
+                "git worktrees do not inherit `node_modules` (it isn't tracked)."
+                " Symlink it from the main checkout, e.g."
+                f" `ln -s <main-checkout>/{project.root}/node_modules {root}/node_modules`.",
+                project=name,
+            )
+
+        # Whole-suite `--collect-only`/`vitest list` (§10, cycle 15) — a single, cheap
+        # probe (P3: 0.04s on a broken project) that attributes a collection failure
+        # to its project. Nothing shells out to doctor today, so this is the only
+        # place a `ModuleNotFoundError` like the real `pyyaml` incident surfaces.
+        adapter = adapters.build(project, worktree)
+        gate = adapter.collectable()
+        check("collectable", gate.ok, gate.output, project=name)
+
+        projects[name] = {"ok": all(c["ok"] for c in checks[before:])}
 
     for art in cfg.artifacts.values():
         check(f"artifact {art.name}: has check or regenerate", bool(art.check or art.regenerate))
@@ -170,8 +230,8 @@ def cmd_doctor(args) -> Envelope:
 
     ok = all(c["ok"] for c in checks)
     return Envelope(
-        ok=True,
-        result={"checks": checks, "healthy": ok},
+        ok=ok,
+        result={"checks": checks, "projects": projects, "healthy": ok},
         next_action=NextAction(
             Verb.CONFIRM_CYCLE_APPLICABLE if ok else Verb.RESOLVE_BLOCKER,
             "Environment is ready." if ok else "Resolve the failing checks above.",
@@ -227,13 +287,38 @@ def cmd_plan_register(args) -> Envelope:
     )
 
 
+def _probe_projects(cfg, worktree, ledger, on_progress):
+    """Probe every project's baseline (R9.5a): run + collect, timing each, emitting a
+    `baseline_captured` heartbeat, and calling `on_progress(done, name)` — extracted
+    from `cmd_run_start`, which carried claiming, timing, heartbeating and progress
+    updates inline past the point of legibility. Returns `{name: (verdict, collection)}`.
+    """
+    probes = {}
+    for done, (name, project) in enumerate(cfg.projects.items(), start=1):
+        adapter = adapters.build(project, worktree)
+        started = time.monotonic()
+        verdict, collection = adapter.run(None), adapter.collect()
+        elapsed = time.monotonic() - started
+        probes[name] = (verdict, collection)
+        heartbeat(
+            event="baseline_captured", project=name,
+            test_count=len(collection.tests), elapsed_s=round(elapsed, 2),
+        )
+        on_progress(done, name)
+    return probes
+
+
 def cmd_run_start(args) -> Envelope:
     worktree = _worktree()
     cfg = config_mod.load(worktree)
     ledger = Ledger(gitutil.repo_identity(worktree))
 
-    if ledger.active_run(str(worktree)) is not None:
-        return failure("a run is already active in this worktree")
+    active = ledger.active_run(str(worktree))
+    if active is not None:
+        return failure(
+            "a run is already active in this worktree",
+            reason="run_already_active", run_id=active["id"], started_at=active["started_at"],
+        )
 
     rel = str(Path(args.plan))
     contract_row = ledger.one(
@@ -263,86 +348,120 @@ def cmd_run_start(args) -> Envelope:
     if contract_row["status"] == "undeclared" and not args.allow_undeclared:
         return failure("contract is undeclared; pass --allow-undeclared")
 
-    # Probe every project before the run exists (R9.5a). A baseline is subtracted from
-    # every later failure set, so an untrustworthy one is worse than none: it reports
-    # pre-existing failures as regressions for the life of the run. Refusing here also
-    # leaves no half-started run behind to block the next attempt.
-    probes = {}
-    for name, project in cfg.projects.items():
-        adapter = adapters.build(project, worktree)
-        probes[name] = (adapter.run(None), adapter.collect())
-    for name, (verdict, collection) in probes.items():
-        if not collection.tests and collection.failed_files:
-            sample = sorted(collection.failed_files)[0]
-            return failure(
-                f"{name}: no test could be collected — {len(collection.failed_files)}"
-                f" file(s) failed to collect, starting with {sample}. The baseline would"
-                " record no failures and every pre-existing failure would then read as a"
-                " regression. Fix the environment (dependencies installed?) and retry.",
-                project=name, failed_files=sorted(collection.failed_files),
-            )
-        if collection.tests and not verdict.passed and not verdict.failed:
-            return failure(
-                f"{name}: the suite collected {len(collection.tests)} test(s) but the"
-                " baseline run executed no tests, so it observed nothing. Check"
-                " `test_command` in tdd.toml and retry.",
-                project=name, collected=len(collection.tests),
-            )
+    # Claim the worktree before probing (issue #4/#2): two `run start` calls against
+    # one worktree must not both pass the baseline window. `Ledger.claim`'s `UNIQUE`
+    # insert is the lock — do not read-then-write, which is the race this closes
+    # (Finding 4, P6). A claim whose owner is gone (e.g. a `SIGKILL`ed `run start`)
+    # is reclaimed rather than obeyed, or one dead process bricks the worktree
+    # forever; `active_claim` only computes staleness, it never deletes.
+    existing = ledger.active_claim(str(worktree))
+    if existing is not None and existing["stale"]:
+        ledger.release_claim(str(worktree))
 
-    executor = identity.resolve(worktree, args.executor)
-    run_id = ledger.insert(
-        "run",
-        plan_contract_id=contract_row["id"],
-        executor_model=executor.model,
-        executor_session=executor.session,
-        executor_source=executor.source,
-        worktree_path=str(worktree),
-        started_at=now(),
-        allow_dirty=int(bool(args.allow_dirty)),
-        preexisting_dirty=json.dumps(dirty),
-        config_sha=config_mod.config_sha(worktree),
-    )
-    run = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
-    if blob_changed:
-        ledger.event(run_id, None, "plan_blob_changed", rel)
-
-    # Baselines and the collection snapshot, per project (R9.5, R8.9) — from the probe
-    # above, so the suite is not run twice.
-    for name, (verdict, collection) in probes.items():
-        ledger.insert(
-            "baseline", run_id=run_id, project=name,
-            failing=json.dumps(sorted(verdict.failed)), captured_at=now(),
+    try:
+        ledger.claim(
+            str(worktree), hostname=socket.gethostname(), pid=os.getpid(),
+            projects_total=len(cfg.projects),
         )
-        ledger.insert(
-            "collection_snapshot", run_id=run_id, project=name,
-            tests=json.dumps(sorted(collection.tests)),
-            failed_files=json.dumps(collection.failed_files), captured_at=now(),
+    except sqlite3.IntegrityError:
+        return failure(
+            "a baseline is already being collected in this worktree; do not re-run"
+            " `run start` — poll `tdd progress` instead, which reports"
+            " `collecting_baseline` with per-project counters until it finishes",
+            reason="baseline_in_progress",
         )
 
-    engine = Engine(ledger, cfg, worktree, run)
-    engine.check_artifacts(None)
-    first = engine.declared[0] if engine.declared else None
-    if first is None:
-        return failure("contract declares no cycles")
-    cycle = engine.open_cycle(first.ordinal)
+    try:
+        # Probe every project before the run exists (R9.5a). A baseline is subtracted
+        # from every later failure set, so an untrustworthy one is worse than none: it
+        # reports pre-existing failures as regressions for the life of the run.
+        # Refusing here also leaves no half-started run behind to block the next
+        # attempt — and must release the claim too, or the retry it invites is itself
+        # refused.
+        probes = _probe_projects(
+            cfg, worktree, ledger,
+            on_progress=lambda done, name: ledger.update_claim(
+                str(worktree), projects_done=done, current_project=name,
+            ),
+        )
+        for name, (verdict, collection) in probes.items():
+            if not collection.tests and collection.failed_files:
+                sample = sorted(collection.failed_files)[0]
+                return failure(
+                    f"{name}: no test could be collected — {len(collection.failed_files)}"
+                    f" file(s) failed to collect, starting with {sample}. The baseline"
+                    " would record no failures and every pre-existing failure would then"
+                    " read as a regression. Fix the environment (dependencies"
+                    " installed?) and retry.",
+                    project=name, failed_files=sorted(collection.failed_files),
+                )
+            if collection.tests and not verdict.passed and not verdict.failed:
+                return failure(
+                    f"{name}: the suite collected {len(collection.tests)} test(s) but"
+                    " the baseline run executed no tests, so it observed nothing. Check"
+                    " `test_command` in tdd.toml and retry.",
+                    project=name, collected=len(collection.tests),
+                )
 
-    verb, opening = engine.opening_action(cycle)
-    detail = f"Run {run_id} started ({executor.model}, via {executor.source}). {opening}"
-    return Envelope(
-        run=engine.run_state(cycle),
-        result={
-            "baselines": {
-                n: len(v) for n, v in ledger.baselines(run_id).items()
+        executor = identity.resolve(worktree, args.executor)
+        run_id = ledger.insert(
+            "run",
+            plan_contract_id=contract_row["id"],
+            executor_model=executor.model,
+            executor_session=executor.session,
+            executor_source=executor.source,
+            worktree_path=str(worktree),
+            started_at=now(),
+            allow_dirty=int(bool(args.allow_dirty)),
+            preexisting_dirty=json.dumps(dirty),
+            config_sha=config_mod.config_sha(worktree),
+        )
+        run = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
+        if blob_changed:
+            ledger.event(run_id, None, "plan_blob_changed", rel)
+
+        # Baselines and the collection snapshot, per project (R9.5, R8.9) — from the
+        # probe above, so the suite is not run twice.
+        for name, (verdict, collection) in probes.items():
+            ledger.insert(
+                "baseline", run_id=run_id, project=name,
+                failing=json.dumps(sorted(verdict.failed)), captured_at=now(),
+            )
+            ledger.insert(
+                "collection_snapshot", run_id=run_id, project=name,
+                tests=json.dumps(sorted(collection.tests)),
+                failed_files=json.dumps(collection.failed_files), captured_at=now(),
+            )
+
+        engine = Engine(ledger, cfg, worktree, run)
+        engine.check_artifacts(None)
+        first = engine.declared[0] if engine.declared else None
+        if first is None:
+            return failure("contract declares no cycles")
+        cycle = engine.open_cycle(first.ordinal)
+
+        verb, opening = engine.opening_action(cycle)
+        detail = f"Run {run_id} started ({executor.model}, via {executor.source}). {opening}"
+        return Envelope(
+            run=engine.run_state(cycle),
+            result={
+                "baselines": {
+                    n: len(v) for n, v in ledger.baselines(run_id).items()
+                },
+                "executor_source": executor.source,
             },
-            "executor_source": executor.source,
-        },
-        next_action=NextAction(verb, detail),
-    )
+            next_action=NextAction(verb, detail),
+        )
+    finally:
+        ledger.release_claim(str(worktree))
 
 
 def cmd_status(args) -> Envelope:
     worktree, cfg, ledger, run = _context(require_run=False)
     if run is None:
+        claim = ledger.active_claim(str(worktree))
+        if claim is not None:
+            return _collecting_envelope(claim)
         return Envelope(
             result={"active": False},
             next_action=NextAction(
@@ -687,6 +806,24 @@ def cmd_progress(args) -> Envelope:
             (str(worktree),),
         )
     if run is None:
+        # A baseline can take minutes; a claim with no run row yet is in-flight, not
+        # "never started" (issue #2). `ok: true` — a polling agent must not see
+        # repeated exit-1, the signal that caused the re-runs in the first place.
+        # Leaving the human form saying "no runs recorded" while JSON says
+        # "collecting" would be the same ambiguity in a new place.
+        claim = ledger.active_claim(str(worktree))
+        if claim is not None:
+            envelope = _collecting_envelope(claim)
+            if args.json:
+                return envelope
+            result = envelope.result
+            current = f" (current: {result['current_project']})" if result["current_project"] else ""
+            sys.stdout.write(
+                f"collecting baseline: {result['projects_done']}/{result['projects_total']}"
+                f" projects{current} — {result['elapsed_s']}s elapsed\n"
+            )
+            envelope.silent = True
+            return envelope
         return failure("no runs recorded for this worktree")
     if args.json:
         engine = _engine(worktree, cfg, ledger, run)

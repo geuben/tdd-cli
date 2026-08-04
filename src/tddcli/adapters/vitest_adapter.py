@@ -19,6 +19,7 @@ from .base import (
     PASSED,
     Adapter,
     Collection,
+    GateResult,
     Verdict,
     run_command,
 )
@@ -128,6 +129,14 @@ class VitestAdapter(Adapter):
             if full_name:
                 found.add(self._id_for(str(path), full_name))
         return found
+
+    def collectable(self) -> GateResult:
+        """A single whole-suite probe, mirroring the pytest adapter's `--collect-only`
+        (§10, cycle 15): `npx vitest list` at the project root rather than the
+        per-file `collect()` loop below."""
+        base = self.project.collect_command or "npx vitest list"
+        code, out, err = run_command(base, self.root)
+        return GateResult(ok=code == 0, output="" if code == 0 else (err or out).strip()[:2000])
 
     def collect(self) -> Collection:
         result = Collection()

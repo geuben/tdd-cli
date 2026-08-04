@@ -8,14 +8,26 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS baseline_claim (
+    id INTEGER PRIMARY KEY,
+    worktree_path TEXT NOT NULL UNIQUE,
+    hostname TEXT NOT NULL,
+    pid INTEGER NOT NULL,
+    projects_total INTEGER NOT NULL DEFAULT 0,
+    projects_done INTEGER NOT NULL DEFAULT 0,
+    current_project TEXT,
+    started_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS plan_contract (
     id INTEGER PRIMARY KEY,
@@ -203,7 +215,13 @@ class Ledger:
     def __init__(self, repo_path: Path):
         self.repo_path = repo_path
         self.path = ledger_path(repo_path)
-        self.db = sqlite3.connect(self.path)
+        # A generous busy timeout: two `run start` calls against one worktree open
+        # separate connections and both write (claim, then run/baseline rows).
+        # SQLite's default 5s timeout can be exceeded while one holds the write lock
+        # through a real baseline probe (subprocess pytest/vitest calls), surfacing
+        # as `sqlite3.OperationalError: database is locked` instead of the intended
+        # `IntegrityError` rejection path.
+        self.db = sqlite3.connect(self.path, timeout=30.0)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA foreign_keys=ON")
@@ -216,14 +234,32 @@ class Ledger:
 
     # -- generic helpers -------------------------------------------------
 
+    def _write(self, sql: str, params: tuple) -> sqlite3.Cursor:
+        """Every write goes through here, so none can strand the write lock.
+
+        Python's sqlite3 module does not roll back a failed statement, so a
+        constraint violation — the `baseline_claim.worktree_path` UNIQUE violation
+        that *is* the claim's lock, among others — leaves this connection's implicit
+        transaction open. An unrolled-back writer holds SQLite's write lock until the
+        connection is garbage collected, starving concurrent writers well past any
+        reasonable busy timeout. The claim mechanism is designed around failed writes
+        being cheap and side-effect-free, so this must hold on every path, not just
+        the one that happened to be exercised under load.
+        """
+        try:
+            cur = self.db.execute(sql, params)
+            self.db.commit()
+            return cur
+        except Exception:
+            self.db.rollback()
+            raise
+
     def insert(self, table: str, **cols) -> int:
         keys = ", ".join(cols)
         marks = ", ".join("?" for _ in cols)
-        cur = self.db.execute(
+        return self._write(
             f"INSERT INTO {table} ({keys}) VALUES ({marks})", tuple(cols.values())
-        )
-        self.db.commit()
-        return cur.lastrowid
+        ).lastrowid
 
     def one(self, sql: str, params: tuple = ()) -> sqlite3.Row | None:
         return self.db.execute(sql, params).fetchone()
@@ -233,10 +269,9 @@ class Ledger:
 
     def update(self, table: str, row_id: int, **cols) -> None:
         sets = ", ".join(f"{k} = ?" for k in cols)
-        self.db.execute(
+        self._write(
             f"UPDATE {table} SET {sets} WHERE id = ?", (*cols.values(), row_id)
         )
-        self.db.commit()
 
     # -- domain queries --------------------------------------------------
 
@@ -298,3 +333,63 @@ class Ledger:
             detail=detail,
             at=now(),
         )
+
+    # -- baseline claim (issue #4 / #2) -----------------------------------
+
+    def claim(self, worktree: str, hostname: str, pid: int, projects_total: int) -> int:
+        """Insert the claim row. The insert is the lock (Finding 4): `worktree_path`
+        carries `UNIQUE`, so a second claim on the same worktree raises
+        `sqlite3.IntegrityError` rather than racing a read-then-write check."""
+        return self.insert(
+            "baseline_claim",
+            worktree_path=worktree,
+            hostname=hostname,
+            pid=pid,
+            projects_total=projects_total,
+            projects_done=0,
+            current_project=None,
+            started_at=now(),
+        )
+
+    def release_claim(self, worktree: str) -> None:
+        self.db.execute("DELETE FROM baseline_claim WHERE worktree_path = ?", (worktree,))
+        self.db.commit()
+
+    def update_claim(self, worktree: str, projects_done: int, current_project: str) -> None:
+        """Counters and progress only — no per-project timing history, that lives in
+        the stderr heartbeat lines."""
+        self.db.execute(
+            "UPDATE baseline_claim SET projects_done = ?, current_project = ?"
+            " WHERE worktree_path = ?",
+            (projects_done, current_project, worktree),
+        )
+        self.db.commit()
+
+    def active_claim(self, worktree: str) -> dict | None:
+        """Read-only, per the store's append-only contract — `cmd_progress` and
+        `cmd_status` call this as pure observers. Only `cmd_run_start` acts on the
+        computed `stale` flag (release + reclaim); nothing here deletes a row."""
+        row = self.one("SELECT * FROM baseline_claim WHERE worktree_path = ?", (worktree,))
+        if row is None:
+            return None
+        claim = dict(row)
+        if claim["hostname"] == socket.gethostname():
+            try:
+                os.kill(claim["pid"], 0)
+                stale = False
+            except ProcessLookupError:
+                # Same host, pid no longer running (e.g. a `SIGKILL`ed `run start`).
+                stale = True
+            except PermissionError:
+                # Pid exists but is owned by someone else — alive.
+                stale = False
+        else:
+            # A pid is meaningless from another host, and reused pids would make a
+            # host-crossing liveness check actively wrong. Fall back to age: a false
+            # "alive" bricks the worktree, a false "dead" reopens the bug (Decisions).
+            started = datetime.fromisoformat(claim["started_at"])
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            stale = datetime.now(timezone.utc) - started > timedelta(minutes=60)
+        claim["stale"] = stale
+        return claim

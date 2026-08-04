@@ -8,6 +8,7 @@ serial. That is both far slower and not the same suite the team trusts.
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 from tddcli import adapters
@@ -42,6 +43,22 @@ def test_declared_test_command_is_used_verbatim(tmp_path):
 
 
 def test_only_reporting_flags_are_appended(tmp_path, monkeypatch):
+    """The appended flags must not change which tests run or how.
+
+    The report path is pinned to the worst case the real one can produce.
+    `tempfile` draws its suffix from `[a-z0-9_]` and the prefix ends in a hyphen,
+    so roughly one run in thirty-seven produces `tdd-pytest-q...` — a literal `-q`
+    inside the report path. A substring check over the whole command then fails for
+    a reason that has nothing to do with the flags, which is how this test came to
+    fail intermittently in CI. Pinning the name makes that case permanent rather
+    than occasional, and the assertion below matches whole arguments.
+    """
+    forced = tmp_path / "tdd-pytest-q1x2m3k4"
+    forced.mkdir()
+    monkeypatch.setattr(
+        adapters.pytest_adapter.tempfile, "mkdtemp", lambda *a, **k: str(forced)
+    )
+
     project = project_with(tmp_path, 'test_command = "uv run pytest tests/ -v -n auto"\n')
     adapter = adapters.build(project, tmp_path)
     seen = {}
@@ -53,11 +70,14 @@ def test_only_reporting_flags_are_appended(tmp_path, monkeypatch):
     monkeypatch.setattr(adapters.pytest_adapter, "run_command", fake_run)
     adapter.run("backend::tests/a.py::test_x")
 
-    assert seen["command"].startswith("uv run pytest tests/ -v -n auto ")
+    base = "uv run pytest tests/ -v -n auto"
+    assert seen["command"].startswith(base + " ")
     assert "--json-report" in seen["command"]
-    # Nothing that would change which tests run or how.
-    for flag in ("-q", "-p ", "-k ", "-m "):
-        assert flag not in seen["command"].replace("uv run pytest tests/ -v -n auto", "")
+    # Whole arguments, not substrings: the report path is an argument in its own
+    # right and may legitimately contain any of these sequences.
+    appended = shlex.split(seen["command"][len(base):])
+    for flag in ("-q", "-p", "-k", "-m"):
+        assert flag not in appended, appended
 
 
 def test_collect_command_is_separate_so_collection_is_not_parallelised(tmp_path):
