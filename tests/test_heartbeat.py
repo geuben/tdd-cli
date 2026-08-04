@@ -141,3 +141,35 @@ def test_sweep_emits_a_project_completed_line(repo, capsys):
     backend = next((line for line in lines if line.get("project") == "backend"), None)
     assert backend is not None, lines
     assert isinstance(backend["elapsed_s"], (int, float))
+
+
+def test_close_sweep_emits_a_project_completed_line(repo, capsys):
+    """The close sweep is exactly the slow, silent operation issue #1 is about.
+
+    `Engine.sweep` is a separate method from `Engine.run_projects` and does not
+    route through it, so cycle 10's heartbeat never reached it. The `phase` field
+    is what distinguishes the two on a shared channel.
+    """
+    plan = register(repo)
+    assert run_cli(repo, "run", "start", "--plan", plan)["ok"]
+
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    raise NotImplementedError\n"
+    )
+    run_cli(repo, "advance")  # -> AWAITING_IMPL
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    return a + b\n"
+    )
+    run_cli(repo, "advance")  # -> green, then the close sweep
+    capsys.readouterr()
+
+    run_cli(repo, "advance")  # the close sweep itself
+
+    lines = [
+        line for line in _heartbeat_lines(capsys.readouterr().err)
+        if line.get("event") == "project_completed"
+        and line.get("phase") == "CLOSE_SWEEP"
+    ]
+    assert lines, "no CLOSE_SWEEP project_completed line in stderr"
+    assert isinstance(lines[0]["elapsed_s"], (int, float))
