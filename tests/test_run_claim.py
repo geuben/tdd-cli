@@ -120,3 +120,19 @@ def test_only_one_of_two_concurrent_starts_wins(repo):
 
     oks = [r["ok"] for r in results]
     assert oks.count(True) == 1, results
+
+
+def test_a_refused_baseline_leaves_no_claim(repo):
+    """An R9.5a refusal (every file fails to collect) must not strand the claim —
+    otherwise a retry after fixing the environment is itself refused."""
+    (repo / "backend" / "tests" / "test_smoke.py").write_text(
+        "import module_does_not_exist\n\n"
+        "def test_smoke():\n    assert True\n"
+    )
+    plan = register(repo)
+
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"] is False
+
+    led = Ledger(gitutil.repo_identity(repo))
+    assert led.all("SELECT * FROM baseline_claim") == []
