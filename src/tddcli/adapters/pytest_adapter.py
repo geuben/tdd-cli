@@ -54,7 +54,7 @@ class PytestAdapter(Adapter):
                 f"{self._test_cmd()} --json-report"
                 f" --json-report-file={shlex.quote(str(report_path))}"
             )
-            code, out, err = run_command(cmd, self.root)
+            code, out, err = self._run_suite(cmd)
             if not report_path.is_file():
                 verdict.error = (
                     "pytest produced no JSON report (is pytest-json-report installed?): "

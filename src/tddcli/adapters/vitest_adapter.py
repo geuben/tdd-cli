@@ -49,7 +49,7 @@ class VitestAdapter(Adapter):
     def run(self, target: str | None = None) -> Verdict:
         verdict = Verdict(project=self.project.name, adapter=self.name, target=target)
         base = self.project.test_command or "npx vitest run"
-        code, out, err = run_command(f"{base} --reporter=json", self.root)
+        code, out, err = self._run_suite(f"{base} --reporter=json")
         report = _extract_json(out)
         if report is None:
             verdict.error = f"vitest produced no JSON output: {(err or out)[:500]}"

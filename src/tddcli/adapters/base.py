@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from .. import leases
 
 NOT_FOUND = "not_found"
 NOT_COLLECTED = "not_collected"
@@ -39,7 +42,10 @@ class Collection:
     failed_files: dict[str, str] = field(default_factory=dict)
 
 
-def run_command(command: str, cwd: Path, timeout: int = 1800) -> tuple[int, str, str]:
+def run_command(
+    command: str, cwd: Path, timeout: int = 1800,
+    extra_env: dict[str, str] | None = None,
+) -> tuple[int, str, str]:
     proc = subprocess.run(
         command,
         shell=True,
@@ -47,6 +53,7 @@ def run_command(command: str, cwd: Path, timeout: int = 1800) -> tuple[int, str,
         capture_output=True,
         text=True,
         timeout=timeout,
+        env=None if extra_env is None else {**os.environ, **extra_env},
     )
     return proc.returncode, proc.stdout, proc.stderr
 
@@ -69,6 +76,23 @@ class Adapter:
 
     def run(self, target: str | None = None) -> Verdict:
         raise NotImplementedError
+
+    def _run_suite(self, command: str) -> tuple[int, str, str]:
+        """Run the suite under a machine-wide worker lease.
+
+        Substituting `{workers}` is opt-in per project; a command without the
+        placeholder runs verbatim, so parallelism stays exactly as the project
+        declared (§10). TDD_WORKERS is exported either way for commands that
+        prefer to read the budget themselves. The lease is held for the whole
+        invocation so concurrent agents in other worktrees see this one and
+        take a smaller share.
+        """
+        with leases.worker_lease() as workers:
+            return run_command(
+                command.replace("{workers}", str(workers)),
+                self.root,
+                extra_env={"TDD_WORKERS": str(workers)},
+            )
 
     def collect(self) -> Collection:
         raise NotImplementedError

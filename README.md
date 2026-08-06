@@ -73,6 +73,37 @@ generated   = true                   # excluded from authorship accounting
 A generator that is never hand-edited (`codegen`) is an artifact regeneration command, not a
 project. It has no tests and no cycles.
 
+## Sharing cores between concurrent agents
+
+Several agents running tdd-cli on one machine (each in its own worktree) previously had to
+pin their suites to `-n 1` — the only setting that never oversubscribes the box — which
+serialises every suite even when an agent is alone. Instead, declare where the worker count
+goes and let the tool compute it:
+
+```toml
+[project.backend]
+test_command = "uv run pytest -n {workers}"
+
+[project.frontend]
+test_command = "npx vitest run --maxWorkers={workers}"
+```
+
+Each suite invocation takes a lease in a machine-wide directory (`~/.cache/tdd-cli/leases`,
+override with `TDD_LEASE_DIR`) held for the duration of the run, and receives
+`max(1, cores // live_leases)` workers: one agent gets the whole machine, four agents get a
+quarter each. Leases whose process has died, or older than a suite could legitimately run,
+are swept — a crash never throttles the machine.
+
+`{workers}` is opt-in per project; without it the declared command runs verbatim, but the
+budget is still exported as `TDD_WORKERS` for commands that prefer to read it themselves,
+and the lease is still held so other agents account for the running suite. Set
+`TDD_CORE_BUDGET` to cap the total below `os.cpu_count()` and keep headroom for the agents
+themselves.
+
+The split is computed at lease acquisition: an agent arriving mid-run takes the smaller
+share immediately, and the earlier agent's share corrects on its next invocation. Per-file
+collection stays serial — collection is cheap and xdist adds startup cost per file.
+
 ## Plan contracts
 
 The plan carries its own contract in YAML front-matter, so a planning agent needs no

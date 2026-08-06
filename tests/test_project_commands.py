@@ -63,11 +63,13 @@ def test_only_reporting_flags_are_appended(tmp_path, monkeypatch):
     adapter = adapters.build(project, tmp_path)
     seen = {}
 
-    def fake_run(command, cwd, timeout=1800):
+    def fake_run(command, cwd, timeout=1800, extra_env=None):
         seen["command"] = command
         return 1, "", "no report"
 
-    monkeypatch.setattr(adapters.pytest_adapter, "run_command", fake_run)
+    # Suite runs route through base.run_command (under a worker lease); the
+    # declared command must still pass through with only reporting flags added.
+    monkeypatch.setattr(adapters.base, "run_command", fake_run)
     adapter.run("backend::tests/a.py::test_x")
 
     base = "uv run pytest tests/ -v -n auto"

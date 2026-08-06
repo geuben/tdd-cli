@@ -13,6 +13,13 @@ def git(cwd: Path, *args: str) -> str:
     ).stdout
 
 
+@pytest.fixture(autouse=True)
+def _isolated_lease_dir(tmp_path, monkeypatch):
+    """Every suite invocation takes a machine-wide worker lease; keep the test
+    suite's leases out of the developer's real ~/.cache/tdd-cli."""
+    monkeypatch.setenv("TDD_LEASE_DIR", str(tmp_path / "worker-leases"))
+
+
 @pytest.fixture
 def ledger_home(tmp_path, monkeypatch):
     home = tmp_path / "ledger-home"
