@@ -19,6 +19,7 @@ from . import (
     adapters,
     config as config_mod,
     contract as contract_mod,
+    fleet,
     gitutil,
     identity,
     render,
@@ -27,7 +28,7 @@ from . import (
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
 from .envelope import Envelope, NextAction, Verb, failure, heartbeat
-from .ledger import Ledger, now
+from .ledger import Ledger, ledger_path, now
 from .machine import CLOSED, SKIPPED, Engine
 
 BLOCKER_KINDS = {
@@ -841,6 +842,25 @@ def cmd_progress(args) -> Envelope:
     )
 
 
+def cmd_fleet(args) -> Envelope:
+    """Every worktree's active run against this repository, plus in-flight
+    baselines and currently executing suites. Deliberately does not use
+    `_context`: no tdd.toml, active run, or existing ledger is required, and the
+    ledger is opened read-only so live agents cannot be perturbed."""
+    worktree = _worktree()
+    summary = fleet.summarise(ledger_path(gitutil.repo_identity(worktree)))
+    if args.json:
+        return Envelope(
+            result=summary, next_action=NextAction(Verb.COMPLETE, "Fleet reported.")
+        )
+    sys.stdout.write(fleet.render(summary))
+    return Envelope(
+        result=summary,
+        next_action=NextAction(Verb.COMPLETE, "Fleet rendered."),
+        silent=True,
+    )
+
+
 def cmd_metrics(args) -> Envelope:
     worktree, cfg, ledger, run = _context(require_run=False)
     return Envelope(
@@ -932,6 +952,12 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("progress", help="human-readable plan progress")
     s.add_argument("--json", action="store_true", help="machine output instead")
     s.set_defaults(fn=cmd_progress)
+
+    s = sub.add_parser(
+        "fleet", help="all active runs on this repository, across every worktree"
+    )
+    s.add_argument("--json", action="store_true", help="machine output instead")
+    s.set_defaults(fn=cmd_fleet)
 
     s = sub.add_parser("metrics")
     s.set_defaults(fn=cmd_metrics)

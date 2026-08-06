@@ -104,6 +104,25 @@ The split is computed at lease acquisition: an agent arriving mid-run takes the 
 share immediately, and the earlier agent's share corrects on its next invocation. Per-file
 collection stays serial — collection is cheap and xdist adds startup cost per file.
 
+## Watching every agent at once
+
+The ledger is one database per repository, shared by all worktrees, so every agent's
+progress is already in one place. `tdd fleet` reads it:
+
+```sh
+tdd fleet          # one line per active run, plus in-flight baselines and executing suites
+tdd fleet --json   # the same as a machine envelope
+```
+
+Each run line carries the worktree, plan, cycle N of M, phase, and the age of the newest
+suite invocation — a stale age is the signal for a wedged agent. Baselines still being
+collected are listed separately, and the worker-lease directory is read (never modified)
+to show how many suites are executing right now and each one's share of the cores.
+
+The command is safe to run while agents are mid-run from any worktree on any branch: it
+opens the ledger with SQLite's read-only mode, so it is structurally incapable of creating,
+migrating, or writing the database, and it requires no `tdd.toml`, plan, or active run.
+
 ## Plan contracts
 
 The plan carries its own contract in YAML front-matter, so a planning agent needs no
@@ -177,6 +196,7 @@ and is never reclassified as a pin.
 | `tdd resume [--unblock --note]` | reconstruct position; human intervention |
 | `tdd log render [--out]` | project the ledger into a friction log |
 | `tdd metrics` | fidelity, attempts, violations, interventions |
+| `tdd fleet [--json]` | all active runs across every worktree; read-only |
 
 ## Running a long baseline
 

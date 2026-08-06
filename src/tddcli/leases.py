@@ -88,6 +88,21 @@ def _live_count(directory: Path) -> int:
     return live
 
 
+def snapshot() -> dict:
+    """Observe the budget without participating in it — counts live leases but
+    sweeps nothing and takes nothing, so a fleet view never perturbs the split."""
+    directory = lease_dir()
+    total = _total_cores()
+    live = 0
+    if directory.is_dir():
+        live = sum(1 for path in directory.glob("*.json") if _is_live(path))
+    return {
+        "active": live,
+        "total_cores": total,
+        "workers_each": max(1, total // max(1, live)),
+    }
+
+
 @contextlib.contextmanager
 def worker_lease(total_cores: int | None = None) -> Iterator[int]:
     """Hold a lease for one suite invocation; yields the worker count to use."""
