@@ -14,6 +14,11 @@ from enum import Enum
 
 VERB_SET_VERSION = 2
 
+#: Version of the envelope shape itself — the top-level keys and their meaning.
+#: Harness hooks and skills parse this structure programmatically; bump it on any
+#: change to the shape so consumers can detect drift instead of breaking silently.
+ENVELOPE_VERSION = 1
+
 
 class Verb(str, Enum):
     WRITE_TEST = "write_test"
@@ -64,7 +69,7 @@ class Envelope:
     silent: bool = False
 
     def to_dict(self) -> dict:
-        out: dict = {"ok": self.ok}
+        out: dict = {"ok": self.ok, "envelope_version": ENVELOPE_VERSION}
         if self.error is not None:
             out["error"] = self.error
         out["run"] = self.run

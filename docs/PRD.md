@@ -1,6 +1,6 @@
 # TDD CLI — Product Requirements & Specification
 
-Status: draft
+Status: implemented — v0.1.0 implements this specification; changes to specified behaviour amend this document in the same PR
 Date: 2026-08-03
 Scope: greenfield. Nothing from the existing `tdd-step` / `tdd-run` skill scripts is reused.
 Consumers: autonomous coding agents (primary), humans supervising them (secondary).

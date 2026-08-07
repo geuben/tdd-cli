@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.metadata
 from pathlib import Path
 
 from .base import Adapter, Collection, GateResult, Verdict
@@ -12,14 +13,36 @@ REGISTRY: dict[str, type[Adapter]] = {
 }
 
 
+def _entry_points():
+    """Third-party adapters, published under the `tddcli.adapters` entry-point group.
+
+    A separate seam so tests can substitute fake entry points without installing a
+    distribution. Loading is deferred to `build`: enumerating names must stay cheap
+    (doctor lists them), and a broken plugin must not break projects that never
+    reference it.
+    """
+    return importlib.metadata.entry_points(group="tddcli.adapters")
+
+
+def available() -> set[str]:
+    """Every adapter name that `build` could resolve, built-in or plugin."""
+    return set(REGISTRY) | {ep.name for ep in _entry_points()}
+
+
 def build(project, worktree: Path) -> Adapter:
-    try:
-        cls = REGISTRY[project.adapter]
-    except KeyError:
+    # Built-ins always win: a plugin must not be able to shadow `pytest` and
+    # change what observed test execution means for every existing config.
+    cls = REGISTRY.get(project.adapter)
+    if cls is None:
+        for ep in _entry_points():
+            if ep.name == project.adapter:
+                cls = ep.load()
+                break
+    if cls is None:
         raise RuntimeError(
-            f"unknown adapter {project.adapter!r}; available: {sorted(REGISTRY)}"
-        ) from None
+            f"unknown adapter {project.adapter!r}; available: {sorted(available())}"
+        )
     return cls(project, worktree)
 
 
-__all__ = ["Adapter", "Collection", "GateResult", "Verdict", "REGISTRY", "build"]
+__all__ = ["Adapter", "Collection", "GateResult", "Verdict", "REGISTRY", "available", "build"]

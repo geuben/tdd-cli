@@ -10,6 +10,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 Initial release.
 
+- `tdd --version`; every JSON envelope carries `envelope_version`.
+- Ledger schema versioning: older ledgers are migrated forward on open; a
+  ledger written by a newer tdd-cli is refused with a clear error.
+- Third-party adapters via the `tddcli.adapters` entry-point group
+  (built-in names cannot be shadowed).
+- Windows is refused at startup (`reason: "unsupported_platform"`); use WSL.
+- Example Claude Code hooks (Stop + PreToolUse) in `examples/claude-code-hooks/`.
+- SECURITY.md documenting the command-execution trust model.
 - Ledger-backed TDD process controller: phase is derived from observed test
   execution, never asserted by the caller.
 - Plan contracts in YAML front-matter, hashed at the committed blob.

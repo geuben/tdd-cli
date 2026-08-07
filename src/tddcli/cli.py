@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import (
+    __version__,
     adapters,
     fleet,
     gitutil,
@@ -32,7 +33,7 @@ from . import (
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
 from .envelope import Envelope, NextAction, Verb, failure, heartbeat
-from .ledger import Ledger, ledger_path, now
+from .ledger import Ledger, LedgerVersionError, ledger_path, now
 from .machine import CLOSED, SKIPPED, Engine
 
 BLOCKER_KINDS = {
@@ -195,7 +196,7 @@ def cmd_doctor(args) -> Envelope:
         before = len(checks)
         root = worktree / project.root
         check("root exists", root.is_dir(), str(root), project=name)
-        check("adapter known", project.adapter in adapters.REGISTRY, project.adapter, project=name)
+        check("adapter known", project.adapter in adapters.available(), project.adapter, project=name)
         check("test_paths declared", bool(project.test_paths), project=name)
         if project.adapter == "pytest":
             code, out, err = adapters.base.run_command(
@@ -878,6 +879,7 @@ def cmd_metrics(args) -> Envelope:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="tdd", description=__doc__)
+    p.add_argument("--version", action="version", version=f"tdd-cli {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
 
     s = sub.add_parser("init", help="scaffold tdd.toml for review")
@@ -969,10 +971,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    if os.name == "nt":
+        # Worker leases, process-liveness checks, and cache paths are POSIX-only.
+        # Failing here, loudly, beats corrupting a lease directory ten minutes in.
+        return failure(
+            "tdd-cli does not support Windows: worker leases and process-liveness"
+            " checks are POSIX-only. Run it under WSL instead.",
+            reason="unsupported_platform",
+        ).emit()
     try:
+        args = build_parser().parse_args(argv)
         envelope = args.fn(args)
-    except (config_mod.ConfigError, gitutil.GitError) as exc:
+    except (config_mod.ConfigError, gitutil.GitError, LedgerVersionError) as exc:
         envelope = failure(str(exc))
     except SystemExit as exc:
         return int(exc.code or 0)

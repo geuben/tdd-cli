@@ -15,6 +15,22 @@ from pathlib import Path
 
 SCHEMA_VERSION = 2
 
+
+class LedgerVersionError(RuntimeError):
+    """The ledger on disk was written by a newer tdd-cli than this one."""
+
+
+#: Forward migrations, keyed by the version they upgrade *from*. Applied in order
+#: after the idempotent SCHEMA script, which already creates missing tables and
+#: indexes; a migration entry therefore only needs statements SCHEMA cannot express,
+#: such as ALTER TABLE on an existing table. Every released schema version must have
+#: an entry here (empty string when SCHEMA alone suffices), so an old ledger is
+#: upgraded rather than silently run against a shape the code no longer expects.
+MIGRATIONS: dict[int, str] = {
+    # v1 -> v2 added the baseline_claim table; CREATE TABLE IF NOT EXISTS covers it.
+    1: "",
+}
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
@@ -225,12 +241,34 @@ class Ledger:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA foreign_keys=ON")
+        stored = self._stored_version()
+        if stored is not None and stored > SCHEMA_VERSION:
+            self.db.close()
+            raise LedgerVersionError(
+                f"ledger {self.path} has schema version {stored}, but this tdd-cli"
+                f" understands up to {SCHEMA_VERSION} — it was written by a newer"
+                " tdd-cli. Upgrade tdd-cli; do not downgrade the ledger."
+            )
         self.db.executescript(SCHEMA)
+        while stored is not None and stored < SCHEMA_VERSION:
+            self.db.executescript(MIGRATIONS[stored])
+            stored += 1
         self.db.execute(
-            "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?)",
+            "INSERT INTO meta(key, value) VALUES ('schema_version', ?)"
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (str(SCHEMA_VERSION),),
         )
         self.db.commit()
+
+    def _stored_version(self) -> int | None:
+        """The schema version already on disk, or None for a fresh database."""
+        try:
+            row = self.db.execute(
+                "SELECT value FROM meta WHERE key = 'schema_version'"
+            ).fetchone()
+        except sqlite3.OperationalError:  # no meta table: fresh database
+            return None
+        return int(row[0]) if row else None
 
     # -- generic helpers -------------------------------------------------
 
