@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import json
 
-from . import adapters, config as config_mod, gitutil, staging
+from . import adapters, gitutil, staging
+from . import config as config_mod
 from .adapters.base import FAILED, NOT_COLLECTED, NOT_FOUND, PASSED
 from .envelope import Envelope, NextAction, Verb
-from .ledger import now
 from .machine import (
     AWAITING_IMPL,
     AWAITING_PIN,

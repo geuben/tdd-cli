@@ -133,8 +133,8 @@ def write_plan(repo: Path, body: str, name: str = "tasks/plan.md") -> str:
 
 def run_cli_text(repo: Path, *argv: str) -> str:
     """Invoke the CLI in-process, returning raw stdout."""
-    import io
     import contextlib
+    import io
 
     from tddcli.cli import main
 

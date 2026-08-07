@@ -1,9 +1,33 @@
 [project]
 name = "tdd-cli"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Ledger-backed TDD process controller for autonomous coding agents"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "geuben" }]
 requires-python = ">=3.11"
 dependencies = ["pyyaml>=6.0"]
+keywords = ["tdd", "testing", "agents", "ai", "pytest", "vitest", "workflow"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.urls]
+Homepage = "https://github.com/geuben/tdd-cli"
+Repository = "https://github.com/geuben/tdd-cli"
+Issues = "https://github.com/geuben/tdd-cli/issues"
+Changelog = "https://github.com/geuben/tdd-cli/blob/main/CHANGELOG.md"
 
 [project.scripts]
 tdd = "tddcli.cli:main"
@@ -12,11 +36,24 @@ tdd = "tddcli.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "src/tddcli/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/tddcli"]
 
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "README.md", "LICENSE", "CHANGELOG.md"]
+
 [dependency-groups]
-dev = ["pytest>=8.0", "pytest-json-report>=1.5"]
+dev = ["pytest>=8.0", "pytest-json-report>=1.5", "ruff>=0.5"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

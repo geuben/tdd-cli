@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from tddcli.contract import REFACTOR, ContractError, parse
-
 from conftest import git, run_cli, write_plan
+from tddcli.contract import REFACTOR, ContractError, parse
 
 PLAN = """---
 cycles:

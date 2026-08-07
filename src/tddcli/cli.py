@@ -17,13 +17,17 @@ from pathlib import Path
 
 from . import (
     adapters,
-    config as config_mod,
-    contract as contract_mod,
     fleet,
     gitutil,
     identity,
     render,
     snapshot,
+)
+from . import (
+    config as config_mod,
+)
+from . import (
+    contract as contract_mod,
 )
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance

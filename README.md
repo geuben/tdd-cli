@@ -18,6 +18,13 @@ unverifiable self-reporting, runs stopping mid-plan, and no comparable record of
 ## Install
 
 ```sh
+pip install tdd-cli        # or: uv tool install tdd-cli
+tdd --help
+```
+
+From source:
+
+```sh
 uv sync
 uv run tdd --help
 ```
@@ -241,5 +248,12 @@ stop while a run is live; a Bash hook redirecting bare `pytest`/`vitest` through
 ## Development
 
 ```sh
-uv run pytest          # 50 tests
+uv run pytest
+uv run ruff check src tests
 ```
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## License
+
+[MIT](./LICENSE)

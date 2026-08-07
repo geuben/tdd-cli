@@ -14,7 +14,6 @@ import sqlite3
 import time
 
 from conftest import run_cli, write_plan
-
 from tddcli import fleet, leases
 from tddcli.ledger import Ledger, ledger_path
 
@@ -115,8 +114,6 @@ def test_fleet_reports_live_worker_leases(repo, tmp_path, monkeypatch):
 
 def test_fleet_human_output_renders_one_line_per_run(repo):
     start_run(repo)
-    import io
-    import contextlib
     from conftest import run_cli_text
 
     text = run_cli_text(repo, "fleet")

@@ -11,10 +11,9 @@ from __future__ import annotations
 import shlex
 from pathlib import Path
 
+from conftest import git, run_cli, write_plan
 from tddcli import adapters
 from tddcli import config as config_mod
-
-from conftest import git, run_cli, write_plan
 
 PLAN = """---
 cycles:
