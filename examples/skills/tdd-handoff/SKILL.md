@@ -67,6 +67,23 @@ and the violation is recorded as normal.
 
 ## Procedure
 
+### 0. If the draft is not cycle-structured, decompose it first
+
+Everything below assumes the plan is a sequence of **cycles** — each with one named
+test, a GREEN scope, and commit messages. A freeform draft (prose, a task list, a PRD
+excerpt) is not ready for this procedure; restructure it first:
+
+- Decompose the work into cycles matching the body structure of `examples/plan.md` in
+  the tdd-cli repository: one behaviour per cycle, in dependency order, each with a
+  proposed test name, production target, and an EXPECTED FAILURE line.
+- Assign each cycle a provisional kind from the table in step 7 — the probe (step 2)
+  will confirm or correct it.
+- Carry every promise the prose makes into either a cycle or an explicit scope-cut
+  list; step 3 will audit that nothing fell between.
+
+The decomposition does not need to be right — the rest of this procedure exists to
+correct it. It needs to be *explicit*, so there is something to correct.
+
 ### 1. Read the plan AND probe the repo
 
 Read the full plan. Then verify its claims against the codebase — do not trust the

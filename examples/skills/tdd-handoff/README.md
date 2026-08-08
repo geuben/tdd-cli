@@ -27,7 +27,9 @@ A minimal-GREEN executor treats the plan's named test list as the entire spec â€
 everything not pinned by a test is dropped, and everything declared wrongly in the
 contract reopens a hole the tool would otherwise close. Registration hard-fails on a
 malformed contract by design; this skill is the process that produces contracts which
-register cleanly *and* mean what they say. The failure model it hardens against is
+register cleanly *and* mean what they say. The input can be any draft â€” freeform prose
+or an already cycle-structured plan; step 0 decomposes the former into cycles before
+the audit begins. The failure model it hardens against is
 documented inline, and the contract vocabulary it emits is the one exercised by
 [`../plan.md`](../../plan.md).
 
