@@ -250,9 +250,15 @@ class Engine:
             )
             if art.regenerate:
                 adapters.base.run_command(art.regenerate, self.worktree)
+                # The artifact's own path is staged even without `generated = true`,
+                # and so is its upstream chain: one hook often refreshes the spec and
+                # the client together, and a spec left dirty here is never committed
+                # by any phase commit — CI then diffs a stale spec against a fresh
+                # client.
+                chain = self.config.artifact_chain(art)
                 paths = [
                     p for p in gitutil.changed_paths(self.worktree)
-                    if self.config.is_generated(p)
+                    if self.config.is_generated(p) or any(a.owns(p) for a in chain)
                 ]
                 sha, staged = staging.commit_generated(
                     self.worktree, paths, art.name,

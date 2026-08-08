@@ -6,6 +6,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Artifact regeneration now stages the artifact's own path — and the paths of
+  its upstream artifact chain — in the `chore(<name>): regenerate` commit, not
+  only `generated = true` paths. Previously a regenerate hook that rewrote an
+  upstream spec (e.g. `schema/openapi.json`) left it dirty for the whole run:
+  it was never committed, CI compared a stale committed spec against a fresh
+  committed client and reported drift, and every phase commit re-flagged the
+  file as `undeclared_file_touched`.
+
 ## [0.1.0] - Unreleased
 
 Initial release.
