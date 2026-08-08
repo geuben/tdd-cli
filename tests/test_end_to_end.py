@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 from conftest import git, run_cli, write_plan
 
 PLAN = """---

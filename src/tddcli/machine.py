@@ -18,8 +18,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import adapters, contract as contract_mod, gitutil, staging
-from .adapters.base import FAILED, NOT_COLLECTED, NOT_FOUND, PASSED
+from . import adapters, gitutil, staging
+from . import contract as contract_mod
 from .config import Config
 from .contract import PIN, REFACTOR, DeclaredCycle
 from .envelope import Verb, heartbeat

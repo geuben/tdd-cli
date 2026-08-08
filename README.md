@@ -18,6 +18,13 @@ unverifiable self-reporting, runs stopping mid-plan, and no comparable record of
 ## Install
 
 ```sh
+pip install tdd-cli        # or: uv tool install tdd-cli
+tdd --help
+```
+
+From source:
+
+```sh
 uv sync
 uv run tdd --help
 ```
@@ -158,6 +165,29 @@ Absent front-matter is legitimate — the run proceeds as `undeclared` with
 hard-fails registration: it is almost always a defect in the planning process, and that
 signal must surface rather than degrade silently.
 
+## Adapters
+
+`pytest` and `vitest` are built in. Third-party adapters register under the
+`tddcli.adapters` entry-point group:
+
+```toml
+[project.entry-points."tddcli.adapters"]
+cargo = "tddcli_cargo:CargoAdapter"
+```
+
+The class must implement `tddcli.adapters.base.Adapter`. Built-in names cannot be
+shadowed: a plugin named `pytest` is ignored, so what "observed test execution" means for
+existing configs can never change underneath them.
+
+## Platform support
+
+Linux and macOS. Windows is refused at startup with `reason: "unsupported_platform"` —
+worker leases and process-liveness checks are POSIX-only. Use WSL.
+
+Every JSON envelope carries `envelope_version`; consumers should check it rather than
+assuming the shape is stable across releases. See also [SECURITY.md](./SECURITY.md) for
+the trust model: running `tdd` executes the repository's declared commands.
+
 ## Cycle kinds
 
 **Standard / contract** — `AWAITING_TEST → AWAITING_IMPL → AWAITING_REFACTOR → CLOSED`
@@ -237,9 +267,18 @@ blocked agent improvises — which is the original problem.
 
 **Delegated to hooks:** a Stop hook that queries `tdd status` and refuses to let an agent
 stop while a run is live; a Bash hook redirecting bare `pytest`/`vitest` through `tdd advance`.
+Ready-made Claude Code implementations of both live in
+[`examples/claude-code-hooks/`](./examples/claude-code-hooks/).
 
 ## Development
 
 ```sh
-uv run pytest          # 50 tests
+uv run pytest
+uv run ruff check src tests
 ```
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## License
+
+[MIT](./LICENSE)

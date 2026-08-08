@@ -6,8 +6,6 @@ from pathlib import Path
 from tddcli import config as config_mod
 from tddcli import identity, snapshot
 
-from conftest import git
-
 
 def cfg_for(repo: Path):
     return config_mod.load(repo)
@@ -58,7 +56,7 @@ def test_a_partial_restore_is_detected(repo):
     cfg = cfg_for(repo)
     victim = repo / "backend" / "app" / "thing.py"
     victim.write_text("VALUE = 1\n")
-    snap = snapshot.capture(repo, cfg)
+    snapshot.capture(repo, cfg)
     before = snapshot.fingerprint(repo, cfg)
 
     victim.write_text("VALUE = 2\n")

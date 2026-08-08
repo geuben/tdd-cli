@@ -35,7 +35,7 @@ def friction_log(ledger: Ledger, run) -> str:
     a(f"- Started: {run['started_at']}  Ended: {run['ended_at'] or '—'}"
       f"  Outcome: {run['outcome'] or 'live'}")
     baselines = ledger.baselines(run["id"])
-    a(f"- Baseline failures at start: "
+    a("- Baseline failures at start: "
       + (", ".join(f"{k}={len(v)}" for k, v in baselines.items()) or "none"))
     a("")
 
@@ -88,7 +88,7 @@ def friction_log(ledger: Ledger, run) -> str:
 
         sens = ledger.completed_sensitivity(cycle["id"])
         if sens:
-            a(f"- **Sensitivity check:** verified, restore byte-identical")
+            a("- **Sensitivity check:** verified, restore byte-identical")
             if sens["observed_failure"]:
                 snippet = sens["observed_failure"].strip().splitlines()
                 a(f"  - observed: `{snippet[0][:160] if snippet else ''}`")
