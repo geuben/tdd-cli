@@ -49,6 +49,9 @@ tdd advance                    # the only command that changes phase
 
 Every command emits JSON with a `next_action`. That verb is the single authority on control
 flow — skills describe *how* to do the work and must never contain stopping instructions.
+[`docs/harness-integration.md`](./docs/harness-integration.md) specifies the verb set and how
+to write such a skill; [`examples/claude-code-skill/`](./examples/claude-code-skill/) is a
+runnable one for Claude Code.
 
 ## Configuration
 
@@ -184,6 +187,11 @@ Absent front-matter is legitimate — the run proceeds as `undeclared` with
 hard-fails registration: it is almost always a defect in the planning process, and that
 signal must surface rather than degrade silently.
 
+[`examples/plan.md`](./examples/plan.md) is a complete plan — every cycle kind, the full
+front-matter vocabulary, and the body structure (context, verified repo facts, per-cycle
+expected failures) that lets an agent execute it without conversation context. The test
+suite registers it, so it cannot drift from the contract parser.
+
 ## Adapters
 
 `pytest` and `vitest` are built in. The pytest adapter runs the suite through the
@@ -295,6 +303,10 @@ blocked agent improvises — which is the original problem.
 stop while a run is live; a Bash hook redirecting bare `pytest`/`vitest` through `tdd advance`.
 Ready-made Claude Code implementations of both live in
 [`examples/claude-code-hooks/`](./examples/claude-code-hooks/).
+
+**Delegated to the skill:** how to respond to each `next_action` verb — writing the test,
+the stub, the implementation. [`docs/harness-integration.md`](./docs/harness-integration.md)
+is the contract for writing one against any harness.
 
 ## Development
 
