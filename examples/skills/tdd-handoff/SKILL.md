@@ -207,10 +207,13 @@ files, no more.
 **Deriving the list is a mechanical exercise, not a judgement call — do it for every
 cycle:** read the RED test you have specified, list every `import`/`from` in it, and
 mark each symbol that does not exist at the stated path *today*. Each one is a
-`stub_expected` entry. This is the single most-missed field, and the cost of missing
-it is a whole run's worth of noise: an undeclared stub makes the cycle open with
-`not_collected` and the tool then issues `create_stub`, which costs a round trip per
-cycle.
+`stub_expected` entry. This is the single most-missed field. Note what the
+declaration does and does not buy: it does **not** suppress the `create_stub`
+directive — that fires whenever the target is uncollectable, so a driving skill that
+writes the test before the stub takes that round trip regardless. What declaring buys
+is the accounting: declared files are staged into the RED commit *as stubs*, while an
+undeclared file is at best adopted after a directive and at worst recorded as
+implementation written during RED.
 
 **`stub_expected` is also where non-test files the RED phase legitimately requires
 go**, even when "stub" is a poor name for them: import-contract registries
