@@ -14,6 +14,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - `examples/plan.md`: a complete example plan exercising every cycle kind and the
   full front-matter vocabulary, registered by the test suite so it cannot drift
   from the contract parser.
+- `examples/claude-code-handoff-skill/`: a plan-hardening skill for Claude Code —
+  the planning-side counterpart to the driving skill. It audits a draft plan
+  against the codebase, probes RED paths empirically, assigns cycle kinds, and
+  authors the front-matter contract, gated on `tdd plan register` succeeding.
 - Single-project repositories: `root = "."` declares the worktree root as the
   project, and `tdd init` proposes it when the root itself matches an adapter.
 - `tdd init` reports directories it could not match (`unmatched`) instead of
