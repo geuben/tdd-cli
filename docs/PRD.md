@@ -2,16 +2,17 @@
 
 Status: implemented — v0.1.0 implements this specification; changes to specified behaviour amend this document in the same PR
 Date: 2026-08-03
-Scope: greenfield. Nothing from the existing `tdd-step` / `tdd-run` skill scripts is reused.
+Scope: greenfield. Nothing from the predecessor system (§1) is reused.
 Consumers: autonomous coding agents (primary), humans supervising them (secondary).
 
 ---
 
 ## 1. Problem
 
-Agent-driven TDD is currently coordinated by a markdown skill and a read-only test runner,
-with a JSON file on disk as the shared state. The agent both performs the work and records
-its own compliance. That produces four failure classes, all observed in practice:
+This tool's predecessor coordinated agent-driven TDD through a markdown skill and a
+read-only test runner, with a JSON file on disk as the shared state. The agent both
+performed the work and recorded its own compliance. That produced four failure classes,
+all observed in practice:
 
 1. **State corruption.** Phase transitions are written by the agent, so they record what the
    agent believes rather than what happened. State files proliferate per-directory, drift in
@@ -691,55 +692,39 @@ IDE integration. Multi-repo runs.
 
 | Phase | Contents | Unlocks |
 |---|---|---|
-| **1 — Ledger and loop** | registry, contract registration, run/cycle/invocation model, pytest + vitest adapters, three-phase machine, `advance`/`status`/`resume`, `next_action` | replaces the existing mechanism; state corruption and premature stopping addressed |
+| **1 — Ledger and loop** | registry, contract registration, run/cycle/invocation model, pytest + vitest adapters, three-phase machine, `advance`/`status`/`resume`, `next_action` | replaces the predecessor (§1); state corruption and premature stopping addressed |
 | **2 — Fidelity** | baselines, collect-diff weakening detection, blast-radius diffing, `cycle skip`, `sensitivity`, artifact freshness, typed blockers | the self-reporting problem addressed |
 | **3 — Record** | annotations, `log render`, commit trailers, lint/typecheck gates in the close sweep | friction logs become a projection |
 | **4 — Evaluation** | metrics queries, cost capture, same-contract comparison | model and planning-process evaluation |
 
 Phase 1 is the prerequisite for everything. Phases 2 and 3 are independently useful and can be
 reordered. Phase 4 is worthless without a set of stable benchmark contracts to run repeatedly —
-producing those is a separate exercise and the real gate on evaluation.
-
-**R15.1 — No historical backfill.** Existing friction logs are prose of varying shape and the git
-history carries no cycle boundaries; reconstructing runs from them would produce low-confidence
-rows that then contaminate comparisons. The ledger starts empty and becomes useful after roughly
-ten new runs. Phase 4 is correspondingly distant.
+producing those is a separate exercise and the real gate on evaluation. The ledger starts
+empty — records from outside it are never imported.
 
 ---
 
-## 16. Impact on agent skills
+## 16. Impact on the skill layer
 
-No genuinely new skill is required. One is deleted, two are rewritten, three are extended.
-
-### 16.1 Cross-cutting authoring rule
+The tool does not run agents; an agent drives it through a skill. The one skill it
+requires — execution: respond to each `next_action` verb — is specified in
+[`harness-integration.md`](./harness-integration.md), with a reference implementation
+in [`examples/claude-code-skill/`](../examples/claude-code-skill/). The skill retains
+only what the CLI cannot supply: craft guidance — how to write one good failing test,
+what "minimum implementation" means, when a refactor is warranted. Loop control, stop
+conditions and cycle counting are owned by `next_action` / `terminal` / the contract,
+never by prose.
 
 **R16.1** No skill may contain control flow. Skills describe *how to do the work*; `next_action`
 decides *what happens next*. Specifically, no skill may instruct an agent to stop, to report and
-await input, or to decide whether to continue. This rule exists because the prior system's
+await input, or to decide whether to continue. This rule exists because the predecessor's
 execution skill ended every branch with a stop instruction while its wrapper forbade stopping.
-
-### 16.2 Per-skill changes
-
-| Skill | Change | Notes |
-|---|---|---|
-| **tdd-run** | **Deleted** | Its content is loop control, stop conditions and cycle counting — all now owned by `next_action` / `terminal` / the contract. What remains ("call `tdd advance` until terminal") is three lines and belongs in the execution skill. |
-| **tdd-step** | **Rewritten, much smaller** | Loses the phase handlers, transition rules and state-file writes entirely. Retains only craft guidance: how to write one good failing test, what "minimum implementation" means, when a refactor is warranted. This is the part the CLI cannot supply. |
-| **plan-tdd** | **Extended** | Must emit the §7.2 front-matter contract: per-cycle project, test id, declared files, `stub_expected`, `modifies_tests`, `contract_cycle`, `annotation_keys`. Requires awareness of the project registry to assign cycles to projects. |
-| **agent-handoff-plan** | **Extended, and partially superseded** | Mechanical checks move to `tdd plan register --validate` (one test per cycle unless a contract cycle; project exists; test id well-formed for the adapter; declared files resolvable). The skill keeps the judgement checks it alone can make. Gains a feedback loop it has never had: plan-fidelity metrics reveal which of its trap patterns actually predict failure. |
-| **audit-friction-log** | **Extended** | Input becomes `tdd log render` or a ledger query rather than hand-written markdown. Stops re-deriving git facts. Can audit across runs rather than one at a time. |
-| **raise-pr** | **Extended** | Gates on run state `CLOSED`; embeds the declared-vs-delivered diff in the PR body automatically, replacing the manual pre-PR reconciliation. |
-
-### 16.3 Migration
-
-**R16.2** Adoption is per-plan, not big-bang. A plan carrying front-matter runs under the new
-skills; a plan without it runs as an `undeclared` contract (R7.6) with fidelity metrics disabled.
-Both mechanisms can coexist during rollout, so no plan in flight needs rewriting.
 
 ---
 
 ## Appendix A — Observed defects motivating requirements
 
-Drawn from the prior system's own friction logs and working tree.
+Drawn from the predecessor system's (§1) own friction logs and working tree.
 
 | Observation | Requirement |
 |---|---|
