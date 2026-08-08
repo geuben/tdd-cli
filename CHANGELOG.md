@@ -8,6 +8,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `docs/harness-integration.md`: the contract for writing a driving skill against
+  any harness — the envelope, the closed verb set, and authoring rules — with a
+  runnable Claude Code reference skill in `examples/claude-code-skill/`.
+- `examples/plan.md`: a complete example plan exercising every cycle kind and the
+  full front-matter vocabulary, registered by the test suite so it cannot drift
+  from the contract parser.
 - Single-project repositories: `root = "."` declares the worktree root as the
   project, and `tdd init` proposes it when the root itself matches an adapter.
 - `tdd init` reports directories it could not match (`unmatched`) instead of
@@ -26,6 +32,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The `create_stub` directive quotes the stub idiom of the adapter that owns the
+  uncollectable target, via `Adapter.stub_hint()`. Previously it hardcoded
+  `raise NotImplementedError` — Python advice served verbatim to vitest projects.
 - Artifact regeneration now stages the artifact's own path — and the paths of
   its upstream artifact chain — in the `chore(<name>): regenerate` commit, not
   only `generated = true` paths. Previously a regenerate hook that rewrote an
@@ -33,6 +42,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   it was never committed, CI compared a stale committed spec against a fresh
   committed client and reported drift, and every phase commit re-flagged the
   file as `undeclared_file_touched`.
+
+### Removed
+
+- Consumed internal dogfooding artifacts (`docs/multi-agent-feedback.md`, `tasks/`),
+  along with references to their numbering in code comments and docstrings. The
+  README and PRD no longer explain rules by pointing at unpublished history.
 
 ## [0.1.0] - Unreleased
 
