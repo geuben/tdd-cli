@@ -48,6 +48,17 @@ flow — skills describe *how* to do the work and must never contain stopping in
 files: two projects can share a marker, and directory-listing order must not decide which
 suite runs.
 
+A single-project repository declares the worktree root itself:
+
+```toml
+[project.app]
+root       = "."
+adapter    = "pytest"
+test_paths = ["tests/"]
+```
+
+A monorepo declares one project per root:
+
 ```toml
 [project.backend]
 root       = "backend"
@@ -167,7 +178,14 @@ signal must surface rather than degrade silently.
 
 ## Adapters
 
-`pytest` and `vitest` are built in. Third-party adapters register under the
+`pytest` and `vitest` are built in. The pytest adapter runs the suite through the
+project's own environment manager, detected from its marker files — `uv.lock`,
+`poetry.lock`, `Pipfile`, `pdm.lock`, or `[tool.poetry]` in `pyproject.toml` — checked at
+the project root first, then the worktree root (workspace layouts keep one lockfile at the
+top). With no marker, the active environment's bare `pytest` runs. An explicit
+`test_command` always wins.
+
+Third-party adapters register under the
 `tddcli.adapters` entry-point group:
 
 ```toml

@@ -6,6 +6,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Single-project repositories: `root = "."` declares the worktree root as the
+  project, and `tdd init` proposes it when the root itself matches an adapter.
+- `tdd init` reports directories it could not match (`unmatched`) instead of
+  guessing, with a pointer to third-party adapter registration.
+
+### Changed
+
+- The pytest adapter derives its runner from the project's environment manager
+  (`uv.lock`, `poetry.lock`, `Pipfile`, `pdm.lock`, or `[tool.poetry]`) checked
+  at the project root then the worktree root, instead of assuming
+  `uv run pytest` whenever a `pyproject.toml` exists. With no marker, bare
+  `pytest` runs in the active environment. `tdd doctor`'s pytest-json-report
+  probe uses the same detection.
+- `tdd init` no longer claims any `package.json` directory for vitest; it
+  requires a vitest config file or a declared vitest dependency.
+
 ### Fixed
 
 - Artifact regeneration now stages the artifact's own path — and the paths of
