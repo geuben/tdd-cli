@@ -99,6 +99,10 @@ class Artifact:
             return self.produced_by.split(".", 1)[1]
         return None
 
+    def owns(self, rel_path: str) -> bool:
+        p = self.path.rstrip("/")
+        return rel_path == p or rel_path.startswith(p + "/")
+
 
 @dataclass
 class Config:
@@ -133,13 +137,15 @@ class Config:
 
     def is_generated(self, rel_path: str) -> bool:
         """R7.7 — generated output is excluded from authorship accounting."""
-        for art in self.artifacts.values():
-            if not art.generated:
-                continue
-            p = art.path.rstrip("/")
-            if rel_path == p or rel_path.startswith(p + "/"):
-                return True
-        return False
+        return any(art.owns(rel_path) for art in self.artifacts.values() if art.generated)
+
+    def artifact_chain(self, art: Artifact) -> list[Artifact]:
+        """`art` plus every upstream artifact its regenerate hook may refresh."""
+        chain, seen = [art], {art.name}
+        while (up := chain[-1].upstream_artifact) is not None and up not in seen:
+            chain.append(self.artifacts[up])
+            seen.add(up)
+        return chain
 
     def close_sweep_projects(self, cycle_projects: list[str], touched: set[str]) -> list[str]:
         """R9.2 — the cycle's own projects, plus anything downstream of an artifact it touched."""
