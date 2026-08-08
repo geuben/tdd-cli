@@ -4,6 +4,10 @@ The harness exposes a session id but not the model, so the model is read from th
 session transcript. Agents never supply identity by any path (R5.2) — the human
 fallback exists for hosts where the transcript is unavailable.
 
+Known limit: an in-process subagent inherits its parent's CLAUDE_CODE_SESSION_ID and
+writes no transcript under TRANSCRIPT_ROOT, so a run it starts resolves to the
+parent's model. Model comparisons require executors in top-level sessions.
+
 All harness coupling lives in this one module (R5.1): a transcript format change
 breaks here and nowhere else.
 """

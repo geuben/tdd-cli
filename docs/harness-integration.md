@@ -102,6 +102,19 @@ attach to: append it as markdown below the rendered friction log after `tdd log 
 Rendered sections are projections from the ledger; appended prose is unverified opinion,
 and auditors should read the two accordingly.
 
+## Executor identity and subagents
+
+`tdd run start` records which model is executing by reading the harness session id
+(`CLAUDE_CODE_SESSION_ID`) and resolving the model from that session's transcript.
+This is trustworthy only when the executor is a **top-level session** — its own
+terminal, worktree, or cloud session.
+
+An in-process subagent (Claude Code's Agent/Task tool) inherits the parent's session
+id and has no transcript of its own in the location the resolver reads, so a run
+started by a subagent is attributed to the **parent's** model. The run itself is
+unaffected — but if you are comparing models across runs, dispatch executors as
+separate top-level sessions, not as subagents, or the comparison is silently wrong.
+
 ## Rules for the skill
 
 1. **Dispatch on the verb, never on the prose.** The `detail` string may be reworded in
