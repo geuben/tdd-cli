@@ -247,9 +247,11 @@ def cmd_doctor(args) -> Envelope:
         check("adapter known", project.adapter in adapters.available(), project.adapter, project=name)
         check("test_paths declared", bool(project.test_paths), project=name)
         if project.adapter == "pytest":
-            code, out, err = adapters.base.run_command(
-                "uv run python -c 'import pytest_jsonreport'", root
-            )
+            # The probe runs in the project's own environment (uv, poetry, pipenv,
+            # pdm or the active venv) — hardcoding `uv run` here failed the check
+            # on any non-uv project even with the plugin installed.
+            probe = adapters.build(project, worktree).plugin_probe_cmd()
+            code, out, err = adapters.base.run_command(probe, root)
             check("pytest-json-report installed", code == 0, (err or "")[:200], project=name)
 
         # Run before `collectable()` (cycle 18) so this actionable message wins over

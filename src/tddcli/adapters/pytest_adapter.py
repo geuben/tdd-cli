@@ -29,11 +29,38 @@ from .base import (
 )
 
 
+#: Environment-manager marker files, most specific first. A pyproject.toml alone is
+#: NOT a marker: Poetry, pipenv, PDM and plain-venv projects all have one, and
+#: assuming uv there runs the suite in an environment the project never built.
+RUNNER_MARKERS = (
+    ("uv.lock", "uv run "),
+    ("poetry.lock", "poetry run "),
+    ("Pipfile", "pipenv run "),
+    ("pdm.lock", "pdm run "),
+)
+
+
 class PytestAdapter(Adapter):
     name = "pytest"
 
+    def _runner_prefix(self) -> str:
+        """The project root is checked before the worktree root: a workspace keeps
+        one lockfile at the top, but a member with its own marker owns its choice."""
+        for base in (self.root, self.worktree):
+            for marker, prefix in RUNNER_MARKERS:
+                if (base / marker).is_file():
+                    return prefix
+        pyproject = self.root / "pyproject.toml"
+        if pyproject.is_file() and "[tool.poetry]" in pyproject.read_text():
+            return "poetry run "
+        return ""
+
     def _base_cmd(self) -> str:
-        return "uv run pytest" if (self.root / "pyproject.toml").is_file() else "pytest"
+        return f"{self._runner_prefix()}pytest"
+
+    def plugin_probe_cmd(self) -> str:
+        """The pytest-json-report check, runnable in the project's own environment."""
+        return f"{self._runner_prefix()}python -c 'import pytest_jsonreport'"
 
     def _test_cmd(self) -> str:
         """The project's own suite command, so the suite under TDD is the real one."""
