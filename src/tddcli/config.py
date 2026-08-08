@@ -61,6 +61,8 @@ class Project:
     collect_command: str | None = None
 
     def owns(self, rel_path: str) -> bool:
+        if self.root == ".":     # single-project repo: the root is the worktree itself
+            return True
         return rel_path == self.root or rel_path.startswith(self.root.rstrip("/") + "/")
 
     def relative_to_root(self, rel_path: str) -> str:
@@ -128,10 +130,14 @@ class Config:
         return self.projects[name]
 
     def owning_project(self, rel_path: str) -> Project | None:
-        # Longest root wins, so nested roots resolve deterministically.
+        # Longest root wins, so nested roots resolve deterministically; a "." root
+        # counts as length zero so any nested root beats the repo-root project.
+        def depth(p: Project) -> int:
+            return 0 if p.root == "." else len(p.root)
+
         best = None
         for proj in self.projects.values():
-            if proj.owns(rel_path) and (best is None or len(proj.root) > len(best.root)):
+            if proj.owns(rel_path) and (best is None or depth(proj) > depth(best)):
                 best = proj
         return best
 
