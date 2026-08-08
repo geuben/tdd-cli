@@ -74,12 +74,16 @@ def test_a_root_project_owns_top_level_paths(flat_repo):
 
 
 def test_a_nested_root_still_wins_over_the_repo_root(tmp_path):
+    # `a` is the load-bearing case: len("a") == len("."), so ordinary
+    # longest-root comparison would tie and let declaration order decide.
     (tmp_path / "tdd.toml").write_text(
         TOML + '\n[project.backend]\nroot = "backend"\nadapter = "pytest"\n'
         'test_paths = ["tests/"]\n'
+        '\n[project.a]\nroot = "a"\nadapter = "pytest"\ntest_paths = ["tests/"]\n'
     )
     cfg = config_mod.load(tmp_path)
     assert cfg.owning_project("backend/app/x.py").name == "backend"
+    assert cfg.owning_project("a/x.py").name == "a"
     assert cfg.owning_project("app/x.py").name == "app"
 
 
@@ -113,5 +117,6 @@ def test_init_proposes_the_repo_root_as_a_project(tmp_path, ledger_home):
     out = run_cli(root, "init")
     assert out["ok"], out
     body = (root / "tdd.toml").read_text()
+    assert "[project.workspace]" in body
     assert 'root       = "."' in body
     assert 'adapter    = "pytest"' in body

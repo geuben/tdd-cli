@@ -66,8 +66,6 @@ class Project:
         return rel_path == self.root or rel_path.startswith(self.root.rstrip("/") + "/")
 
     def relative_to_root(self, rel_path: str) -> str:
-        if self.root == ".":
-            return rel_path
         prefix = self.root.rstrip("/") + "/"
         return rel_path[len(prefix):] if rel_path.startswith(prefix) else rel_path
 
