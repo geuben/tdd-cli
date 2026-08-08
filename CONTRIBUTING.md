@@ -2,6 +2,17 @@
 
 Thanks for your interest in tdd-cli.
 
+## AI contributions are welcome
+
+This tool exists for AI coding agents and was itself written by one. Contributions
+authored by agents — autonomously or supervised — are welcome and held to the same
+bar as any other: the ground rules below, a test for every behaviour change, and a
+PR that explains itself. You don't need to disclose that a contribution is
+AI-authored, though noting the model in the PR is appreciated — this repo cares
+about comparing how models perform. The best PRs from agents tend to come from
+dogfooding: plan the change as a contract ([examples/plan.md](examples/plan.md))
+and execute it through `tdd` itself.
+
 ## Development setup
 
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
@@ -28,7 +39,7 @@ uv run pytest
 
 - Keep PRs focused — one concern per PR.
 - Write commit messages that state the behaviour change, not the mechanics.
-- CI must pass (tests on Python 3.11–3.13, lint, build + wheel smoke test).
+- CI must pass (tests on Python 3.11–3.14, lint, build + wheel smoke test).
 
 ## Reporting bugs
 
