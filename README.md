@@ -11,9 +11,17 @@ refer to that document.
 
 ## Why
 
-The mechanism this replaces used a JSON file on disk as shared state, written by the same
-agent it was meant to constrain. That produced four failure classes: corrupted state,
-unverifiable self-reporting, runs stopping mid-plan, and no comparable record of anything.
+An agent instructed to follow TDD will report that it did. The usual ways to hold it to
+that — prompt rules, a checklist, a state file in the worktree — all share one flaw: the
+record of progress is written by the same agent it is meant to constrain. That flaw
+produces four failure classes, reliably: state that is corrupted or edited to claim
+progress never made; "the test failed first" as an unverifiable self-report; runs that
+stop silently mid-plan; and no record comparable across runs, plans, or models.
+
+This tool removes the agent from the reporting path. It runs the suites itself, computes
+every phase transition from what the tests observably did, and records the whole run in a
+ledger the agent cannot reach — which is also what makes the friction logs and metrics at
+the end trustworthy.
 
 ## Install
 
