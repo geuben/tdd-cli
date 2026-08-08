@@ -85,6 +85,23 @@ skill that duplicates any of it will fight the ledger.
 
 Adding a verb is a specification change and bumps `verb_set_version`.
 
+## Volunteering judgement
+
+`annotate_cycle` fires only for keys the plan requires. But the friction log's value to
+the *next* plan depends on judgement the tool cannot observe, so the skill should tell
+the agent to volunteer annotations at the moment of discovery — they attach to the open
+cycle, so batching them at the end records them against the wrong one:
+
+- `plan_defect` — the plan disagreed with the codebase: a declared test target that
+  had to be adopted, behaviour already implemented, wrong file, stale line numbers.
+- `friction_note` — tooling or environment cost attempts that the code did not.
+- `unplanned_change` / `new_work_raised` — scope the cycle absorbed or deferred.
+
+Run-level narrative (post-run CI failures, patterns spanning cycles) has no cycle to
+attach to: append it as markdown below the rendered friction log after `tdd log render`.
+Rendered sections are projections from the ledger; appended prose is unverified opinion,
+and auditors should read the two accordingly.
+
 ## Rules for the skill
 
 1. **Dispatch on the verb, never on the prose.** The `detail` string may be reworded in

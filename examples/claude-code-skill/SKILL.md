@@ -62,6 +62,22 @@ repository.
 - **complete** / **blocked** — terminal. Report the outcome; if `detail` asks for it,
   run `tdd log render` first.
 
+## Judgement annotations — volunteer these
+
+Annotations attach to the **open** cycle: record them the moment you notice, not at the
+end of the run.
+
+- The plan disagreed with the codebase (target adopted, behaviour already implemented,
+  wrong file or stale line numbers): `tdd annotate --key plan_defect --value "..."`.
+- Tooling or environment cost you attempts the code didn't:
+  `tdd annotate --key friction_note --value "..."`.
+- The cycle absorbed undeclared scope, or surfaced follow-up work:
+  `--key unplanned_change` / `--key new_work_raised`.
+
+Narrative that spans cycles or happened after the run (CI failures, patterns) goes as
+markdown appended below the rendered friction log after `tdd log render` — never into a
+cycle annotation it doesn't belong to.
+
 ## When a suite run changes nothing
 
 `no_change_since_last_run` in an envelope means the tree is identical to the last run.

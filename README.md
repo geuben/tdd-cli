@@ -192,6 +192,37 @@ front-matter vocabulary, and the body structure (context, verified repo facts, p
 expected failures) that lets an agent execute it without conversation context. The test
 suite registers it, so it cannot drift from the contract parser.
 
+## The friction log
+
+`tdd log render` projects the ledger into a markdown friction log — the feedback channel
+back to the **planning** process. It reports plan fidelity (declared vs delivered vs
+skipped vs never-reached cycles, human interventions) and, per cycle: the target, suite
+runs by phase, the first-run outcome against expectation, sensitivity checks, commits,
+and integrity events.
+
+Every observable fact in it is projected from recorded events. The agent that did the
+work cannot compose it — that is what makes it worth reading, and why the log is
+rendered, never written. Judgement enters in exactly two ways:
+
+- **Per cycle, through `tdd annotate`** — rendered inline in the cycle it concerns.
+  Beyond keys the plan requires via `annotation_keys`, these keys are reserved for
+  judgement agents volunteer: `plan_defect`, `friction_note`, `red_expectation`,
+  `commit_shape_deviation`, `test_setup_smell`, `unplanned_change`, `new_work_raised`.
+  `plan_defect` is the one that matters most: it records where the plan and the codebase
+  disagreed, which is precisely what the next plan needs to know.
+- **Per run, as prose appended below the rendered document.** Legitimate and expected —
+  post-run narrative (CI failures, patterns noticed) has no cycle to attach to. But it
+  is unverified: an auditor should trust the projected sections and read appended
+  narrative as the agent's opinion.
+
+`tdd metrics` is the quantitative companion: attempts per cycle, RED-first violation
+rate, fidelity, blockers, interventions. Cross-plan aggregates are deliberately labelled
+non-comparable — cycle difficulty varies too much — so compare runs of the same contract
+only (e.g. the same plan executed by two models).
+
+The loop closes when the rendered log is committed alongside the plan and read before
+the next plan is written.
+
 ## Adapters
 
 `pytest` and `vitest` are built in. The pytest adapter runs the suite through the

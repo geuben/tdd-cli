@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tddcli import config as config_mod, contract
+from tddcli import config as config_mod
+from tddcli import contract
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "plan.md"
 

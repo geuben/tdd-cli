@@ -11,9 +11,6 @@ from collections import defaultdict
 
 from .ledger import Ledger
 
-OBSERVED_HEADING = "Observed"
-JUDGEMENT_HEADING = "Judgement"
-
 
 def _fmt_list(items) -> str:
     return ", ".join(f"`{i}`" for i in items) if items else "none"
