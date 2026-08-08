@@ -1,6 +1,6 @@
 """tdd.toml — the project registry and artifact graph (§7.1).
 
-Roots are declared, never discovered by scanning for marker files (P5, R7.1): two
+Roots are declared, never discovered by scanning for marker files (R7.1): two
 projects in one repo can share a marker, and directory-listing order must not decide
 which suite runs.
 """

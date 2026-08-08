@@ -135,7 +135,7 @@ class VitestAdapter(Adapter):
 
     def collectable(self) -> GateResult:
         """A single whole-suite probe, mirroring the pytest adapter's `--collect-only`
-        (§10, cycle 15): `npx vitest list` at the project root rather than the
+        (§10): `npx vitest list` at the project root rather than the
         per-file `collect()` loop below."""
         base = self.project.collect_command or "npx vitest list"
         code, out, err = run_command(base, self.root)

@@ -65,8 +65,7 @@ def repo(tmp_path, ledger_home):
 def repo_multi(repo, ledger_home):
     """`repo` plus an empty vitest `frontend` (a `package.json`, no test files).
 
-    P5 proved this starts a run cleanly: `run start` reports `baselines: {backend: 0,
-    frontend: 0}`. Used by cycles 9 and 18.
+    Starts a run cleanly: `run start` reports `baselines: {backend: 0, frontend: 0}`.
     """
     (repo / "frontend").mkdir()
     (repo / "frontend" / "package.json").write_text('{"name": "frontend", "version": "1.0.0"}\n')
@@ -94,8 +93,8 @@ def repo_multi(repo, ledger_home):
 def repo_broken(repo, ledger_home):
     """`repo` plus a second pytest project `verify` that cannot collect.
 
-    Mirrors the real `pyyaml` incident. P4 proved `run start` refuses this project —
-    so it must only be used by doctor cycles (15-17), which need no run.
+    Mirrors a missing-dependency incident. `run start` refuses this project, so the
+    fixture is only usable by doctor tests, which need no run.
     """
     (repo / "verify" / "tests").mkdir(parents=True)
     (repo / "verify" / "tests" / "test_v.py").write_text(

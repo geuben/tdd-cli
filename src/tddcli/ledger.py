@@ -1,7 +1,7 @@
 """SQLite ledger. One per repository (R13.3), outside every worktree, never in the repo.
 
 Invocations, transitions and events are append-only. Nothing here accepts a phase
-from a caller — phases are written only by the state machine (P1).
+from a caller — phases are written only by the state machine.
 """
 
 from __future__ import annotations
@@ -372,10 +372,10 @@ class Ledger:
             at=now(),
         )
 
-    # -- baseline claim (issue #4 / #2) -----------------------------------
+    # -- baseline claim ----------------------------------------------------
 
     def claim(self, worktree: str, hostname: str, pid: int, projects_total: int) -> int:
-        """Insert the claim row. The insert is the lock (Finding 4): `worktree_path`
+        """Insert the claim row. The insert is the lock: `worktree_path`
         carries `UNIQUE`, so a second claim on the same worktree raises
         `sqlite3.IntegrityError` rather than racing a read-then-write check."""
         return self.insert(

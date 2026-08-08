@@ -1,6 +1,9 @@
-"""Worktree claim during baseline collection (issue #4, foundation for #2).
+"""Worktree claim during baseline collection.
 
-See tasks/multi-agent-feedback.md Part A.
+An agent whose `run start` times out at the harness assumes failure and re-runs it;
+two probes then compete on one worktree's ledger. The claim makes the second call a
+typed refusal, and is also what lets `status`/`progress` report an in-flight baseline
+instead of "never started".
 """
 
 from __future__ import annotations
@@ -52,9 +55,9 @@ def test_second_start_reports_the_active_run_id(repo):
 def test_successful_start_leaves_no_claim(repo, monkeypatch):
     """The claim is taken before probing and released once the run has started.
 
-    Spies on `adapters.build`, called once per project during the probe loop
-    (P6), rather than on the still-stubbed `Ledger.active_claim` — the seam must
-    not depend on the method this cycle is implementing.
+    Spies on `adapters.build`, called once per project during the probe loop,
+    rather than on `Ledger.active_claim` — the seam must not depend on the
+    method under test.
     """
     plan = register(repo)
     real_build = adapters.build
@@ -92,8 +95,9 @@ def test_start_is_rejected_while_a_baseline_is_collecting(repo):
 
 
 def test_only_one_of_two_concurrent_starts_wins(repo):
-    """P1, reproduced as a test. Assert on returned envelopes only — `run_cli`
-    redirects stdout process-globally and threaded output interleaves (P1 caveat).
+    """The concurrent-start race, reproduced as a test. Assert on returned
+    envelopes only — `run_cli` redirects stdout process-globally and threaded
+    output interleaves.
 
     Calls `cmd_run_start` directly rather than through `run_cli`: `contextlib.
     redirect_stdout` is itself process-global, and two threads entering/exiting it

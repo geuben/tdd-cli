@@ -147,15 +147,15 @@ class PytestAdapter(Adapter):
         return sorted({p for p in found if p.is_file()})
 
     def collectable(self) -> GateResult:
-        """A single whole-suite `--collect-only` (§10, cycle 15), not the per-file
-        `collect()` loop below — that loop is R10.3/R10.4's per-file collection, the
-        cost behind issue #1 (P3: the whole-suite probe costs 0.04s on a broken
-        project vs. minutes for the per-file sweep on a real one).
+        """A single whole-suite `--collect-only` (§10), not the per-file
+        `collect()` loop below — that loop is R10.3/R10.4's per-file collection,
+        the slow path (the whole-suite probe costs 0.04s on a broken project vs.
+        minutes for the per-file sweep on a real one).
 
-        Reads **stdout**, not stderr: P2 proved `uv` writes environment warnings
+        Reads **stdout**, not stderr: `uv` writes environment warnings
         (`VIRTUAL_ENV=... does not match ...`) to stderr while pytest writes the
-        actual `ModuleNotFoundError` to stdout. The existing `pytest-json-report
-        installed` check read stderr and lost the real error — that bug is issue #3.
+        actual `ModuleNotFoundError` to stdout. A doctor check that reads stderr
+        loses the real error and the failure surfaces unattributed.
         """
         code, out, err = run_command(f"{self._collect_cmd()} --collect-only -q", self.root)
         return GateResult(ok=code == 0, output="" if code == 0 else out.strip()[:2000])

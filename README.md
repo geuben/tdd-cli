@@ -104,10 +104,10 @@ project. It has no tests and no cycles.
 
 ## Sharing cores between concurrent agents
 
-Several agents running tdd-cli on one machine (each in its own worktree) previously had to
-pin their suites to `-n 1` — the only setting that never oversubscribes the box — which
-serialises every suite even when an agent is alone. Instead, declare where the worker count
-goes and let the tool compute it:
+Several agents running tdd-cli on one machine (each in its own worktree) face a bad
+trade: a fixed worker count in the test command either oversubscribes the box when
+agents run together or serialises every suite when an agent is alone. Instead, declare
+where the worker count goes and let the tool compute it:
 
 ```toml
 [project.backend]
@@ -297,9 +297,10 @@ and is never reclassified as a pin.
 
 `run start` probes every project's suite before a run exists (R9.5a), and on a real project
 that can take minutes — well past an agent harness's default Bash timeout. If the command
-appears to hang or time out, **do not re-run it**: a second `run start` against the same
-worktree is refused with `reason: "baseline_in_progress"`, and re-running repeatedly is exactly
-what caused the original problem this section exists to prevent. In order of preference:
+appears to hang or time out, **do not re-run it**: the probe is still making progress in the
+background, and a second `run start` against the same worktree is refused with
+`reason: "baseline_in_progress"` — retrying on timeout just stacks refusals on top of a
+baseline that was never stuck. In order of preference:
 
 1. **Background it.** Run `tdd run start` in the background if your harness supports it. The
    heartbeat (`baseline_captured` / `project_completed` lines on stderr) lands in the task log
@@ -328,7 +329,8 @@ artifact; a passed-on-arrival cycle cannot close without a verified sensitivity 
 
 **Recorded, never blocked:** non-stub writes during RED, undeclared file touches, scope
 divergence, extra attempts. Prevention rules with edge cases produce false denials, and a
-blocked agent improvises — which is the original problem.
+blocked agent improvises around them — putting it right back in the reporting path the
+tool exists to keep it out of.
 
 **Delegated to hooks:** a Stop hook that queries `tdd status` and refuses to let an agent
 stop while a run is live; a Bash hook redirecting bare `pytest`/`vitest` through `tdd advance`.

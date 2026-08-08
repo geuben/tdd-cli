@@ -1,18 +1,17 @@
-"""`tdd doctor` attributes a collection failure to its project (issues #3 and #5).
+"""`tdd doctor` attributes a collection failure to its project, by name.
 
-P2 — the closest existing check, `verify: pytest-json-report installed`, reads the
-subprocess's *stderr*, and `uv` writes environment warnings there while pytest writes
-the actual `ModuleNotFoundError` to *stdout*. Reading the wrong stream is the root
-cause of issue #3.
+Without attribution, one broken project fails doctor with an unattributed error and
+every agent re-diagnoses it by hand. The closest pre-existing check,
+`verify: pytest-json-report installed`, read the subprocess's *stderr*, where `uv`
+writes environment warnings — while pytest writes the actual `ModuleNotFoundError`
+to *stdout*. Reading the wrong stream is what buried the attribution.
 
-`repo_broken` (P4) cannot start a run and must only be used here — doctor needs none.
+`repo_broken` cannot start a run and must only be used here — doctor needs none.
 
-Fixture friction, per the plan: `uv run` inside `repo_broken`'s `verify` project
-creates `verify/.venv`, so `worktree clean` reports `false` in doctor output. Assert
-on the specific check under test, never on `healthy`, unless the test is explicitly
-about the exit/`ok` contract (cycle 17).
-
-See tasks/multi-agent-feedback.md Part D.
+Fixture friction: `uv run` inside `repo_broken`'s `verify` project creates
+`verify/.venv`, so `worktree clean` reports `false` in doctor output. Assert on the
+specific check under test, never on `healthy`, unless the test is explicitly about
+the exit/`ok` contract.
 """
 
 from __future__ import annotations
@@ -25,8 +24,8 @@ def test_doctor_attributes_a_collection_failure_to_its_project(repo_broken):
     checks = out["result"]["checks"]
     verify_checks = [c for c in checks if c.get("detail", "").find("yaml_does_not_exist") != -1]
     assert verify_checks, checks
-    # cycle 16.5 replaced the `f"{name}: ..."` prefix convention with an explicit
-    # `project=` field on the check dict.
+    # An explicit `project=` field on the check dict replaced the earlier
+    # `f"{name}: ..."` prefix convention.
     named = [c for c in verify_checks if c.get("project") == "verify"]
     assert named, verify_checks
 
@@ -43,7 +42,7 @@ def test_doctor_fails_when_a_check_fails(repo_broken):
 
 
 def test_doctor_succeeds_when_every_check_passes(repo):
-    """The other half of cycle 17's `ok = healthy`: a genuinely healthy environment
+    """The other half of the `ok = healthy` contract: a genuinely healthy environment
     must still report `ok: true`, not just fail loudly when unhealthy. `uv run`'s
     `.venv` and pytest's cache directories are gitignored so `worktree clean` can
     actually pass — see the plan's "Fixture friction" note on `repo_broken`."""

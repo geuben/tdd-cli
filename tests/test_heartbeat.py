@@ -1,12 +1,11 @@
-"""Baseline and sweep heartbeats to stderr (issue #1).
+"""Baseline and sweep heartbeats to stderr.
 
-PRD §8: "Every command emits JSON on stdout with a common envelope" — `run_cli` does
-`json.loads(stdout)`. Prepending NDJSON there breaks the envelope contract and every
-existing test, so the heartbeat goes to stderr instead; nothing in `src/` writes
-there today. `run_cli`/`run_cli_text` redirect stdout only, so these tests capture
-stderr with `capsys` (P6 confirmed this works).
-
-See tasks/multi-agent-feedback.md Part B.
+A multi-minute silent baseline reads as a hang: harness Bash calls time out and
+agents re-run the command. PRD §8: "Every command emits JSON on stdout with a common
+envelope" — `run_cli` does `json.loads(stdout)`. Prepending NDJSON there breaks the
+envelope contract and every existing test, so the heartbeat goes to stderr instead;
+nothing else in `src/` writes there. `run_cli`/`run_cli_text` redirect stdout only,
+so these tests capture stderr with `capsys`.
 """
 
 from __future__ import annotations
@@ -144,10 +143,11 @@ def test_sweep_emits_a_project_completed_line(repo, capsys):
 
 
 def test_close_sweep_emits_a_project_completed_line(repo, capsys):
-    """The close sweep is exactly the slow, silent operation issue #1 is about.
+    """The close sweep is exactly the kind of slow, silent operation the
+    heartbeat exists for.
 
     `Engine.sweep` is a separate method from `Engine.run_projects` and does not
-    route through it, so cycle 10's heartbeat never reached it. The `phase` field
+    route through it, so the baseline heartbeat never reached it. The `phase` field
     is what distinguishes the two on a shared channel.
     """
     plan = register(repo)
