@@ -42,6 +42,9 @@ RUNNER_MARKERS = (
 class PytestAdapter(Adapter):
     name = "pytest"
 
+    def stub_hint(self) -> str:
+        return "`raise NotImplementedError` in every body"
+
     def _runner_prefix(self) -> str:
         """The project root is checked before the worktree root: a workspace keeps
         one lockfile at the top, but a member with its own marker owns its choice."""

@@ -94,6 +94,10 @@ class Adapter:
                 extra_env={"TDD_WORKERS": str(workers)},
             )
 
+    def stub_hint(self) -> str:
+        """The language idiom for a stub body, quoted into the create_stub directive."""
+        return "a body that fails loudly, never working logic"
+
     def collect(self) -> Collection:
         raise NotImplementedError
 

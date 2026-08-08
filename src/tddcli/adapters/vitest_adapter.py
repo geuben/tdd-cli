@@ -38,6 +38,9 @@ def _extract_json(raw: str) -> dict | None:
 class VitestAdapter(Adapter):
     name = "vitest"
 
+    def stub_hint(self) -> str:
+        return "`throw new Error(\"not implemented\")` in every body"
+
     def _id_for(self, suite_path: str, full_name: str) -> str:
         abs_path = Path(suite_path)
         try:

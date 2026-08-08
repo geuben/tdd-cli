@@ -161,11 +161,13 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
                 engine.run["id"], cycle["id"], "stub_directive_issued",
                 json.dumps(not_collected),
             )
+        owner = not_collected[0].split("::", 1)[0]
+        hint = adapters.build(engine.config.project(owner), engine.worktree).stub_hint()
         return _reply(
             engine, cycle, Verb.CREATE_STUB,
             f"{not_collected[0]} could not be collected — the module it imports does not"
             " exist yet. Create the stub and nothing else: no logic, no behaviour, just"
-            " enough for the import and the type checker (`raise NotImplementedError`)."
+            f" enough for the import and the type checker ({hint})."
             " It is staged with the test in the RED commit, not counted as"
             " implementation. Then run `tdd advance`.",
             not_collected=not_collected, failure=failure,
