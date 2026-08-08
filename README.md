@@ -50,9 +50,9 @@ tdd advance                    # the only command that changes phase
 Every command emits JSON with a `next_action`. That verb is the single authority on control
 flow — skills describe *how* to do the work and must never contain stopping instructions.
 [`docs/harness-integration.md`](./docs/harness-integration.md) specifies the verb set and how
-to write such a skill; [`examples/claude-code-skill/`](./examples/claude-code-skill/) is a
+to write such a skill; [`examples/skills/tdd-drive/`](./examples/skills/tdd-drive/) is a
 runnable one for Claude Code. Its planning-side counterpart,
-[`examples/claude-code-handoff-skill/`](./examples/claude-code-handoff-skill/), hardens a
+[`examples/skills/tdd-handoff/`](./examples/skills/tdd-handoff/), hardens a
 draft plan and authors its contract before the run starts.
 
 ## Configuration
@@ -195,7 +195,7 @@ expected failures) that lets an agent execute it without conversation context. T
 suite registers it, so it cannot drift from the contract parser.
 
 Producing a plan of that shape is itself a process.
-[`examples/claude-code-handoff-skill/`](./examples/claude-code-handoff-skill/) is a Claude
+[`examples/skills/tdd-handoff/`](./examples/skills/tdd-handoff/) is a Claude
 Code skill that takes a draft plan, verifies its claims against the codebase, probes each
 cycle's RED path empirically, assigns cycle kinds, and authors the contract — gated on
 `tdd plan register` succeeding with the intended cycle count and kind breakdown.

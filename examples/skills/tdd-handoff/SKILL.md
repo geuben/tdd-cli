@@ -12,7 +12,7 @@ a registered front-matter contract — plus a short handoff-readiness report. No
 implementation code.
 
 This is the planning-side counterpart to the driving skill in
-`examples/claude-code-skill/`. The hardener runs `tdd plan register`; the executor runs
+`examples/skills/tdd-drive/`. The hardener runs `tdd plan register`; the executor runs
 `tdd doctor` and `tdd run start`. Never start a run on the executor's behalf: executor
 identity is recorded from the session that runs `run start`, so a hardener-started run
 attributes the work to the wrong agent.

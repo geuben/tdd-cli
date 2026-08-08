@@ -709,7 +709,7 @@ empty — records from outside it are never imported.
 The tool does not run agents; an agent drives it through a skill. The one skill it
 requires — execution: respond to each `next_action` verb — is specified in
 [`harness-integration.md`](./harness-integration.md), with a reference implementation
-in [`examples/claude-code-skill/`](../examples/claude-code-skill/). The skill retains
+in [`examples/skills/tdd-drive/`](../examples/skills/tdd-drive/). The skill retains
 only what the CLI cannot supply: craft guidance — how to write one good failing test,
 what "minimum implementation" means, when a refactor is warranted. Loop control, stop
 conditions and cycle counting are owned by `next_action` / `terminal` / the contract,

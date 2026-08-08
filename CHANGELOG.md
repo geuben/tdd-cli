@@ -10,11 +10,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 - `docs/harness-integration.md`: the contract for writing a driving skill against
   any harness — the envelope, the closed verb set, and authoring rules — with a
-  runnable Claude Code reference skill in `examples/claude-code-skill/`.
+  runnable Claude Code reference skill in `examples/skills/tdd-drive/`.
 - `examples/plan.md`: a complete example plan exercising every cycle kind and the
   full front-matter vocabulary, registered by the test suite so it cannot drift
   from the contract parser.
-- `examples/claude-code-handoff-skill/`: a plan-hardening skill for Claude Code —
+- `examples/skills/tdd-handoff/`: a plan-hardening skill for Claude Code —
   the planning-side counterpart to the driving skill. It audits a draft plan
   against the codebase, probes RED paths empirically, assigns cycle kinds, and
   authors the front-matter contract, gated on `tdd plan register` succeeding.

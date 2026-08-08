@@ -10,7 +10,7 @@ The other half lives in the harness, in two parts:
   Claude Code hooks live in [`examples/claude-code-hooks/`](../examples/claude-code-hooks/).
 
 This document is about writing the skill. A complete, runnable Claude Code skill built
-from it lives in [`examples/claude-code-skill/`](../examples/claude-code-skill/).
+from it lives in [`examples/skills/tdd-drive/`](../examples/skills/tdd-drive/).
 
 ## The envelope
 
