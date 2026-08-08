@@ -1,13 +1,7 @@
 # Releasing
 
-One-time setup (before the first release):
-
-1. On [pypi.org](https://pypi.org) → your account → Publishing → **Add a new
-   pending publisher**: project `tdd-cli`, owner `geuben`, repo `tdd-cli`,
-   workflow `release.yml`, environment `pypi`.
-2. In the GitHub repo settings → Environments → create an environment named
-   `pypi` (optionally with required reviewers as a release gate).
-3. Make the GitHub repository public.
+Publishing uses PyPI [trusted publishing](https://docs.pypi.org/trusted-publishers/):
+`release.yml` publishes from the `pypi` GitHub environment; no tokens are stored.
 
 Per release:
 
