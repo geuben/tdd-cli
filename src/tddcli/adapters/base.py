@@ -77,7 +77,9 @@ class Adapter:
     def run(self, target: str | None = None) -> Verdict:
         raise NotImplementedError
 
-    def _run_suite(self, command: str) -> tuple[int, str, str]:
+    def _run_suite(
+        self, command: str, extra_env: dict[str, str] | None = None
+    ) -> tuple[int, str, str]:
         """Run the suite under a machine-wide worker lease.
 
         Substituting `{workers}` is opt-in per project; a command without the
@@ -91,8 +93,30 @@ class Adapter:
             return run_command(
                 command.replace("{workers}", str(workers)),
                 self.root,
-                extra_env={"TDD_WORKERS": str(workers)},
+                extra_env={"TDD_WORKERS": str(workers), **(extra_env or {})},
             )
+
+    def _test_cmd(self) -> str:
+        raise NotImplementedError
+
+    def _suite_invocations(self) -> list[tuple[str, dict[str, str] | None]]:
+        """The default suite plus one invocation per declared override (R7.13).
+
+        Runs and collection union these results, so a test reachable only under an
+        alternate runner config is still observed — without widening the default
+        config, which is exactly the workaround that breaks CI.
+        """
+        return [(self._test_cmd(), None)] + [
+            (ov.test_command, self._override_env(ov)) for ov in self.project.overrides
+        ]
+
+    @staticmethod
+    def _override_env(override) -> dict[str, str] | None:
+        """`${VAR}` references resolve from the environment at invocation time, so a
+        port assigned by the harness need not be hard-coded in the reviewed file."""
+        if override is None or not override.env:
+            return None
+        return {k: os.path.expandvars(v) for k, v in override.env.items()}
 
     def stub_hint(self) -> str:
         """The language idiom for a stub body, quoted into the create_stub directive."""

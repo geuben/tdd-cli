@@ -264,6 +264,14 @@ root    = "frontend"
 adapter = "detox"
 in_close_sweep = false          # too slow per cycle; runs at plan completion
 
+# Tests the default command cannot reach — contract tests needing a live backend
+# being the motivating case — declare the alternate command per pattern (R7.13).
+[[project.frontend.override]]
+pattern         = "src/__contract__/"
+test_command    = "npx vitest run --config vitest.contract.config.ts"
+collect_command = "npx vitest list --config vitest.contract.config.ts"
+env             = { API_URL = "http://localhost:${API_PORT}" }
+
 # Artifacts chain. `codegen` is a generator tool, not a project: it is never a
 # cycle target, has no tests, and its output is owned by the artifact edge.
 [artifact.openapi]
@@ -298,6 +306,18 @@ Requirements:
   regeneration step, not attributed to the agent.
 - **R7.8** Generator tools that are not hand-edited during TDD — `codegen` being the motivating
   case — are modelled as artifact regeneration commands, never as projects.
+- **R7.12** A project declares its own suite command (`test_command`, and `collect_command` for
+  collection). Adapters append only reporting flags: parallelism, plugins and markers stay
+  exactly as the project declared, so the suite under TDD is the suite the team trusts.
+- **R7.13** A project may declare **per-pattern suite overrides**: an alternate `test_command`
+  (plus optional `collect_command` and `env`) for files matching a root-relative pattern.
+  Collection and suite runs union the default suite with every override suite, so a cycle can
+  target a test only an alternate runner config reaches — without widening the default config,
+  which breaks the suite CI runs and pollutes target adoption (R8.9) with the other suite's
+  tests. Override patterns classify their files as tests (R7.4) without being repeated in
+  `test_paths`; first declared match wins; `env` values may reference `${VAR}`, expanded at
+  invocation. A suite that produces no report fails the run loudly — a silent gap would
+  resolve a target in that suite as `not_found`.
 
 ### 7.2 Plan front-matter
 

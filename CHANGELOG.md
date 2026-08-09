@@ -6,6 +6,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Per-pattern suite overrides (`[[project.<name>.override]]` in `tdd.toml`): an
+  alternate `test_command` — plus optional `collect_command` and `env` — for
+  files the default runner config cannot reach, such as contract tests that need
+  a live backend. Collection and suite runs union the default suite with every
+  override suite, so a cycle can target such a test without widening the default
+  config (which breaks CI and pollutes target adoption with the other suite's
+  tests). Override patterns classify their files as tests without being repeated
+  in `test_paths`; `env` values may reference `${VAR}`, expanded at invocation.
+
 ## [0.1.0] - 2026-08-08
 
 Initial release.

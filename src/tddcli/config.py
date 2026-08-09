@@ -42,6 +42,35 @@ class ConfigError(RuntimeError):
     pass
 
 
+def _pattern_matches(rel_path: str, pattern: str) -> bool:
+    """`test_paths`-style matching: trailing-slash directory, glob, or bare
+    directory prefix."""
+    if pattern.endswith("/"):
+        return rel_path.startswith(pattern)
+    return fnmatch(rel_path, pattern) or rel_path.startswith(pattern.rstrip("/") + "/")
+
+
+@dataclass
+class Override:
+    """An alternate suite for the files matching `pattern` (R7.13).
+
+    Some tests intentionally live outside the project's default runner config —
+    contract tests that need a live backend being the motivating case. Widening the
+    default config to satisfy collection breaks CI (the default suite suddenly makes
+    real network calls) and pollutes target adoption with tests from the other suite.
+    Instead the registry declares the alternate command; collection and suite runs
+    union the default suite with every override suite.
+
+    `pattern` matches paths relative to the project root, like `test_paths`.
+    `env` values may reference `${VAR}`, expanded from the environment at invocation.
+    """
+
+    pattern: str
+    test_command: str
+    collect_command: str | None = None
+    env: dict[str, str] = field(default_factory=dict)
+
+
 @dataclass
 class Project:
     name: str
@@ -59,6 +88,26 @@ class Project:
     #: Per-file collection. Must not be parallelised: collection is cheap and xdist
     #: adds startup cost per file.
     collect_command: str | None = None
+    #: Alternate suites for files the default command cannot reach (R7.13).
+    overrides: list[Override] = field(default_factory=list)
+
+    def override_for(self, rel_path: str) -> Override | None:
+        """First declared override whose pattern matches (path relative to the
+        project root), so precedence is the reviewed file's order, never dict or
+        filesystem order. Patterns follow `test_paths` semantics: a glob, a
+        trailing-slash directory, or a bare directory prefix."""
+        for ov in self.overrides:
+            if _pattern_matches(rel_path, ov.pattern):
+                return ov
+        return None
+
+    @property
+    def test_patterns(self) -> list[str]:
+        """`test_paths` plus every override pattern. An override's files are tests by
+        declaration — the pattern exists to name the command that runs them — so they
+        classify as tests for staging and discovery without being repeated in
+        `test_paths`."""
+        return self.test_paths + [ov.pattern for ov in self.overrides]
 
     def owns(self, rel_path: str) -> bool:
         if self.root == ".":     # single-project repo: the root is the worktree itself
@@ -74,7 +123,7 @@ class Project:
         if not self.owns(rel_path):
             return False
         inner = self.relative_to_root(rel_path)
-        for pattern in self.test_paths:
+        for pattern in self.test_patterns:
             if pattern.endswith("/"):
                 if inner.startswith(pattern):
                     return True
@@ -196,6 +245,39 @@ def find_config(start: Path) -> Path | None:
     return None
 
 
+def _load_overrides(project: str, raw: list) -> list[Override]:
+    overrides: list[Override] = []
+    for i, body in enumerate(raw, start=1):
+        if not isinstance(body, dict):
+            raise ConfigError(
+                f"project {project!r} override #{i} must be a table"
+                " ([[project.<name>.override]])"
+            )
+        if "pattern" not in body:
+            raise ConfigError(f"project {project!r} override #{i} has no pattern")
+        if "test_command" not in body:
+            raise ConfigError(
+                f"project {project!r} override {body['pattern']!r} has no test_command"
+            )
+        env = body.get("env", {})
+        if not isinstance(env, dict) or not all(
+            isinstance(v, str) for v in env.values()
+        ):
+            raise ConfigError(
+                f"project {project!r} override {body['pattern']!r}: env must be a"
+                " table of string values"
+            )
+        overrides.append(
+            Override(
+                pattern=body["pattern"],
+                test_command=body["test_command"],
+                collect_command=body.get("collect_command"),
+                env=env,
+            )
+        )
+    return overrides
+
+
 def load(worktree: Path) -> Config:
     path = worktree / CONFIG_NAME
     if not path.is_file():
@@ -218,6 +300,7 @@ def load(worktree: Path) -> Config:
             in_close_sweep=body.get("in_close_sweep", True),
             test_command=body.get("test_command"),
             collect_command=body.get("collect_command"),
+            overrides=_load_overrides(name, body.get("override", [])),
         )
 
     artifacts: dict[str, Artifact] = {}
