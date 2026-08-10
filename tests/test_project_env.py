@@ -17,7 +17,6 @@ from pathlib import Path
 
 import pytest as pytest_framework
 
-from conftest import run_cli
 from tddcli import adapters
 from tddcli import config as config_mod
 from tddcli.config import ConfigError
