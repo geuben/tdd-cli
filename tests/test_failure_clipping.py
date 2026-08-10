@@ -14,8 +14,8 @@ import json
 from pathlib import Path
 
 from tddcli import adapters
-from tddcli.adapters.base import clip_failure
 from tddcli import config as config_mod
+from tddcli.adapters.base import clip_failure
 
 
 def test_short_text_passes_through_unclipped():
