@@ -88,6 +88,11 @@ class Project:
     #: Per-file collection. Must not be parallelised: collection is cheap and xdist
     #: adds startup cost per file.
     collect_command: str | None = None
+    #: Environment for the default suite's runs and collection, same semantics as
+    #: an override's `env`: `${VAR}` references expand from the environment at
+    #: invocation, so per-checkout values (a database port) stay out of the
+    #: reviewed file. An override's `env` layers on top for its own suite.
+    env: dict[str, str] = field(default_factory=dict)
     #: Alternate suites for files the default command cannot reach (R7.13).
     overrides: list[Override] = field(default_factory=list)
 
@@ -290,6 +295,13 @@ def load(worktree: Path) -> Config:
             raise ConfigError(f"project {name!r} has no root")
         if "adapter" not in body:
             raise ConfigError(f"project {name!r} has no adapter")
+        env = body.get("env", {})
+        if not isinstance(env, dict) or not all(
+            isinstance(v, str) for v in env.values()
+        ):
+            raise ConfigError(
+                f"project {name!r}: env must be a table of string values"
+            )
         projects[name] = Project(
             name=name,
             root=body["root"].rstrip("/"),
@@ -300,6 +312,7 @@ def load(worktree: Path) -> Config:
             in_close_sweep=body.get("in_close_sweep", True),
             test_command=body.get("test_command"),
             collect_command=body.get("collect_command"),
+            env=env,
             overrides=_load_overrides(name, body.get("override", [])),
         )
 

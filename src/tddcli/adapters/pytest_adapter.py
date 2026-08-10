@@ -162,8 +162,8 @@ class PytestAdapter(Adapter):
         `test_command` — pytest's `--collect-only` composes with any run command."""
         ov = self.project.override_for(rel)
         if ov is None:
-            return self._collect_cmd(), None
-        return ov.collect_command or ov.test_command, self._override_env(ov)
+            return self._collect_cmd(), self._suite_env(None)
+        return ov.collect_command or ov.test_command, self._suite_env(ov)
 
     def _test_files(self) -> list[Path]:
         found: list[Path] = []
@@ -190,8 +190,8 @@ class PytestAdapter(Adapter):
         loses the real error and the failure surfaces unattributed.
         """
         chunks = []
-        probes = [(self._collect_cmd(), None)] + [
-            (ov.collect_command or ov.test_command, self._override_env(ov))
+        probes = [(self._collect_cmd(), self._suite_env(None))] + [
+            (ov.collect_command or ov.test_command, self._suite_env(ov))
             for ov in self.project.overrides
         ]
         for cmd, env in probes:
@@ -212,7 +212,7 @@ class PytestAdapter(Adapter):
         if not self.project.overrides:
             return GateResult(ok=True)
         probe = f"{self._test_cmd().replace('{workers}', '0')} --collect-only -q"
-        code, out, err = run_command(probe, self.root)
+        code, out, err = run_command(probe, self.root, extra_env=self._suite_env(None))
         reached = sorted({
             f for f in (
                 line.split("::", 1)[0]
