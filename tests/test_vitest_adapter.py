@@ -56,11 +56,39 @@ def test_parsed_ids_match_the_form_run_produces(tmp_path):
     assert from_run in from_list, sorted(from_list)
 
 
-def test_ids_are_project_namespaced_and_worktree_relative(tmp_path):
+def test_ids_are_project_namespaced_and_root_relative(tmp_path):
+    """The path inside the id is project-root-relative, like a pytest nodeid.
+
+    Found live: ids were worktree-relative (`frontend::frontend/app/...`) while
+    `Engine._qualify` strips the root prefix from plan declarations
+    (`frontend::app/...`), so a declared vitest target could never match a
+    verdict. Standard cycles limped through on R8.9 adoption; pin cycles
+    deadlocked in AWAITING_PIN because the pinned test predates the run.
+    """
     adapter = adapter_for(tmp_path)
     path = tmp_path / "frontend" / "contexts" / "__tests__" / "AuthContext.test.tsx"
     one = next(iter(adapter._parse_list_output(LIST_OUTPUT, path)))
-    assert one.startswith("frontend::frontend/contexts/__tests__/AuthContext.test.tsx > ")
+    assert one.startswith("frontend::contexts/__tests__/AuthContext.test.tsx > ")
+
+
+def test_ids_match_what_a_plan_declaration_qualifies_to(tmp_path):
+    """A plan declaring `frontend/contexts/... > name` must hit the adapter's id."""
+    from tddcli.contract import DeclaredCycle
+    from tddcli.machine import Engine
+
+    adapter = adapter_for(tmp_path)
+    path = tmp_path / "frontend" / "contexts" / "__tests__" / "AuthContext.test.tsx"
+    declared = DeclaredCycle(
+        ordinal=1,
+        kind="pin",
+        projects=["frontend"],
+        tests=[
+            "frontend/contexts/__tests__/AuthContext.test.tsx"
+            " > logout clears the stored token"
+        ],
+    )
+    qualified = Engine._qualify(declared, declared.tests[0])
+    assert qualified in adapter._parse_list_output(LIST_OUTPUT, path)
 
 
 def test_arrows_are_not_left_in_the_name(tmp_path):

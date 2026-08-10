@@ -286,12 +286,12 @@ def test_vitest_run_finds_a_target_that_only_the_override_config_reaches(
         return 1, json.dumps(report), ""
 
     monkeypatch.setattr(adapters.base, "run_command", fake)
-    target = "backend::backend/contract/api.contract.test.ts > pings the api"
+    target = "backend::contract/api.contract.test.ts > pings the api"
     verdict = adapter.run(target)
     assert verdict.error is None
     assert verdict.target_outcome == "failed"
     assert verdict.target_failure == "nope"
-    assert verdict.passed == ["backend::backend/unit.test.ts > adds"]
+    assert verdict.passed == ["backend::unit.test.ts > adds"]
 
 
 def test_vitest_override_without_collect_command_fails_the_collectable_gate(
@@ -338,7 +338,7 @@ def test_vitest_collection_routes_override_files_to_the_override_command(
     monkeypatch.setattr(adapters.vitest_adapter, "run_command", fake)
     collection = adapter.collect()
     assert collection.tests == {
-        "backend::backend/contract/api.contract.test.ts > pings the api"
+        "backend::contract/api.contract.test.ts > pings the api"
     }
     assert seen[0].startswith("npx vitest list --config vitest.contract.config.ts ")
 
@@ -485,9 +485,9 @@ def test_vitest_duplicate_test_id_across_suites_is_a_loud_error(
         return 1, json.dumps(result("failed")), ""
 
     monkeypatch.setattr(adapters.base, "run_command", fake)
-    verdict = adapter.run("backend::backend/contract/api.test.ts > pings")
+    verdict = adapter.run("backend::contract/api.test.ts > pings")
     assert verdict.error is not None
-    assert "backend/contract/api.test.ts > pings" in verdict.error
+    assert "contract/api.test.ts > pings" in verdict.error
     assert "more than one suite" in verdict.error
 
 
