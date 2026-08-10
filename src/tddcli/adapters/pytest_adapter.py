@@ -71,8 +71,9 @@ class PytestAdapter(Adapter):
     def _collect_cmd(self) -> str:
         return self.project.collect_command or self._base_cmd()
 
-    def run(self, target: str | None = None) -> Verdict:
-        verdict = Verdict(project=self.project.name, adapter=self.name, target=target)
+    def _suite_report(
+        self, base_cmd: str, extra_env: dict[str, str] | None
+    ) -> tuple[dict | None, str]:
         with tempfile.TemporaryDirectory(prefix="tdd-pytest-") as tmp:
             report_path = Path(tmp) / "report.json"
             # Only reporting flags are appended — parallelism, markers and plugins
@@ -80,26 +81,40 @@ class PytestAdapter(Adapter):
             # `collectors` is omitted when nothing fails to collect, and present with
             # the failing entry when something does, which is when it is consulted.
             cmd = (
-                f"{self._test_cmd()} --json-report"
+                f"{base_cmd} --json-report"
                 f" --json-report-file={shlex.quote(str(report_path))}"
             )
-            code, out, err = self._run_suite(cmd)
+            code, out, err = self._run_suite(cmd, extra_env)
             if not report_path.is_file():
-                verdict.error = (
-                    "pytest produced no JSON report (is pytest-json-report installed?): "
-                    + (err or out)[:500]
+                return None, (
+                    f"`{base_cmd}` produced no JSON report"
+                    " (is pytest-json-report installed?): " + (err or out)[:500]
                 )
-                return verdict
-            report = json.loads(report_path.read_text())
+            return json.loads(report_path.read_text()), ""
 
-        verdict.duration_ms = int(report.get("duration", 0) * 1000)
+    def run(self, target: str | None = None) -> Verdict:
+        verdict = Verdict(project=self.project.name, adapter=self.name, target=target)
+        # Union across the default suite and every override suite (R7.13). A suite
+        # that produces no report is a loud error, not a silent gap: swallowing it
+        # would report a target that lives in that suite as `not_found`, sending the
+        # agent to rewrite a test that is fine.
+        tests: list[dict] = []
+        collectors: list[dict] = []
+        for base_cmd, extra_env in self._suite_invocations():
+            report, error = self._suite_report(base_cmd, extra_env)
+            if report is None:
+                verdict.error = error
+                return verdict
+            verdict.duration_ms += int(report.get("duration", 0) * 1000)
+            tests.extend(report.get("tests", []))
+            collectors.extend(report.get("collectors", []))
 
         uncollectable: set[str] = set()
-        for collector in report.get("collectors", []):
+        for collector in collectors:
             if collector.get("outcome") not in (None, "passed"):
                 uncollectable.add(collector.get("nodeid", ""))
 
-        for test in report.get("tests", []):
+        for test in tests:
             qualified = self.qualify(test["nodeid"])
             if test["outcome"] == "passed":
                 verdict.passed.append(qualified)
@@ -111,9 +126,7 @@ class PytestAdapter(Adapter):
             return verdict
 
         native = self.strip(target)
-        hit = next(
-            (t for t in report.get("tests", []) if t["nodeid"] == native), None
-        )
+        hit = next((t for t in tests if t["nodeid"] == native), None)
         if hit is not None:
             verdict.target_outcome = PASSED if hit["outcome"] == "passed" else FAILED
             call = hit.get("call") or hit.get("setup") or {}
@@ -122,21 +135,30 @@ class PytestAdapter(Adapter):
             target_file = native.split("::", 1)[0]
             if any(c == target_file or c.startswith(target_file) for c in uncollectable):
                 verdict.target_outcome = NOT_COLLECTED
-                verdict.target_failure = self._collector_error(report, target_file)[:1500]
+                verdict.target_failure = self._collector_error(collectors, target_file)[:1500]
             else:
                 verdict.target_outcome = NOT_FOUND
         return verdict
 
     @staticmethod
-    def _collector_error(report: dict, target_file: str) -> str:
-        for collector in report.get("collectors", []):
+    def _collector_error(collectors: list[dict], target_file: str) -> str:
+        for collector in collectors:
             if collector.get("nodeid", "").startswith(target_file):
                 return str(collector.get("longrepr", ""))
         return ""
 
+    def _collect_cmd_for(self, rel: str) -> tuple[str, dict[str, str] | None]:
+        """The collection command for one file: the owning override's, else the
+        project default. An override without a `collect_command` collects with its
+        `test_command` — pytest's `--collect-only` composes with any run command."""
+        ov = self.project.override_for(rel)
+        if ov is None:
+            return self._collect_cmd(), None
+        return ov.collect_command or ov.test_command, self._override_env(ov)
+
     def _test_files(self) -> list[Path]:
         found: list[Path] = []
-        for pattern in self.project.test_paths or ["tests/"]:
+        for pattern in self.project.test_patterns or ["tests/"]:
             if pattern.endswith("/"):
                 base = self.root / pattern
                 if base.is_dir():
@@ -147,27 +169,40 @@ class PytestAdapter(Adapter):
         return sorted({p for p in found if p.is_file()})
 
     def collectable(self) -> GateResult:
-        """A single whole-suite `--collect-only` (§10), not the per-file
-        `collect()` loop below — that loop is R10.3/R10.4's per-file collection,
-        the slow path (the whole-suite probe costs 0.04s on a broken project vs.
-        minutes for the per-file sweep on a real one).
+        """One whole-suite `--collect-only` per declared suite (§10) — the default
+        command plus each override's — not the per-file `collect()` loop below.
+        That loop is R10.3/R10.4's per-file collection, the slow path (the
+        whole-suite probe costs 0.04s on a broken project vs. minutes for the
+        per-file sweep on a real one).
 
         Reads **stdout**, not stderr: `uv` writes environment warnings
         (`VIRTUAL_ENV=... does not match ...`) to stderr while pytest writes the
         actual `ModuleNotFoundError` to stdout. A doctor check that reads stderr
         loses the real error and the failure surfaces unattributed.
         """
-        code, out, err = run_command(f"{self._collect_cmd()} --collect-only -q", self.root)
-        return GateResult(ok=code == 0, output="" if code == 0 else out.strip()[:2000])
+        chunks = []
+        probes = [(self._collect_cmd(), None)] + [
+            (ov.collect_command or ov.test_command, self._override_env(ov))
+            for ov in self.project.overrides
+        ]
+        for cmd, env in probes:
+            code, out, err = run_command(
+                f"{cmd} --collect-only -q", self.root, extra_env=env
+            )
+            if code != 0:
+                chunks.append(out.strip())
+        return GateResult(ok=not chunks, output="\n\n".join(chunks)[:2000])
 
     def collect(self) -> Collection:
         """Per file (R10.3) — one uncollectable module must not destroy the whole set."""
         result = Collection()
         for path in self._test_files():
             rel = path.relative_to(self.root)
+            base, env = self._collect_cmd_for(str(rel))
             code, out, err = run_command(
-                f"{self._collect_cmd()} --collect-only -q {shlex.quote(str(rel))}",
+                f"{base} --collect-only -q {shlex.quote(str(rel))}",
                 self.root,
+                extra_env=env,
             )
             if code != 0:
                 result.failed_files[str(rel)] = (err or out).strip()[:800]

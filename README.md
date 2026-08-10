@@ -104,6 +104,35 @@ generated   = true                   # excluded from authorship accounting
 A generator that is never hand-edited (`codegen`) is an artifact regeneration command, not a
 project. It has no tests and no cycles.
 
+Some tests intentionally live outside the project's default runner config — contract tests
+that need a live backend being the common case, where CI runs the default suite with no
+backend up. Widening the default config to make such a test collectable is the wrong fix:
+the plain suite starts making real network calls, and the other suite's tests pollute
+target adoption. Instead, declare an override per pattern:
+
+```toml
+[project.frontend]
+root         = "frontend"
+adapter      = "vitest"
+test_paths   = ["**/*.test.ts"]
+test_command = "npx vitest run"
+
+[[project.frontend.override]]
+pattern         = "src/__contract__/"
+test_command    = "npx vitest run --config vitest.contract.config.ts"
+collect_command = "npx vitest list --config vitest.contract.config.ts"
+env             = { API_URL = "http://localhost:${API_PORT}" }
+```
+
+Collection and suite runs union the default suite with every override suite, so a cycle can
+target a test only the alternate config reaches. Patterns match paths relative to the
+project root with `test_paths` semantics, and override files classify as tests without
+being repeated in `test_paths`. `env` values may reference `${VAR}`, expanded from the
+environment at invocation. For pytest, `collect_command` is optional (`--collect-only`
+composes with the run command); a vitest override must declare one — `vitest list` knows
+nothing of the override config, and the mismatch is refused at `tdd run start`, not
+mid-cycle.
+
 ## Sharing cores between concurrent agents
 
 Several agents running tdd-cli on one machine (each in its own worktree) face a bad
