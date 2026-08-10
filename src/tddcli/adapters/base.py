@@ -128,17 +128,19 @@ class Adapter:
         alternate runner config is still observed — without widening the default
         config, which is exactly the workaround that breaks CI.
         """
-        return [(self._test_cmd(), None)] + [
-            (ov.test_command, self._override_env(ov)) for ov in self.project.overrides
+        return [(self._test_cmd(), self._suite_env(None))] + [
+            (ov.test_command, self._suite_env(ov)) for ov in self.project.overrides
         ]
 
-    @staticmethod
-    def _override_env(override) -> dict[str, str] | None:
-        """`${VAR}` references resolve from the environment at invocation time, so a
-        port assigned by the harness need not be hard-coded in the reviewed file."""
-        if override is None or not override.env:
+    def _suite_env(self, override) -> dict[str, str] | None:
+        """The environment for one suite invocation: the project's `env`, with the
+        owning override's layered on top (None means the default suite). `${VAR}`
+        references resolve from the environment at invocation time, so a port
+        assigned per checkout need not be hard-coded in the reviewed file."""
+        merged = {**self.project.env, **(override.env if override else {})}
+        if not merged:
             return None
-        return {k: os.path.expandvars(v) for k, v in override.env.items()}
+        return {k: os.path.expandvars(v) for k, v in merged.items()}
 
     def stub_hint(self) -> str:
         """The language idiom for a stub body, quoted into the create_stub directive."""

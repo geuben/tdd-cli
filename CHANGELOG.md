@@ -6,6 +6,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `env` on `[project.<name>]`: environment for the default suite's runs and
+  collection, with the same semantics as an override's `env` (`${VAR}` expands
+  from the environment at invocation). An override's `env` layers on top for
+  its own suite. Previously only override suites could declare environment,
+  leaving a default suite that reads an endpoint from a variable with no
+  registry-level way to receive it (#16).
+
 ### Fixed
 
 - `tdd target` refuses a name that is not a collected test in the cycle's

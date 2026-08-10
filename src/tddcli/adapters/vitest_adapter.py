@@ -171,7 +171,9 @@ class VitestAdapter(Adapter):
         suite — against a live backend — just to enumerate it.
         """
         chunks = []
-        code, out, err = run_command(self._collect_cmd(), self.root)
+        code, out, err = run_command(
+            self._collect_cmd(), self.root, extra_env=self._suite_env(None)
+        )
         if code != 0:
             chunks.append((err or out).strip())
         for ov in self.project.overrides:
@@ -183,7 +185,7 @@ class VitestAdapter(Adapter):
                 )
                 continue
             code, out, err = run_command(
-                ov.collect_command, self.root, extra_env=self._override_env(ov)
+                ov.collect_command, self.root, extra_env=self._suite_env(ov)
             )
             if code != 0:
                 chunks.append((err or out).strip())
@@ -196,7 +198,9 @@ class VitestAdapter(Adapter):
         execute against whatever the tests need live)."""
         if not self.project.overrides:
             return GateResult(ok=True)
-        code, out, err = run_command(self._collect_cmd(), self.root)
+        code, out, err = run_command(
+            self._collect_cmd(), self.root, extra_env=self._suite_env(None)
+        )
         reached = sorted({
             f for f in (
                 line.strip().partition(" > ")[0]
@@ -226,7 +230,7 @@ class VitestAdapter(Adapter):
                 )
                 continue
             base = ov.collect_command if ov else self._collect_cmd()
-            env = self._override_env(ov)
+            env = self._suite_env(ov)
             code, out, err = run_command(
                 f"{base} {shlex.quote(str(rel))}", self.root, extra_env=env
             )
