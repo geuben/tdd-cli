@@ -6,6 +6,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `tdd doctor` check `default suite cannot reach override files`: when a
+  project declares overrides, doctor probes the default suite's discovery
+  (pytest: the test command with `--collect-only`; vitest: `vitest list`) and
+  fails if it reaches files an override owns — the premise suite overrides
+  require, which nothing previously enforced.
+
+### Fixed
+
+- A test observed by more than one suite invocation of the union (the default
+  suite's discovery sweeping an override's files, e.g. a bare `pytest` default)
+  is now a loud tooling error naming the overlapping tests and the fix, instead
+  of the target being silently judged by whichever suite reported it first —
+  previously an env-less run whose failure said nothing about the overlap.
+
 ## [0.2.0] - 2026-08-10
 
 ### Added

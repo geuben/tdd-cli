@@ -25,6 +25,8 @@ from .base import (
     Collection,
     GateResult,
     Verdict,
+    _overlap_error,
+    _suite_overlap,
     run_command,
 )
 
@@ -100,6 +102,7 @@ class PytestAdapter(Adapter):
         # agent to rewrite a test that is fine.
         tests: list[dict] = []
         collectors: list[dict] = []
+        suite_ids: list[set[str]] = []
         for base_cmd, extra_env in self._suite_invocations():
             report, error = self._suite_report(base_cmd, extra_env)
             if report is None:
@@ -108,6 +111,12 @@ class PytestAdapter(Adapter):
             verdict.duration_ms += int(report.get("duration", 0) * 1000)
             tests.extend(report.get("tests", []))
             collectors.extend(report.get("collectors", []))
+            suite_ids.append({t["nodeid"] for t in report.get("tests", [])})
+
+        overlap = _suite_overlap(suite_ids)
+        if overlap:
+            verdict.error = _overlap_error(overlap)
+            return verdict
 
         uncollectable: set[str] = set()
         for collector in collectors:
@@ -192,6 +201,34 @@ class PytestAdapter(Adapter):
             if code != 0:
                 chunks.append(out.strip())
         return GateResult(ok=not chunks, output="\n\n".join(chunks)[:2000])
+
+    def override_isolation(self) -> GateResult:
+        """Probes the *test* command's discovery, not `collect_command`'s: the
+        test command is what runs at suite time, and a scoped `test_command`
+        with a bare per-file `collect_command` is a legitimate registry (the
+        per-file command always gets an explicit path). `{workers}` becomes 0 —
+        xdist's "no workers" — since discovery needs no parallelism. A probe
+        that fails to collect at all is `collectable`'s finding, not this one's."""
+        if not self.project.overrides:
+            return GateResult(ok=True)
+        probe = f"{self._test_cmd().replace('{workers}', '0')} --collect-only -q"
+        code, out, err = run_command(probe, self.root)
+        reached = sorted({
+            f for f in (
+                line.split("::", 1)[0]
+                for line in out.splitlines()
+                if "::" in line
+            )
+            if self.project.override_for(f)
+        })
+        if not reached:
+            return GateResult(ok=True)
+        return GateResult(ok=False, output=(
+            "the default suite's discovery reaches files an override owns, so"
+            " suite runs would observe them without the override's command/env:"
+            f" {', '.join(reached[:5])}. Scope the default test_command so it"
+            " cannot reach them (e.g. `pytest tests/`)."
+        ))
 
     def collect(self) -> Collection:
         """Per file (R10.3) — one uncollectable module must not destroy the whole set."""
