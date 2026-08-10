@@ -6,6 +6,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `tdd target` refuses a name that is not a collected test in the cycle's
+  projects, suggesting the closest collected ids — previously any string was
+  recorded as the target and failed later, misattributed, as `not_found` (#15).
+
 ## [0.2.1] - 2026-08-10
 
 ### Added

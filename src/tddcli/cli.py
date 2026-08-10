@@ -6,6 +6,7 @@ No command accepts a phase, a cycle number, or executor identity (R8.3).
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import socket
@@ -822,6 +823,23 @@ def cmd_target(args) -> Envelope:
     cycle = ledger.open_cycle(run["id"])
     if cycle is None:
         return failure("no open cycle")
+
+    # The target must be grounded in observed collection, the same way phase is
+    # grounded in observed execution (#15): recording free text deferred a typo —
+    # or a speculative `tdd target env` — to the next suite run, where it
+    # surfaced as `not_found` against a test that never existed.
+    known: set[str] = set()
+    for name in json.loads(cycle["projects"]):
+        adapter = adapters.build(cfg.project(name), worktree)
+        known |= adapter.collect().tests
+    if args.test not in known:
+        close = difflib.get_close_matches(args.test, sorted(known), n=3, cutoff=0.6)
+        hint = f" Closest collected ids: {', '.join(close)}." if close else ""
+        return failure(
+            f"{args.test} is not a collected test in this cycle's projects;"
+            f" the target was not changed.{hint}"
+        )
+
     ledger.update("cycle", cycle["id"], target_tests=json.dumps([args.test]))
     ledger.event(run["id"], cycle["id"], "target_named_by_agent", args.test)
     return Envelope(
