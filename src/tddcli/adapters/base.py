@@ -64,6 +64,20 @@ def _overlap_error(overlap: list[str]) -> str:
     )
 
 
+def clip_failure(text: str, limit: int = 1500) -> str:
+    """Clip failure text to `limit`, keeping both ends. Python puts the actual
+    error at the tail of a traceback, so a head-only cut on a deep stack
+    (async frameworks, ORMs, HTTP clients) delivered framework frames and cut
+    exactly the line that says what went wrong — forcing a re-run outside tdd
+    to see an error the tool already had. The head is kept too: for a plain
+    assertion failure the first line carries the assertion itself."""
+    if len(text) <= limit:
+        return text
+    head = limit // 5
+    tail = limit - head
+    return f"{text[:head]}\n… [clipped] …\n{text[-tail:]}"
+
+
 def run_command(
     command: str, cwd: Path, timeout: int = 1800,
     extra_env: dict[str, str] | None = None,

@@ -27,6 +27,7 @@ from .base import (
     Verdict,
     _overlap_error,
     _suite_overlap,
+    clip_failure,
     run_command,
 )
 
@@ -139,12 +140,14 @@ class PytestAdapter(Adapter):
         if hit is not None:
             verdict.target_outcome = PASSED if hit["outcome"] == "passed" else FAILED
             call = hit.get("call") or hit.get("setup") or {}
-            verdict.target_failure = str(call.get("longrepr", ""))[:1500]
+            verdict.target_failure = clip_failure(str(call.get("longrepr", "")))
         else:
             target_file = native.split("::", 1)[0]
             if any(c == target_file or c.startswith(target_file) for c in uncollectable):
                 verdict.target_outcome = NOT_COLLECTED
-                verdict.target_failure = self._collector_error(collectors, target_file)[:1500]
+                verdict.target_failure = clip_failure(
+                    self._collector_error(collectors, target_file)
+                )
             else:
                 verdict.target_outcome = NOT_FOUND
         return verdict
