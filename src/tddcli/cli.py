@@ -275,6 +275,16 @@ def cmd_doctor(args) -> Envelope:
         gate = adapter.collectable()
         check("collectable", gate.ok, gate.output, project=name)
 
+        # R7.13's premise — "files the default runner config cannot reach" — is
+        # a config property nothing else enforces. Probe it at preflight so the
+        # overlap is named here, not discovered as an opaque mid-cycle failure.
+        if project.overrides:
+            gate = adapter.override_isolation()
+            check(
+                "default suite cannot reach override files",
+                gate.ok, gate.output, project=name,
+            )
+
         projects[name] = {"ok": all(c["ok"] for c in checks[before:])}
 
     for art in cfg.artifacts.values():

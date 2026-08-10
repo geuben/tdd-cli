@@ -21,6 +21,8 @@ from .base import (
     Collection,
     GateResult,
     Verdict,
+    _overlap_error,
+    _suite_overlap,
     run_command,
 )
 
@@ -61,6 +63,7 @@ class VitestAdapter(Adapter):
         # producing no JSON is a loud error, not a silent gap: swallowing it would
         # report a target living in that suite as `not_found`.
         suites: list[dict] = []
+        suite_ids: list[set[str]] = []
         for base, extra_env in self._suite_invocations():
             code, out, err = self._run_suite(f"{base} --reporter=json", extra_env)
             report = _extract_json(out)
@@ -70,7 +73,18 @@ class VitestAdapter(Adapter):
                 )
                 return verdict
             verdict.duration_ms += int(report.get("duration") or 0)
-            suites.extend(report.get("testResults", []))
+            results = report.get("testResults", [])
+            suites.extend(results)
+            suite_ids.append({
+                self._id_for(s.get("name", ""), t["fullName"])
+                for s in results
+                for t in s.get("assertionResults", [])
+            })
+
+        overlap = _suite_overlap(suite_ids)
+        if overlap:
+            verdict.error = _overlap_error(overlap)
+            return verdict
 
         failed_suites: dict[str, str] = {}
 
@@ -174,6 +188,31 @@ class VitestAdapter(Adapter):
             if code != 0:
                 chunks.append((err or out).strip())
         return GateResult(ok=not chunks, output="\n\n".join(chunks)[:2000])
+
+    def override_isolation(self) -> GateResult:
+        """Probes with the default `vitest list` — the same stand-in for the
+        default run config that `collectable()` already relies on (`vitest run`
+        has no listing mode, and running the suite just to enumerate it would
+        execute against whatever the tests need live)."""
+        if not self.project.overrides:
+            return GateResult(ok=True)
+        code, out, err = run_command(self._collect_cmd(), self.root)
+        reached = sorted({
+            f for f in (
+                line.strip().partition(" > ")[0]
+                for line in out.splitlines()
+                if " > " in line
+            )
+            if self.project.override_for(f)
+        })
+        if not reached:
+            return GateResult(ok=True)
+        return GateResult(ok=False, output=(
+            "the default config's discovery reaches files an override owns, so"
+            " suite runs would observe them without the override's command/env:"
+            f" {', '.join(reached[:5])}. Exclude them from the default vitest"
+            " config (test.exclude) or scope its include globs."
+        ))
 
     def collect(self) -> Collection:
         result = Collection()

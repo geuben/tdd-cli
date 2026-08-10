@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -40,6 +41,27 @@ class Collection:
 
     tests: set[str] = field(default_factory=set)
     failed_files: dict[str, str] = field(default_factory=dict)
+
+
+def _suite_overlap(suite_ids: list[set[str]]) -> list[str]:
+    """Test ids observed by more than one suite invocation of the union (R7.13).
+    Overlap means the default command's discovery reaches files an override
+    owns, so those tests also ran without the override's command/env — and
+    target matching would judge the target by whichever run came first."""
+    counts = Counter(i for ids in suite_ids for i in ids)
+    return sorted(i for i, n in counts.items() if n > 1)
+
+
+def _overlap_error(overlap: list[str]) -> str:
+    shown = ", ".join(overlap[:5])
+    more = f" (and {len(overlap) - 5} more)" if len(overlap) > 5 else ""
+    return (
+        f"observed by more than one suite invocation: {shown}{more}."
+        " The default suite's discovery reaches files an override owns, so"
+        " these tests also ran without the override's command/env. Scope the"
+        " default test_command so it cannot reach them (e.g. pass the default"
+        " test directories explicitly)."
+    )
 
 
 def run_command(
@@ -127,6 +149,15 @@ class Adapter:
 
     def collectable(self) -> GateResult:
         raise NotImplementedError
+
+    def override_isolation(self) -> GateResult:
+        """Whether the default suite's discovery stays out of files an override
+        owns (R7.13's premise). Overlap means runs observe those tests without
+        the override's command/env — and the union then holds the same test
+        twice with conflicting outcomes. Adapters with a way to probe discovery
+        override this; the base answer is ok so third-party adapters without a
+        probe don't fail doctor."""
+        return GateResult(ok=True)
 
     def lint(self) -> GateResult:
         return self._gate(self.project.lint)

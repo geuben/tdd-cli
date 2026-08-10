@@ -73,3 +73,46 @@ def test_doctor_does_not_check_node_modules_for_a_pytest_project(repo_multi):
     backend_checks = [c for c in checks if c.get("project") == "backend"]
     assert backend_checks, checks
     assert not any(c["check"] == "node_modules present" for c in backend_checks), backend_checks
+
+
+def test_doctor_flags_a_default_suite_that_reaches_override_files(repo):
+    """R7.13's premise — "files the default runner config cannot reach" — is a
+    config property nothing else enforces. With a bare `pytest` default, its own
+    discovery sweeps the override directory, and every run would observe those
+    tests without the override's command/env. Doctor must name the overlap at
+    preflight instead of leaving it to fail opaquely mid-cycle."""
+    (repo / "backend" / "contract").mkdir()
+    (repo / "backend" / "contract" / "test_api.py").write_text(
+        "def test_ping():\n    assert True\n"
+    )
+    (repo / "tdd.toml").write_text(
+        "[project.backend]\n"
+        'root       = "backend"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        "[[project.backend.override]]\n"
+        'pattern      = "contract/"\n'
+        'test_command = "pytest contract"\n'
+    )
+    out = run_cli(repo, "doctor")
+    isolation = [
+        c for c in out["result"]["checks"]
+        if c["check"] == "default suite cannot reach override files"
+    ]
+    assert len(isolation) == 1
+    assert isolation[0]["ok"] is False
+    assert isolation[0]["project"] == "backend"
+    assert "contract/test_api.py" in isolation[0]["detail"]
+
+    scoped = (repo / "tdd.toml").read_text().replace(
+        'test_paths = ["tests/"]\n',
+        'test_paths = ["tests/"]\ntest_command = "pytest tests"\n',
+    )
+    (repo / "tdd.toml").write_text(scoped)
+    out = run_cli(repo, "doctor")
+    isolation = [
+        c for c in out["result"]["checks"]
+        if c["check"] == "default suite cannot reach override files"
+    ]
+    assert len(isolation) == 1
+    assert isolation[0]["ok"] is True
