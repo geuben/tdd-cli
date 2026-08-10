@@ -23,6 +23,7 @@ from .base import (
     Verdict,
     _overlap_error,
     _suite_overlap,
+    clip_failure,
     run_command,
 )
 
@@ -92,7 +93,7 @@ class VitestAdapter(Adapter):
             suite_path = suite.get("name", "")
             assertions = suite.get("assertionResults", [])
             if not assertions and suite.get("status") == "failed":
-                failed_suites[suite_path] = str(suite.get("message", ""))[:1500]
+                failed_suites[suite_path] = clip_failure(str(suite.get("message", "")))
             for t in assertions:
                 qualified = self._id_for(suite_path, t["fullName"])
                 if t["status"] == "passed":
@@ -113,7 +114,8 @@ class VitestAdapter(Adapter):
                 for t in suite.get("assertionResults", []):
                     if self._id_for(suite.get("name", ""), t["fullName"]) == target:
                         verdict.target_failure = "\n".join(
-                            m[:600] for m in t.get("failureMessages", [])[:3]
+                            clip_failure(m, 600)
+                            for m in t.get("failureMessages", [])[:3]
                         )
             return verdict
 

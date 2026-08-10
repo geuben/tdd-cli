@@ -20,6 +20,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - `tdd target` refuses a name that is not a collected test in the cycle's
   projects, suggesting the closest collected ids — previously any string was
   recorded as the target and failed later, misattributed, as `not_found` (#15).
+- Failure text (`target_failure`, uncollected-suite messages) is clipped keeping
+  both ends instead of truncated from the head: Python puts the actual error at
+  the tail of a traceback, so a head-only cut on a deep stack delivered
+  framework frames and cut exactly the line that says what went wrong (#17).
 
 ## [0.2.1] - 2026-08-10
 
