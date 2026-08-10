@@ -1,8 +1,11 @@
 """vitest adapter.
 
-Test ids are `<worktree-relative file> > <fullName>`, where fullName is the
-space-joined ancestorTitles plus the test title. vitest may prefix its JSON with
-non-JSON lines, so the payload is located rather than assumed (R10.2).
+Test ids are `<project-root-relative file> > <fullName>`, where fullName is the
+space-joined ancestorTitles plus the test title. Root-relative matches the pytest
+adapter's nodeids and — decisively — `Engine._qualify`, which strips the project
+root from plan declarations; a worktree-relative id here can never equal a
+declared target. vitest may prefix its JSON with non-JSON lines, so the payload
+is located rather than assumed (R10.2).
 """
 
 from __future__ import annotations
@@ -47,7 +50,7 @@ class VitestAdapter(Adapter):
     def _id_for(self, suite_path: str, full_name: str) -> str:
         abs_path = Path(suite_path)
         try:
-            rel = os.path.relpath(abs_path, self.worktree)
+            rel = os.path.relpath(abs_path, self.root)
         except ValueError:
             rel = suite_path
         return self.qualify(f"{rel} > {full_name}")

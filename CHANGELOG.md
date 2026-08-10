@@ -17,6 +17,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- vitest test ids are project-root-relative (`frontend::app/x.test.tsx > name`),
+  matching pytest nodeids and the form plan declarations qualify to — they were
+  worktree-relative (`frontend::frontend/app/...`), so a declared vitest target
+  could never match a verdict: standard cycles limped through on R8.9 adoption
+  (a spurious `declared_test_mismatch` per cycle) and pin cycles deadlocked in
+  `AWAITING_PIN`, since a pre-existing test is never adoptable (#21).
 - `tdd target` refuses a name that is not a collected test in the cycle's
   projects, suggesting the closest collected ids — previously any string was
   recorded as the target and failed later, misattributed, as `not_found` (#15).
