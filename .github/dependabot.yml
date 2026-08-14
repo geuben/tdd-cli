@@ -4,8 +4,16 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Don't adopt a release that is hours old — a compromised release is
+    # usually yanked well inside this window.
+    cooldown:
+      default-days: 7
 
+  # Workflow actions are hash-pinned (zizmor's unpinned-uses audit), so the
+  # pins only stay current if Dependabot bumps them.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
