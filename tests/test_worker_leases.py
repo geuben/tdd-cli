@@ -127,7 +127,7 @@ def test_live_foreign_lease_counts(lease_dir):
 def recorded(monkeypatch):
     calls: list[dict] = []
 
-    def stub(command, cwd, timeout=1800, extra_env=None, **_):
+    def stub(command, cwd, timeout=1800, extra_env=None, label=None):
         calls.append({"command": command, "cwd": cwd, "extra_env": extra_env})
         return 1, "", ""
 

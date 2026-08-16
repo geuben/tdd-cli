@@ -62,7 +62,7 @@ def test_only_reporting_flags_are_appended(tmp_path, monkeypatch):
     adapter = adapters.build(project, tmp_path)
     seen = {}
 
-    def fake_run(command, cwd, timeout=1800, extra_env=None, **_):
+    def fake_run(command, cwd, timeout=1800, extra_env=None, label=None):
         seen["command"] = command
         return 1, "", "no report"
 
