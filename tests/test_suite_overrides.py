@@ -340,7 +340,13 @@ def test_vitest_collection_routes_override_files_to_the_override_command(
     assert collection.tests == {
         "backend::contract/api.contract.test.ts > pings the api"
     }
-    assert seen[0].startswith("npx vitest list --config vitest.contract.config.ts ")
+    # R7.13's requirement is that the override's own command enumerates its files —
+    # not that it does so one file at a time. Collection batches per declared suite
+    # (issue #27), so the override's command is one of the invocations rather than
+    # the first, and carries no file argument.
+    assert any(
+        c.startswith("npx vitest list --config vitest.contract.config.ts") for c in seen
+    ), seen
 
     # With every suite listable the gate passes: the probe must not manufacture a
     # failure out of a healthy override.

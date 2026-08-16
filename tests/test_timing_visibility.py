@@ -23,6 +23,8 @@ from __future__ import annotations
 import json
 
 from conftest import run_cli, write_plan
+from tddcli import adapters
+from tddcli import config as config_mod
 from tddcli.adapters import base
 
 PLAN = """---
@@ -114,18 +116,25 @@ def test_a_timed_command_is_attributed_to_its_caller(repo, capsys, monkeypatch):
     assert "collect" in labels, labels
 
 
-def test_the_per_file_collect_loop_is_attributed_per_file(repo, capsys, monkeypatch):
-    """The loop's cost is per file, so its timing has to be too — a single total
-    cannot say which file is slow."""
+def test_the_per_file_collect_fallback_is_attributed_per_file(repo_broken, capsys, monkeypatch):
+    """The fallback loop's cost is per file, so its timing has to be too — a single
+    total cannot say which file is slow.
+
+    Collection batches per suite now (issue #27), so the loop runs only where a
+    batch could not account for a file — which is exactly where per-file
+    attribution earns its keep. `repo_broken`'s uncollectable module fails the
+    batch and drops every file in that project to the loop."""
     monkeypatch.setenv(base.TIMING_ENV, "1")
-    assert _start(repo)["ok"]
+    adapters.build(
+        config_mod.load(repo_broken).project("verify"), repo_broken
+    ).collect()
 
     collects = [
         entry for entry in _lines(capsys.readouterr().err, "command_timing")
         if entry.get("label") == "collect"
     ]
     assert collects, "no collect timings"
-    assert any("test_smoke.py" in entry["command"] for entry in collects), collects
+    assert any("test_v.py" in entry["command"] for entry in collects), collects
 
 
 def test_doctor_probes_are_labelled_as_doctor(repo, capsys, monkeypatch):

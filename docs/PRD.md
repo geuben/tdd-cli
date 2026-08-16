@@ -619,20 +619,32 @@ Adapter.typecheck(project)               -> GateResult
 - **R10.2** Adapters own runner-specific failure modes: pytest collection errors must be reported
   as `not_collected` and never conflated with an unmatched identifier; vitest's non-JSON stdout
   preamble must be handled.
-- **R10.3** `collect()` operates **per test file**, not per suite. A file that fails to collect
-  yields `collect_failed` for that file alone; every other file still contributes its test ids.
-  Both pytest and vitest support single-file targeting.
+- **R10.3** `collect()` runs **one invocation per declared suite** (the default plus each
+  override), then the **per-file loop for every file no batch accounted for** — whether the batch
+  failed, returned nothing, or never mentioned that file. The guarantee is unchanged: a file that
+  fails to collect yields `collect_failed` for that file alone, and every other file still
+  contributes its test ids. Both pytest and vitest support single-file targeting, which is what
+  makes the fallback possible.
+- **R10.3a** The two paths do not discover alike: a batch uses the runner's own config, the loop
+  walks `test_paths`. Reconciling them — per-file for anything the batch did not report — is what
+  keeps the collected set from silently shrinking when a declared file is outside the runner's
+  discovery. A quietly smaller baseline is worse than a slow one.
 - **R10.4** Rationale: `collect()` is load-bearing for target adoption (R8.9), test-weakening
   detection and the one-behaviour check — and in `AWAITING_TEST` the tree frequently does not
-  import, which is exactly what `stub_expected` describes. Whole-suite collection would fail
-  precisely in the phase that depends on it.
+  import, which is exactly what `stub_expected` describes. Whole-suite collection fails precisely
+  in the phase that depends on it, which is why the per-file loop remains the fallback rather than
+  being replaced. The cost is asymmetric on purpose: a healthy project pays one invocation instead
+  of one per file (measured 38.8x on 60 files; 77% of a real `run start` was per-file collection,
+  issue #27), while a non-importing tree pays one failed probe on top of the loop it would have
+  run anyway.
 - **R10.5** Where per-file collection still yields nothing usable, the tool falls back to the
   contract's declared test id and records the degradation.
 - **R10.6** Adding an adapter requires no change to core logic.
 - **R10.7** `collectable()` is a single **whole-suite** `--collect-only` (pytest) / `vitest list`
-  (vitest) probe used only by `tdd doctor` (§8.1, issues #3/#5) — distinct from, and never a
-  substitute for, the per-file `collect()` loop in R10.3/R10.4, which is what makes a real
-  baseline slow (issue #1). `tdd doctor` reads the subprocess's **stdout**: `uv` writes
+  (vitest) probe used only by `tdd doctor` (§8.1, issues #3/#5). `collect()` now opens with the
+  same *shape* (R10.3) but remains a distinct path: `collectable()` reports whether a suite can be
+  enumerated at all, and never substitutes for the fallback loop that attributes a failure to the
+  file it came from. `tdd doctor` reads the subprocess's **stdout**: `uv` writes
   environment warnings (e.g. `VIRTUAL_ENV=... does not match ...`) to stderr, while pytest writes
   the actual collection error (e.g. `ModuleNotFoundError`) to stdout. A check that reads stderr
   reports the wrapper's noise and loses the real error underneath it.

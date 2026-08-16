@@ -235,23 +235,49 @@ class PytestAdapter(Adapter):
             " cannot reach them (e.g. `pytest tests/`)."
         ))
 
-    def collect(self) -> Collection:
+    def _collect_invocations(self) -> list[tuple[str, dict[str, str] | None]]:
+        """An override without a `collect_command` collects with its `test_command`
+        — `--collect-only` composes with any run command."""
+        return [(self._collect_cmd(), self._suite_env(None))] + [
+            (ov.collect_command or ov.test_command, self._suite_env(ov))
+            for ov in self.project.overrides
+        ]
+
+    def _nodeids(self, out: str) -> tuple[set[str], set[str]]:
+        tests: set[str] = set()
+        files: set[str] = set()
+        for line in out.splitlines():
+            line = line.strip()
+            if "::" in line and not line.startswith(("=", "-", "no tests")):
+                tests.add(self.qualify(line))
+                files.add(line.split("::", 1)[0])
+        return tests, files
+
+    def _collect_batch(
+        self, command: str, env: dict[str, str] | None
+    ) -> tuple[set[str], set[str]] | None:
+        code, out, err = run_command(
+            f"{command} --collect-only -q", self.root, extra_env=env, label="collect"
+        )
+        if code != 0:
+            return None
+        # An empty result needs no special case: it accounts for no files, so every
+        # file falls to the loop exactly as a failure would.
+        return self._nodeids(out)
+
+    def _collect_per_file(self, rels: set[str], result: Collection) -> Collection:
         """Per file (R10.3) — one uncollectable module must not destroy the whole set."""
-        result = Collection()
-        for path in self._test_files():
-            rel = path.relative_to(self.root)
-            base, env = self._collect_cmd_for(str(rel))
+        for rel in sorted(rels):
+            base, env = self._collect_cmd_for(rel)
             code, out, err = run_command(
-                f"{base} --collect-only -q {shlex.quote(str(rel))}",
+                f"{base} --collect-only -q {shlex.quote(rel)}",
                 self.root,
                 extra_env=env,
                 label="collect",
             )
             if code != 0:
-                result.failed_files[str(rel)] = (err or out).strip()[:800]
+                result.failed_files[rel] = (err or out).strip()[:800]
                 continue
-            for line in out.splitlines():
-                line = line.strip()
-                if "::" in line and not line.startswith(("=", "-", "no tests")):
-                    result.tests.add(self.qualify(line))
+            tests, _ = self._nodeids(out)
+            result.tests |= tests
         return result
