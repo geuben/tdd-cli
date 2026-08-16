@@ -419,6 +419,18 @@ not start had no verb telling it to wait rather than re-run. `await_baseline` is
 | `tdd init` | scaffold `tdd.toml` from detected projects, for human review |
 | `tdd doctor` | preflight: registry valid, adapters runnable, reporters installed, worktree resolvable, no stale report artifacts, tree clean enough. `ok` mirrors `healthy` (cycle 17) — a failing check is a non-zero exit, not `ok: true` with `healthy: false` buried in `result` |
 
+**"Clean enough"** is scoped, not absolute: `worktree clean` fails only on dirt a run
+would read — a declared project root, a declared artifact path, or `tdd.toml` — with
+`config.is_ignored` excluding build residue (including the `.venv`/`node_modules`
+doctor's own probes write). Dirt anywhere else is named in the passing check's
+`detail` and left alone. Absolute cleanliness blocked agents on unrelated notes and
+editor settings.
+
+**Every failing check carries a `detail` naming what to fix**, enforced by the
+recorder rather than by each call site. A blocker with an empty `detail` is
+unfalsifiable — `resolve_blocker` with nothing to resolve — and an agent that meets
+one has no move left but to re-run doctor and read the same output again.
+
 ### 8.2 Registration
 | Command | Behaviour |
 |---|---|

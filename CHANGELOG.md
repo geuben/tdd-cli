@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `tdd doctor` no longer emits a blocker it cannot explain. Every failing check
+  now carries a `detail` naming what to fix, enforced by the checklist recorder
+  so a check added later inherits the guarantee. Previously `worktree clean`
+  failed with `detail: ""`, leaving an agent with `resolve_blocker` and nothing
+  to resolve — it re-ran doctor and read the identical output.
+- `worktree clean` is scoped to dirt a run would actually read: a declared
+  project root, a declared artifact path, or `tdd.toml`. Build residue is
+  excluded via `config.is_ignored`, so doctor's own `uv run` / `vitest list`
+  probes (`.venv`, `node_modules`, caches) can no longer be what makes doctor
+  fail. Unrelated dirt is reported in the passing check's `detail` rather than
+  blocking the run.
+
 ## [0.3.0] - 2026-08-10
 
 ### Added

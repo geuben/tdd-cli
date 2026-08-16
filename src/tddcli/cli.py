@@ -13,6 +13,7 @@ import socket
 import sqlite3
 import sys
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -217,15 +218,60 @@ def _legacy_artifacts(worktree: Path) -> list[Path]:
     return sorted(found)
 
 
-def cmd_doctor(args) -> Envelope:
-    worktree = _worktree()
+def _doctor_checklist() -> tuple[list[dict], Callable]:
+    """A checks list and its recorder, which refuses a blocker it cannot explain.
+
+    `resolve_blocker` with an empty `detail` is unfalsifiable: an agent is told to
+    fix something and given nothing to fix. It re-runs doctor, reads the identical
+    output, and loops. Enforcing the detail here means a check added later inherits
+    the guarantee instead of relying on its author to remember.
+    """
     checks: list[dict] = []
 
     def check(name, ok, detail="", project=None):
+        if not ok and not str(detail).strip():
+            raise AssertionError(
+                f"doctor check {name!r} would fail silently: a failing check must"
+                " name what to fix"
+            )
         entry = {"check": name, "ok": bool(ok), "detail": detail}
         if project is not None:
             entry["project"] = project
         checks.append(entry)
+
+    return checks, check
+
+
+def _blocks_the_loop(rel_path: str, cfg) -> bool:
+    """Whether dirt at `rel_path` is somewhere a run would actually read it."""
+    if rel_path == config_mod.CONFIG_NAME:
+        return True
+    if cfg.owning_project(rel_path) is not None:
+        return True
+    return any(art.owns(rel_path) for art in cfg.artifacts.values())
+
+
+def _cleanliness_detail(blocking: list[str], unrelated: list[str]) -> str:
+    def listed(paths: list[str]) -> str:
+        head = ", ".join(paths[:5])
+        return head if len(paths) <= 5 else f"{head} (+{len(paths) - 5} more)"
+
+    if blocking:
+        return (
+            f"uncommitted changes a run would observe: {listed(blocking)}."
+            " Commit, stash, or gitignore them before `tdd run start`."
+        )
+    if unrelated:
+        return (
+            f"clean where a run reads; {len(unrelated)} unrelated path(s) left as-is:"
+            f" {listed(unrelated)}"
+        )
+    return ""
+
+
+def cmd_doctor(args) -> Envelope:
+    worktree = _worktree()
+    checks, check = _doctor_checklist()
 
     check("worktree resolvable", True, str(worktree))
     try:
@@ -246,7 +292,14 @@ def cmd_doctor(args) -> Envelope:
         root = worktree / project.root
         check("root exists", root.is_dir(), str(root), project=name)
         check("adapter known", project.adapter in adapters.available(), project.adapter, project=name)
-        check("test_paths declared", bool(project.test_paths), project=name)
+        declared = bool(project.test_paths)
+        check(
+            "test_paths declared", declared,
+            "" if declared
+            else f"add `test_paths` to [project.{name}] in tdd.toml — without it no"
+                 " suite can be discovered for this project",
+            project=name,
+        )
         if project.adapter == "pytest":
             # The probe runs in the project's own environment (uv, poetry, pipenv,
             # pdm or the active venv) — hardcoding `uv run` here failed the check
@@ -289,11 +342,33 @@ def cmd_doctor(args) -> Envelope:
         projects[name] = {"ok": all(c["ok"] for c in checks[before:])}
 
     for art in cfg.artifacts.values():
-        check(f"artifact {art.name}: has check or regenerate", bool(art.check or art.regenerate))
+        # One evaluation feeds both `ok` and the detail: evaluating the condition
+        # twice lets them disagree, and a passing check that still says "add a hook"
+        # is the same misdirection as a failing check that says nothing.
+        has_hook = bool(art.check or art.regenerate)
+        check(
+            f"artifact {art.name}: has check or regenerate", has_hook,
+            "" if has_hook
+            else f"add `check` or `regenerate` to [artifact.{art.name}] in tdd.toml —"
+                 " freshness cannot be verified without one",
+        )
 
     stale = _legacy_artifacts(worktree)
-    check("no legacy state artifacts", not stale, ", ".join(str(s) for s in stale[:5]))
-    check("worktree clean", not gitutil.is_dirty(worktree))
+    check(
+        "no legacy state artifacts", not stale,
+        f"delete these pre-ledger state files: {', '.join(str(s) for s in stale[:5])}"
+        if stale else "",
+    )
+
+    # Only dirt a run would read can corrupt one. Blocking on everything else
+    # stopped agents on unrelated notes and editor settings, and — because the
+    # check named no path — gave them nothing to act on but a re-run. `is_ignored`
+    # also excludes doctor's own probe residue (`.venv`, `node_modules`, caches),
+    # so running doctor can no longer be what makes doctor fail.
+    dirt = sorted(p for p in gitutil.dirty_paths(worktree) if not cfg.is_ignored(p))
+    blocking = [p for p in dirt if _blocks_the_loop(p, cfg)]
+    unrelated = [p for p in dirt if p not in set(blocking)]
+    check("worktree clean", not blocking, _cleanliness_detail(blocking, unrelated))
 
     ok = all(c["ok"] for c in checks)
     return Envelope(
