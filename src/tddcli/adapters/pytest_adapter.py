@@ -199,7 +199,7 @@ class PytestAdapter(Adapter):
         ]
         for cmd, env in probes:
             code, out, err = run_command(
-                f"{cmd} --collect-only -q", self.root, extra_env=env
+                f"{cmd} --collect-only -q", self.root, extra_env=env, label="doctor"
             )
             if code != 0:
                 chunks.append(out.strip())
@@ -215,7 +215,9 @@ class PytestAdapter(Adapter):
         if not self.project.overrides:
             return GateResult(ok=True)
         probe = f"{self._test_cmd().replace('{workers}', '0')} --collect-only -q"
-        code, out, err = run_command(probe, self.root, extra_env=self._suite_env(None))
+        code, out, err = run_command(
+            probe, self.root, extra_env=self._suite_env(None), label="doctor"
+        )
         reached = sorted({
             f for f in (
                 line.split("::", 1)[0]
@@ -243,6 +245,7 @@ class PytestAdapter(Adapter):
                 f"{base} --collect-only -q {shlex.quote(str(rel))}",
                 self.root,
                 extra_env=env,
+                label="collect",
             )
             if code != 0:
                 result.failed_files[str(rel)] = (err or out).strip()[:800]

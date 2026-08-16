@@ -110,7 +110,7 @@ def _fake_pytest_run(reports_by_prefix: dict[str, dict], seen: list):
     """A run_command double that answers each suite command with its own report,
     keyed by command prefix, writing the JSON where the real plugin would."""
 
-    def fake(command, cwd, timeout=1800, extra_env=None):
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         seen.append((command, extra_env))
         for prefix, report in reports_by_prefix.items():
             if command.startswith(prefix):
@@ -195,7 +195,7 @@ def test_pytest_broken_override_suite_is_a_loud_error_not_a_silent_gap(
     project = project_with(tmp_path, 'test_command = "pytest tests"\n' + OVERRIDE_BLOCK)
     adapter = adapters.build(project, tmp_path)
 
-    def fake(command, cwd, timeout=1800, extra_env=None):
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         if command.startswith("pytest contract"):
             return 4, "", "ERROR: file or directory not found: contract"
         marker = "--json-report-file="
@@ -222,7 +222,7 @@ def test_pytest_collection_routes_override_files_to_the_override_command(
     adapter = adapters.build(project, tmp_path)
     seen: list = []
 
-    def fake(command, cwd, timeout=1800, extra_env=None):
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         seen.append((command, extra_env))
         name = "test_api.py::test_ping" if "contract" in command else "test_a.py::test_a"
         return 0, name, ""
@@ -272,7 +272,7 @@ def test_vitest_run_finds_a_target_that_only_the_override_config_reaches(
     project = project_with(tmp_path, VITEST_OVERRIDE, adapter="vitest")
     adapter = adapters.build(project, tmp_path)
 
-    def fake(command, cwd, timeout=1800, extra_env=None):
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         if "--config vitest.contract.config.ts" in command:
             report = _vitest_report(
                 str(tmp_path / "backend" / "contract" / "api.contract.test.ts"),
@@ -331,7 +331,7 @@ def test_vitest_collection_routes_override_files_to_the_override_command(
     adapter = adapters.build(project, tmp_path)
     seen: list = []
 
-    def fake(command, cwd, timeout=1800, extra_env=None):
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         seen.append(command)
         return 0, "contract/api.contract.test.ts > pings the api", ""
 
@@ -479,7 +479,7 @@ def test_vitest_duplicate_test_id_across_suites_is_a_loud_error(
             ]
         }
 
-    def fake(command, cwd, timeout=1800, extra_env=None):
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         if "--config" in command:
             return 0, json.dumps(result("passed")), ""
         return 1, json.dumps(result("failed")), ""
@@ -500,7 +500,7 @@ def test_pytest_isolation_probe_flags_default_reach_into_override_files(
     adapter = adapters.build(project, tmp_path)
     seen: list = []
 
-    def fake(command, cwd, timeout=1800, extra_env=None):
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         seen.append(command)
         return 0, (
             "tests/test_a.py::test_a\n"
@@ -528,7 +528,7 @@ def test_pytest_isolation_probe_passes_when_the_default_suite_is_scoped(
     monkeypatch.setattr(
         adapters.pytest_adapter,
         "run_command",
-        lambda command, cwd, timeout=1800, extra_env=None: (
+        lambda command, cwd, timeout=1800, extra_env=None, label=None: (
             0, "tests/test_a.py::test_a\n", ""
         ),
     )
@@ -550,7 +550,7 @@ def test_vitest_isolation_probe_flags_default_reach_into_override_files(
     adapter = adapters.build(project, tmp_path)
     seen: list = []
 
-    def fake(command, cwd, timeout=1800, extra_env=None):
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         seen.append(command)
         return 0, (
             "src/__tests__/a.test.ts > adds\n"
@@ -570,7 +570,7 @@ def test_isolation_probe_is_free_when_a_project_declares_no_overrides(
     project = project_with(tmp_path, 'test_command = "pytest tests"\n')
     adapter = adapters.build(project, tmp_path)
 
-    def explode(command, cwd, timeout=1800, extra_env=None):
+    def explode(command, cwd, timeout=1800, extra_env=None, label=None):
         raise AssertionError("no probe should run without overrides")
 
     monkeypatch.setattr(adapters.pytest_adapter, "run_command", explode)
