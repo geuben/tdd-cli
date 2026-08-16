@@ -54,7 +54,7 @@ def test_default_suite_runs_with_the_project_env_expanded(tmp_path, monkeypatch)
     adapter = adapters.build(project, tmp_path)
     seen: list = []
 
-    def fake(command, cwd, timeout=1800, extra_env=None):
+    def fake(command, cwd, timeout=1800, extra_env=None, **_):
         seen.append((command, extra_env))
         marker = "--json-report-file="
         path = command.split(marker, 1)[1].split(" --", 1)[0]
@@ -95,7 +95,7 @@ def test_pytest_collection_of_default_files_carries_the_project_env(
     adapter = adapters.build(project, tmp_path)
     seen: list = []
 
-    def fake(command, cwd, timeout=1800, extra_env=None):
+    def fake(command, cwd, timeout=1800, extra_env=None, **_):
         seen.append((command, extra_env))
         return 0, "tests/test_a.py::test_a\n", ""
 
@@ -114,7 +114,7 @@ def test_vitest_default_suite_runs_with_the_project_env(tmp_path, monkeypatch):
     adapter = adapters.build(project, tmp_path)
     seen: list = []
 
-    def fake(command, cwd, timeout=1800, extra_env=None):
+    def fake(command, cwd, timeout=1800, extra_env=None, **_):
         seen.append((command, extra_env))
         return 0, json.dumps({"testResults": []}), ""
 

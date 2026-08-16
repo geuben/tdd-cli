@@ -243,6 +243,7 @@ class PytestAdapter(Adapter):
                 f"{base} --collect-only -q {shlex.quote(str(rel))}",
                 self.root,
                 extra_env=env,
+                label="collect",
             )
             if code != 0:
                 result.failed_files[str(rel)] = (err or out).strip()[:800]

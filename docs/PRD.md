@@ -407,6 +407,25 @@ Any situation the tool cannot express with one of these verbs is a gap in the st
 Surfacing it as a specification change — rather than as prose in a skill — is the point of
 closing the set.
 
+**R8.4 — progress and timing go to stderr as NDJSON, never stdout.** stdout carries the envelope
+above; a consumer does `json.loads(stdout)` and NDJSON in front of it breaks every one. Two
+streams of events use it:
+
+| Event | When | Fields |
+|---|---|---|
+| `baseline_captured` | after each project's baseline (§8.2) | `project`, `test_count`, `elapsed_s`, `run_s`, `collect_s` |
+| `command_timing` | per subprocess, only under `TDD_TIMING=1` | `label`, `command`, `cwd`, `duration_ms`, `exit_code` |
+
+`run_s` and `collect_s` are reported separately because their cost models are unrelated — a suite
+run scales with tests, per-file collection (R10.3) with *files* — so a single total cannot say
+which one was slow, and answering that question otherwise means measuring the projects by hand
+outside the tool. `elapsed_s` remains the total.
+
+`command_timing` is off by default: the per-file collect loop emits one line per test file, which
+would drown the heartbeats that exist to make a slow baseline legible. Its `label` (`suite`,
+`collect`, `gate`) is what makes the rows groupable — `run_command` sees a command and a cwd, not
+which project or phase asked for it.
+
 **`verb_set_version: 2`** — added `await_baseline` (issue #2): a baseline can take minutes on a
 real project (R10.3/R10.4's per-file collection), and a polling agent that inherited a run it did
 not start had no verb telling it to wait rather than re-run. `await_baseline` is non-terminal;
