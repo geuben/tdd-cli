@@ -4,6 +4,20 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `baseline_captured` reports `run_s` and `collect_s` alongside `elapsed_s`. The
+  suite run and the per-file collection have unrelated cost models — one scales
+  with tests, the other with files — so a single total could not say which was
+  slow, and answering that meant measuring projects by hand outside the tool.
+- `TDD_TIMING=1` emits a `command_timing` line per subprocess on stderr
+  (`label`, `command`, `cwd`, `duration_ms`, `exit_code`), covering every
+  subprocess the tool spawns: suite runs, per-file collection, lint/typecheck
+  gates, doctor probes and artifact hooks. Off by default — the per-file loop
+  would otherwise emit one line per test file on every invocation.
+
 ## [0.3.0] - 2026-08-10
 
 ### Added

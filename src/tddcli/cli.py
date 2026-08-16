@@ -364,12 +364,18 @@ def _probe_projects(cfg, worktree, ledger, on_progress):
     for done, (name, project) in enumerate(cfg.projects.items(), start=1):
         adapter = adapters.build(project, worktree)
         started = time.monotonic()
-        verdict, collection = adapter.run(None), adapter.collect()
+        verdict = adapter.run(None)
+        ran = time.monotonic()
+        collection = adapter.collect()
         elapsed = time.monotonic() - started
         probes[name] = (verdict, collection)
+        # Split, not just totalled: `run` and `collect` have unrelated cost models
+        # — one scales with tests, the other with files — and a single number sends
+        # whoever asks "why was that slow?" out of the tool to measure by hand.
         heartbeat(
             event="baseline_captured", project=name,
             test_count=len(collection.tests), elapsed_s=round(elapsed, 2),
+            run_s=round(ran - started, 2), collect_s=round(elapsed - (ran - started), 2),
         )
         on_progress(done, name)
     return probes

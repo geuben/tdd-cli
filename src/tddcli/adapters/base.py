@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .. import leases
+from ..envelope import heartbeat
 
 NOT_FOUND = "not_found"
 NOT_COLLECTED = "not_collected"
@@ -78,10 +80,26 @@ def clip_failure(text: str, limit: int = 1500) -> str:
     return f"{text[:head]}\n… [clipped] …\n{text[-tail:]}"
 
 
+#: Opt-in per-command timing. Off by default: the per-file collect loop would emit
+#: one line per test file on every invocation, drowning the heartbeats that exist
+#: to make a slow baseline legible.
+TIMING_ENV = "TDD_TIMING"
+
+
 def run_command(
     command: str, cwd: Path, timeout: int = 1800,
     extra_env: dict[str, str] | None = None,
+    label: str | None = None,
 ) -> tuple[int, str, str]:
+    """Every subprocess the tool spawns passes through here, which makes it the one
+    place worth timing: suite runs, per-file collection, lint and typecheck gates,
+    doctor probes, artifact hooks.
+
+    `label` is what makes the rows groupable. This function sees a command string
+    and a cwd — not which project or phase asked for it — so an unlabelled timing
+    is readable by a human and useless to a query.
+    """
+    started = time.monotonic()
     proc = subprocess.run(
         command,
         shell=True,
@@ -91,6 +109,15 @@ def run_command(
         timeout=timeout,
         env=None if extra_env is None else {**os.environ, **extra_env},
     )
+    if os.environ.get(TIMING_ENV):
+        heartbeat(
+            event="command_timing",
+            label=label,
+            command=command,
+            cwd=str(cwd),
+            duration_ms=int((time.monotonic() - started) * 1000),
+            exit_code=proc.returncode,
+        )
     return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -130,6 +157,7 @@ class Adapter:
                 command.replace("{workers}", str(workers)),
                 self.root,
                 extra_env={"TDD_WORKERS": str(workers), **(extra_env or {})},
+                label="suite",
             )
 
     def _test_cmd(self) -> str:
@@ -184,7 +212,7 @@ class Adapter:
     def _gate(self, commands: list[str]) -> GateResult:
         chunks = []
         for cmd in commands:
-            code, out, err = run_command(cmd, self.root)
+            code, out, err = run_command(cmd, self.root, label="gate")
             if code != 0:
                 chunks.append(f"$ {cmd}\n{out}\n{err}".strip())
         return GateResult(ok=not chunks, output="\n\n".join(chunks)[:4000])

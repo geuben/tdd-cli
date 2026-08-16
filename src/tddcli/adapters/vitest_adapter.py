@@ -237,7 +237,8 @@ class VitestAdapter(Adapter):
             base = ov.collect_command if ov else self._collect_cmd()
             env = self._suite_env(ov)
             code, out, err = run_command(
-                f"{base} {shlex.quote(str(rel))}", self.root, extra_env=env
+                f"{base} {shlex.quote(str(rel))}", self.root, extra_env=env,
+                label="collect",
             )
 
             payload = _extract_json(out)
