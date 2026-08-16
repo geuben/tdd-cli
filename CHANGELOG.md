@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- `collect()` runs one invocation per declared suite instead of one per test
+  file, falling back to the per-file loop for anything a batch did not account
+  for. Per-file collection was **77% of a real `run start`** — 313 subprocesses
+  costing 402s, against 117s to actually run every test — because cost scaled
+  with file count at a ~1.08s floor per invocation (the environment manager
+  resolving plus the runner booting). Measured 38.8x faster on a 60-file
+  project, with an identical collected set. R10.3's guarantee is unchanged: a
+  file that fails to collect is still attributed to itself and cannot destroy
+  the set, and a file the batch never reports is still collected individually,
+  so the set can only match or improve on the old one (#27).
+
 ## [0.4.0] - 2026-08-16
 
 ### Added

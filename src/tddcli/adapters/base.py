@@ -189,6 +189,48 @@ class Adapter:
         return "a body that fails loudly, never working logic"
 
     def collect(self) -> Collection:
+        """Enumerate the project's tests: one invocation per declared suite, with
+        the per-file loop kept for what that cannot account for (issue #27).
+
+        Per file, collection cost scaled with *file count* rather than test count —
+        measured at 77% of a whole `run start`, against a floor of ~1.08s per
+        invocation that is the environment manager resolving plus the runner
+        booting, not collection work.
+
+        The batch and the loop do not discover the same way: a batch uses the
+        runner's own config, the loop walks `test_paths`. So the loop still runs for
+        every file the batch did not report — whether the batch failed, returned
+        nothing, or simply never mentioned that file. R10.3's guarantee is
+        unchanged: one uncollectable file is attributed to itself, and cannot
+        destroy the set. What changes is that the healthy case no longer pays for
+        the broken one.
+        """
+        result = Collection()
+        unaccounted = {str(p.relative_to(self.root)) for p in self._test_files()}
+        for command, env in self._collect_invocations():
+            batch = self._collect_batch(command, env)
+            if batch is None:
+                continue
+            tests, files = batch
+            result.tests |= tests
+            unaccounted -= files
+        return self._collect_per_file(unaccounted, result)
+
+    def _collect_invocations(self) -> list[tuple[str, dict[str, str] | None]]:
+        """One collection command per declared suite: the default plus each
+        override's (R7.13), so an override's files are enumerated with its own
+        command and env."""
+        raise NotImplementedError
+
+    def _collect_batch(
+        self, command: str, env: dict[str, str] | None
+    ) -> tuple[set[str], set[str]] | None:
+        """`(test ids, files seen)` for one whole-suite invocation, or None when it
+        produced nothing usable — the signal to leave its files to the loop."""
+        raise NotImplementedError
+
+    def _collect_per_file(self, rels: set[str], result: Collection) -> Collection:
+        """R10.3's loop, now reached only for files no batch accounted for."""
         raise NotImplementedError
 
     def collectable(self) -> GateResult:
