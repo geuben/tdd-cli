@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.0] - 2026-08-16
 
 ### Added
 
@@ -16,7 +16,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   (`label`, `command`, `cwd`, `duration_ms`, `exit_code`), covering every
   subprocess the tool spawns: suite runs, per-file collection, lint/typecheck
   gates, doctor probes and artifact hooks. Off by default — the per-file loop
-  would otherwise emit one line per test file on every invocation.
+  would otherwise emit one line per test file on every invocation. `label` is
+  one of `suite`, `collect`, `gate`, `doctor`; an unlabelled row comes from a
+  third-party adapter, since every built-in call site names itself (R8.4).
 
 ### Fixed
 
