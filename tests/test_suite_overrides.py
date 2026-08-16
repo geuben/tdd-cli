@@ -528,7 +528,7 @@ def test_pytest_isolation_probe_passes_when_the_default_suite_is_scoped(
     monkeypatch.setattr(
         adapters.pytest_adapter,
         "run_command",
-        lambda command, cwd, timeout=1800, extra_env=None: (
+        lambda command, cwd, timeout=1800, extra_env=None, **_: (
             0, "tests/test_a.py::test_a\n", ""
         ),
     )

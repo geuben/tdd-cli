@@ -128,6 +128,19 @@ def test_the_per_file_collect_loop_is_attributed_per_file(repo, capsys, monkeypa
     assert any("test_smoke.py" in entry["command"] for entry in collects), collects
 
 
+def test_doctor_probes_are_labelled_as_doctor(repo, capsys, monkeypatch):
+    """Doctor's probes reach `run_command` from three places — the reporter check
+    in `cmd_doctor`, `collectable()` and `override_isolation()` — and both adapter
+    methods are called from nowhere else. Unlabelled they arrive as `label: null`,
+    indistinguishable from a third-party adapter's unlabelled call."""
+    monkeypatch.setenv(base.TIMING_ENV, "1")
+    assert run_cli(repo, "doctor")["ok"]
+
+    timings = _lines(capsys.readouterr().err, "command_timing")
+    assert timings, "TDD_TIMING=1 produced no command_timing lines for doctor"
+    assert {entry.get("label") for entry in timings} == {"doctor"}, timings
+
+
 def test_timing_does_not_disturb_the_command_result(repo, monkeypatch):
     """The wrapper returns exactly what the subprocess returned."""
     monkeypatch.setenv(base.TIMING_ENV, "1")

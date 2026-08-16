@@ -423,8 +423,11 @@ outside the tool. `elapsed_s` remains the total.
 
 `command_timing` is off by default: the per-file collect loop emits one line per test file, which
 would drown the heartbeats that exist to make a slow baseline legible. Its `label` (`suite`,
-`collect`, `gate`) is what makes the rows groupable — `run_command` sees a command and a cwd, not
-which project or phase asked for it.
+`collect`, `gate`, `doctor`) is what makes the rows groupable — `run_command` sees a command and a
+cwd, not which project or phase asked for it. `doctor` covers all three of preflight's probe
+sites: the reporter check in `cmd_doctor`, plus `collectable()` and `override_isolation()`, which
+are called from nowhere else. An unlabelled row is a third-party adapter's; every built-in call
+site names itself.
 
 **`verb_set_version: 2`** — added `await_baseline` (issue #2): a baseline can take minutes on a
 real project (R10.3/R10.4's per-file collection), and a polling agent that inherited a run it did

@@ -177,7 +177,7 @@ class VitestAdapter(Adapter):
         """
         chunks = []
         code, out, err = run_command(
-            self._collect_cmd(), self.root, extra_env=self._suite_env(None)
+            self._collect_cmd(), self.root, extra_env=self._suite_env(None), label="doctor"
         )
         if code != 0:
             chunks.append((err or out).strip())
@@ -190,7 +190,7 @@ class VitestAdapter(Adapter):
                 )
                 continue
             code, out, err = run_command(
-                ov.collect_command, self.root, extra_env=self._suite_env(ov)
+                ov.collect_command, self.root, extra_env=self._suite_env(ov), label="doctor"
             )
             if code != 0:
                 chunks.append((err or out).strip())
@@ -204,7 +204,7 @@ class VitestAdapter(Adapter):
         if not self.project.overrides:
             return GateResult(ok=True)
         code, out, err = run_command(
-            self._collect_cmd(), self.root, extra_env=self._suite_env(None)
+            self._collect_cmd(), self.root, extra_env=self._suite_env(None), label="doctor"
         )
         reached = sorted({
             f for f in (
