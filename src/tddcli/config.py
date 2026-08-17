@@ -69,6 +69,8 @@ class Override:
     test_command: str
     collect_command: str | None = None
     env: dict[str, str] = field(default_factory=dict)
+    lease: str | None = None
+    timeout: int | None = None
 
 
 @dataclass
@@ -95,6 +97,11 @@ class Project:
     env: dict[str, str] = field(default_factory=dict)
     #: Alternate suites for files the default command cannot reach (R7.13).
     overrides: list[Override] = field(default_factory=list)
+    #: Named machine-wide exclusive lease required before running this project's suite.
+    lease: str | None = None
+    #: Wall-clock timeout in seconds for this project's suite invocations.
+    #: Overrides the 1800 s default. Doctor warns when a known baseline exceeds it.
+    timeout: int | None = None
 
     def override_for(self, rel_path: str) -> Override | None:
         """First declared override whose pattern matches (path relative to the
@@ -115,13 +122,13 @@ class Project:
         return self.test_paths + [ov.pattern for ov in self.overrides]
 
     def owns(self, rel_path: str) -> bool:
-        if self.root == ".":     # single-project repo: the root is the worktree itself
+        if self.root == ".":  # single-project repo: the root is the worktree itself
             return True
         return rel_path == self.root or rel_path.startswith(self.root.rstrip("/") + "/")
 
     def relative_to_root(self, rel_path: str) -> str:
         prefix = self.root.rstrip("/") + "/"
-        return rel_path[len(prefix):] if rel_path.startswith(prefix) else rel_path
+        return rel_path[len(prefix) :] if rel_path.startswith(prefix) else rel_path
 
     def is_test_file(self, rel_path: str) -> bool:
         """rel_path is relative to the worktree root."""
@@ -178,9 +185,7 @@ class Config:
 
     def project(self, name: str) -> Project:
         if name not in self.projects:
-            raise ConfigError(
-                f"unknown project {name!r}; registered: {sorted(self.projects)}"
-            )
+            raise ConfigError(f"unknown project {name!r}; registered: {sorted(self.projects)}")
         return self.projects[name]
 
     def owning_project(self, rel_path: str) -> Project | None:
@@ -255,8 +260,7 @@ def _load_overrides(project: str, raw: list) -> list[Override]:
     for i, body in enumerate(raw, start=1):
         if not isinstance(body, dict):
             raise ConfigError(
-                f"project {project!r} override #{i} must be a table"
-                " ([[project.<name>.override]])"
+                f"project {project!r} override #{i} must be a table ([[project.<name>.override]])"
             )
         if "pattern" not in body:
             raise ConfigError(f"project {project!r} override #{i} has no pattern")
@@ -265,12 +269,15 @@ def _load_overrides(project: str, raw: list) -> list[Override]:
                 f"project {project!r} override {body['pattern']!r} has no test_command"
             )
         env = body.get("env", {})
-        if not isinstance(env, dict) or not all(
-            isinstance(v, str) for v in env.values()
-        ):
+        if not isinstance(env, dict) or not all(isinstance(v, str) for v in env.values()):
             raise ConfigError(
                 f"project {project!r} override {body['pattern']!r}: env must be a"
                 " table of string values"
+            )
+        timeout = body.get("timeout")
+        if timeout is not None and not isinstance(timeout, int):
+            raise ConfigError(
+                f"project {project!r} override {body['pattern']!r}: timeout must be an integer"
             )
         overrides.append(
             Override(
@@ -278,6 +285,8 @@ def _load_overrides(project: str, raw: list) -> list[Override]:
                 test_command=body["test_command"],
                 collect_command=body.get("collect_command"),
                 env=env,
+                lease=body.get("lease"),
+                timeout=timeout,
             )
         )
     return overrides
@@ -296,12 +305,11 @@ def load(worktree: Path) -> Config:
         if "adapter" not in body:
             raise ConfigError(f"project {name!r} has no adapter")
         env = body.get("env", {})
-        if not isinstance(env, dict) or not all(
-            isinstance(v, str) for v in env.values()
-        ):
-            raise ConfigError(
-                f"project {name!r}: env must be a table of string values"
-            )
+        if not isinstance(env, dict) or not all(isinstance(v, str) for v in env.values()):
+            raise ConfigError(f"project {name!r}: env must be a table of string values")
+        timeout = body.get("timeout")
+        if timeout is not None and not isinstance(timeout, int):
+            raise ConfigError(f"project {name!r}: timeout must be an integer")
         projects[name] = Project(
             name=name,
             root=body["root"].rstrip("/"),
@@ -314,6 +322,8 @@ def load(worktree: Path) -> Config:
             collect_command=body.get("collect_command"),
             env=env,
             overrides=_load_overrides(name, body.get("override", [])),
+            lease=body.get("lease"),
+            timeout=timeout,
         )
 
     artifacts: dict[str, Artifact] = {}

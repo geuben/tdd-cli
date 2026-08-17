@@ -87,7 +87,9 @@ TIMING_ENV = "TDD_TIMING"
 
 
 def run_command(
-    command: str, cwd: Path, timeout: int = 1800,
+    command: str,
+    cwd: Path,
+    timeout: int = 1800,
     extra_env: dict[str, str] | None = None,
     label: str | None = None,
 ) -> tuple[int, str, str]:
@@ -135,13 +137,16 @@ class Adapter:
 
     def strip(self, qualified: str) -> str:
         prefix = f"{self.project.name}::"
-        return qualified[len(prefix):] if qualified.startswith(prefix) else qualified
+        return qualified[len(prefix) :] if qualified.startswith(prefix) else qualified
 
     def run(self, target: str | None = None) -> Verdict:
         raise NotImplementedError
 
     def _run_suite(
-        self, command: str, extra_env: dict[str, str] | None = None
+        self,
+        command: str,
+        extra_env: dict[str, str] | None = None,
+        timeout: int | None = None,
     ) -> tuple[int, str, str]:
         """Run the suite under a machine-wide worker lease.
 
@@ -151,14 +156,31 @@ class Adapter:
         prefer to read the budget themselves. The lease is held for the whole
         invocation so concurrent agents in other worktrees see this one and
         take a smaller share.
+
+        When the project declares `lease`, an exclusive named lease is acquired
+        first (outer context), so only one instance of that suite runs machine-
+        wide at a time. When `timeout` is given it overrides the project-level
+        and default values.
         """
-        with leases.worker_lease() as workers:
+        effective_timeout = timeout or self.project.timeout or 1800
+
+        def _run(workers: int) -> tuple[int, str, str]:
             return run_command(
                 command.replace("{workers}", str(workers)),
                 self.root,
+                timeout=effective_timeout,
                 extra_env={"TDD_WORKERS": str(workers), **(extra_env or {})},
                 label="suite",
             )
+
+        lease_name = getattr(self.project, "lease", None)
+        if lease_name:
+            with leases.named_lease(lease_name):
+                with leases.worker_lease() as workers:
+                    return _run(workers)
+        else:
+            with leases.worker_lease() as workers:
+                return _run(workers)
 
     def _test_cmd(self) -> str:
         raise NotImplementedError
