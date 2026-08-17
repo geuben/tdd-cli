@@ -92,7 +92,7 @@ class ExecAdapter(Adapter):
             else:
                 result.failed_files[rel] = (
                     f"{rel}: not executable and no test_command configured"
-                    " (chmod +x, or add test_command = \"bash {file}\" to tdd.toml)"
+                    ' (chmod +x, or add test_command = "bash {file}" to tdd.toml)'
                 )
         return result
 
@@ -117,9 +117,7 @@ class ExecAdapter(Adapter):
         if self.project.test_command:
             return GateResult(ok=True)
         non_exec = [
-            str(p.relative_to(self.root))
-            for p in self._test_files()
-            if not os.access(p, os.X_OK)
+            str(p.relative_to(self.root)) for p in self._test_files() if not os.access(p, os.X_OK)
         ]
         if not non_exec:
             return GateResult(ok=True)
@@ -129,8 +127,7 @@ class ExecAdapter(Adapter):
             ok=False,
             output=(
                 "these files matched test_paths but are not executable"
-                " (chmod +x, or set test_command = \"bash {file}\" in tdd.toml):\n"
-                + listed + more
+                ' (chmod +x, or set test_command = "bash {file}" in tdd.toml):\n' + listed + more
             ),
         )
 
@@ -154,9 +151,7 @@ class ExecAdapter(Adapter):
             if not self._is_runnable(path):
                 if target == qualified:
                     verdict.target_outcome = NOT_COLLECTED
-                    verdict.target_failure = (
-                        f"{rel}: not executable and no test_command configured"
-                    )
+                    verdict.target_failure = f"{rel}: not executable and no test_command configured"
                 continue
 
             code, out, err = run_command(

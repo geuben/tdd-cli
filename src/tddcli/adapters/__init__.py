@@ -41,9 +41,7 @@ def build(project, worktree: Path) -> Adapter:
                 cls = ep.load()
                 break
     if cls is None:
-        raise RuntimeError(
-            f"unknown adapter {project.adapter!r}; available: {sorted(available())}"
-        )
+        raise RuntimeError(f"unknown adapter {project.adapter!r}; available: {sorted(available())}")
     return cls(project, worktree)
 
 

@@ -9,8 +9,6 @@ from __future__ import annotations
 import stat
 from pathlib import Path
 
-import pytest
-
 from tddcli import config as config_mod
 from tddcli.adapters.base import FAILED, NOT_COLLECTED, NOT_FOUND, PASSED
 from tddcli.adapters.exec_adapter import ExecAdapter
@@ -73,7 +71,7 @@ def test_non_matching_files_are_ignored(tmp_path):
     adapter = make_adapter(tmp_path)
     scripts = tmp_path / "gates" / "scripts"
     write_script(scripts / "check-a.sh", "exit 0")
-    write_script(scripts / "run.sh", "exit 0")   # does not match check-*.sh
+    write_script(scripts / "run.sh", "exit 0")  # does not match check-*.sh
 
     collection = adapter.collect()
 
@@ -155,7 +153,9 @@ def test_exit_zero_yields_passed(tmp_path):
 
 def test_nonzero_exit_yields_failed(tmp_path):
     adapter = make_adapter(tmp_path)
-    write_script(tmp_path / "gates" / "scripts" / "check-bad.sh", 'echo "FAIL: something wrong"; exit 1')
+    write_script(
+        tmp_path / "gates" / "scripts" / "check-bad.sh", 'echo "FAIL: something wrong"; exit 1'
+    )
 
     verdict = adapter.run()
 
@@ -165,7 +165,9 @@ def test_nonzero_exit_yields_failed(tmp_path):
 
 def test_failure_output_is_captured(tmp_path):
     adapter = make_adapter(tmp_path)
-    write_script(tmp_path / "gates" / "scripts" / "check-bad.sh", 'echo "FAIL: missing migration"; exit 1')
+    write_script(
+        tmp_path / "gates" / "scripts" / "check-bad.sh", 'echo "FAIL: missing migration"; exit 1'
+    )
 
     verdict = adapter.run()
     target = "gates::scripts/check-bad.sh"
