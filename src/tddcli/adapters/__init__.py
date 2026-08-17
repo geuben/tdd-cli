@@ -4,10 +4,12 @@ import importlib.metadata
 from pathlib import Path
 
 from .base import Adapter, Collection, GateResult, Verdict
+from .exec_adapter import ExecAdapter
 from .pytest_adapter import PytestAdapter
 from .vitest_adapter import VitestAdapter
 
 REGISTRY: dict[str, type[Adapter]] = {
+    "exec": ExecAdapter,
     "pytest": PytestAdapter,
     "vitest": VitestAdapter,
 }
@@ -39,9 +41,7 @@ def build(project, worktree: Path) -> Adapter:
                 cls = ep.load()
                 break
     if cls is None:
-        raise RuntimeError(
-            f"unknown adapter {project.adapter!r}; available: {sorted(available())}"
-        )
+        raise RuntimeError(f"unknown adapter {project.adapter!r}; available: {sorted(available())}")
     return cls(project, worktree)
 
 
