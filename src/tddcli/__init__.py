@@ -3,4 +3,4 @@
 State is derived from observed test execution, never asserted by the caller.
 """
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
