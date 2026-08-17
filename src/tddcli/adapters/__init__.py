@@ -7,11 +7,13 @@ from .base import Adapter, Collection, GateResult, Verdict
 from .exec_adapter import ExecAdapter
 from .pytest_adapter import PytestAdapter
 from .vitest_adapter import VitestAdapter
+from .xctest_adapter import XCTestAdapter
 
 REGISTRY: dict[str, type[Adapter]] = {
     "exec": ExecAdapter,
     "pytest": PytestAdapter,
     "vitest": VitestAdapter,
+    "xctest": XCTestAdapter,
 }
 
 
