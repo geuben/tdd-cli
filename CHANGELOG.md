@@ -4,6 +4,45 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-08-17
+
+### Added
+
+- **exec adapter** — exit-code oracles as first-class test suites. Any executable
+  file (or any file paired with a `test_command`) becomes a test: exit 0 → passed,
+  non-zero → failed, stdout+stderr captured as failure output. Non-executable files
+  without a `test_command` map to `not_collected` rather than `failed`, so a missing
+  executable bit is a configuration error rather than a test failure. Supports a
+  `{file}` placeholder in `test_command` for per-file invocation, with shell-quoting
+  so paths with spaces are handled correctly (#33).
+
+- **xctest adapter** — XCTest/xcodebuild driver for Swift and Objective-C projects.
+  Test ids use xcodebuild's own `-only-testing:` format (`Bundle/Class/method`) so
+  targeted runs compose without translation. A build failure maps to `not_collected`
+  rather than `failed` — Swift has no separate collection phase, so a missing-symbol
+  build error is not the RED state; the discipline is to write a compiling stub first,
+  then observe an assertion failure. Collection tries `xcodebuild test
+  -enumerate-tests` (Xcode 16+) and falls back to grepping Swift source files for
+  `class Foo: XCTestCase` and `func testBar()` patterns. Requires `test_command` in
+  `tdd.toml` so the adapter can append `-only-testing:` and `-enumerate-tests` flags
+  without guessing the scheme or destination (#34).
+
+- **Named exclusive leases** (`lease = "<name>"` on a project or override) — before
+  running a suite the tool acquires an exclusive machine-wide named lease using the
+  same lease-directory machinery as the worker budget. Only one holder machine-wide
+  can hold a given name at a time; a waiting invocation blocks with a `lease_waiting`
+  heartbeat every 5 s rather than silently hanging. Stale locks (pid dead or older
+  than 1 h) are swept immediately so a crash can never permanently block a name.
+  The name is free-form and machine-scoped; two repos naming the same lease
+  intentionally contend, which is the intended semantics for shared physical hardware
+  or a port-bound service (#35).
+
+- **Per-project suite timeouts** (`timeout = <seconds>` on a project or override) —
+  overrides the 1800 s default for suite invocations. `tdd doctor` warns when a
+  configured timeout is shorter than the longest recorded full-suite invocation for
+  that project, so a mis-configuration is caught at preflight rather than at the
+  timeout boundary (#35).
+
 ## [0.4.1] - 2026-08-16
 
 ### Changed
