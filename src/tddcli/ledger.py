@@ -263,9 +263,7 @@ class Ledger:
     def _stored_version(self) -> int | None:
         """The schema version already on disk, or None for a fresh database."""
         try:
-            row = self.db.execute(
-                "SELECT value FROM meta WHERE key = 'schema_version'"
-            ).fetchone()
+            row = self.db.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
         except sqlite3.OperationalError:  # no meta table: fresh database
             return None
         return int(row[0]) if row else None
@@ -307,9 +305,7 @@ class Ledger:
 
     def update(self, table: str, row_id: int, **cols) -> None:
         sets = ", ".join(f"{k} = ?" for k in cols)
-        self._write(
-            f"UPDATE {table} SET {sets} WHERE id = ?", (*cols.values(), row_id)
-        )
+        self._write(f"UPDATE {table} SET {sets} WHERE id = ?", (*cols.values(), row_id))
 
     # -- domain queries --------------------------------------------------
 
@@ -322,8 +318,7 @@ class Ledger:
 
     def open_cycle(self, run_id: int) -> sqlite3.Row | None:
         return self.one(
-            "SELECT * FROM cycle WHERE run_id = ? AND closed_at IS NULL"
-            " ORDER BY ordinal LIMIT 1",
+            "SELECT * FROM cycle WHERE run_id = ? AND closed_at IS NULL ORDER BY ordinal LIMIT 1",
             (run_id,),
         )
 
@@ -347,6 +342,20 @@ class Ledger:
                 (cycle_id, phase),
             )
         return self.all("SELECT * FROM invocation WHERE cycle_id = ? ORDER BY id", (cycle_id,))
+
+    def max_suite_duration_ms(self, project: str) -> int | None:
+        """Maximum full-suite invocation duration for `project` across all known runs.
+
+        Returns None when no invocations exist yet (first run), so callers can
+        skip the timeout doctor check rather than emitting a false alarm.
+        Full-suite runs have `target_test IS NULL`.
+        """
+        row = self.one(
+            "SELECT MAX(duration_ms) AS m FROM invocation"
+            " WHERE project = ? AND target_test IS NULL",
+            (project,),
+        )
+        return None if row is None or row["m"] is None else int(row["m"])
 
     def open_sensitivity(self, cycle_id: int) -> sqlite3.Row | None:
         return self.one(

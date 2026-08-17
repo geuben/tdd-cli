@@ -32,6 +32,8 @@ import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
+from .envelope import heartbeat
+
 LEASE_DIR_ENV = "TDD_LEASE_DIR"
 CORE_BUDGET_ENV = "TDD_CORE_BUDGET"
 
@@ -101,6 +103,53 @@ def snapshot() -> dict:
         "total_cores": total,
         "workers_each": max(1, total // max(1, live)),
     }
+
+
+@contextlib.contextmanager
+def named_lease(name: str) -> Iterator[None]:
+    """Hold an exclusive machine-wide lease identified by `name`.
+
+    Only one holder can hold a named lease at a time, machine-wide. If another
+    process holds it the context manager blocks, emitting a `lease_waiting`
+    heartbeat every 5 seconds so callers know this is deliberate contention and
+    not a hang. Stale locks (pid dead or older than STALE_AFTER_S) are swept
+    before the first attempt, so a crash can never permanently block a name.
+
+    Unlike `worker_lease`, a named lease is exclusive (at-most-one), not budget-
+    splitting. It is the right primitive for suites that require exclusive access
+    to a shared resource (a physical device, a port-bound service, a database)
+    where running two instances concurrently is incorrect, not merely wasteful.
+    """
+    directory = lease_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    lock_path = directory / f"named-{name}.lock"
+
+    while True:
+        # Try to acquire the lock atomically.
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            try:
+                os.write(fd, json.dumps({"pid": os.getpid(), "started_at": time.time()}).encode())
+            finally:
+                os.close(fd)
+            break  # acquired
+        except FileExistsError:
+            pass
+
+        # Someone else holds it. Sweep if stale, then wait or retry.
+        if not _is_live(lock_path):
+            with contextlib.suppress(OSError):
+                lock_path.unlink()
+            continue  # retry immediately
+
+        heartbeat(event="lease_waiting", lease=name)
+        time.sleep(5)
+
+    try:
+        yield
+    finally:
+        with contextlib.suppress(OSError):
+            lock_path.unlink()
 
 
 @contextlib.contextmanager
