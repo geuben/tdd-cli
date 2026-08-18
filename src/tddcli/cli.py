@@ -336,6 +336,25 @@ def cmd_doctor(args) -> Envelope:
                 project=name,
             )
 
+        # The Gradle wrapper is not on PATH; a project that invokes `./gradlew`
+        # needs the committed wrapper present at the project root, or the run
+        # fails with a bare `No such file or directory` that never says why.
+        # Only checked when the command actually uses the wrapper — a project on
+        # a system `gradle` is not held to it.
+        if project.adapter == "gradle":
+            gradle_cmd = adapters.build(project, worktree)._test_cmd()
+            if "gradlew" in gradle_cmd:
+                wrapper = root / "gradlew"
+                check(
+                    "gradle wrapper present",
+                    wrapper.is_file(),
+                    ""
+                    if wrapper.is_file()
+                    else "no ./gradlew at the project root — run `gradle wrapper` to"
+                    " generate it, or point test_command at a gradle on PATH",
+                    project=name,
+                )
+
         # Whole-suite `--collect-only`/`vitest list` (§10) — a single, cheap
         # probe (0.04s on a broken project) that attributes a collection failure
         # to its project. Nothing shells out to doctor today, so this is the only
