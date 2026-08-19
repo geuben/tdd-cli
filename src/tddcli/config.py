@@ -213,7 +213,18 @@ class Config:
         return chain
 
     def reachable_projects(self, declared: list[str]) -> list[str]:
-        return sorted(set(declared))
+        reachable = set(declared)
+        changed = True
+        while changed:
+            changed = False
+            for art in self.artifacts.values():
+                producer = art.produced_by
+                if producer in reachable:
+                    for consumer in art.consumed_by:
+                        if consumer not in reachable:
+                            reachable.add(consumer)
+                            changed = True
+        return sorted(reachable)
 
     def close_sweep_projects(self, cycle_projects: list[str], touched: set[str]) -> list[str]:
         """R9.2 — the cycle's own projects, plus anything downstream of an artifact it touched."""
