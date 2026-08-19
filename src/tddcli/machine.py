@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import adapters, gitutil, staging
@@ -42,10 +42,11 @@ OPENING_PHASE = {PIN: AWAITING_PIN, REFACTOR: AWAITING_REFACTOR}
 class SweepOutcome:
     failures: list[str]
     gates: list[tuple[str, str, str]]      # (project, kind, output)
+    unbaselined: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
-        return not self.failures and not self.gates
+        return not self.failures and not self.gates and not self.unbaselined
 
 
 class Engine:
@@ -180,6 +181,7 @@ class Engine:
         baselines = self._baselines()
         failures: list[str] = []
         gates: list[tuple[str, str, str]] = []
+        unbaselined: dict[str, list[str]] = {}
 
         for name in names:
             project = self.config.project(name)
@@ -190,8 +192,12 @@ class Engine:
                 event="project_completed", project=name, phase="CLOSE_SWEEP",
                 elapsed_s=round(time.monotonic() - started, 2),
             )
-            base = baselines.get(name, set())
-            failures.extend(f for f in verdict.failed if f not in base)
+            if name not in baselines:
+                if verdict.failed:
+                    unbaselined[name] = sorted(verdict.failed)
+            else:
+                base = baselines[name]
+                failures.extend(f for f in verdict.failed if f not in base)
             self.ledger.insert(
                 "invocation",
                 run_id=self.run["id"],
@@ -222,7 +228,7 @@ class Engine:
                 )
                 if not gate.ok:
                     gates.append((name, kind, gate.output))
-        return SweepOutcome(failures=failures, gates=gates)
+        return SweepOutcome(failures=failures, gates=gates, unbaselined=unbaselined)
 
     # -- artifacts -------------------------------------------------------
 
