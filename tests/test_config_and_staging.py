@@ -134,6 +134,35 @@ def test_reachable_projects_includes_transitive_consumers(tmp_path):
     assert cfg_t.reachable_projects(["p1"]) == ["p1", "p2", "p3"]
 
 
+ARTIFACT_CHAIN_TOML = """
+[project.prod]
+root = "prod"
+adapter = "pytest"
+test_paths = ["tests/"]
+
+[project.consumer]
+root = "consumer"
+adapter = "pytest"
+test_paths = ["tests/"]
+
+[artifact.base]
+path = "prod/base.json"
+produced_by = "prod"
+
+[artifact.derived]
+path = "prod/derived.json"
+produced_by = "artifact.base"
+consumed_by = ["consumer"]
+"""
+
+
+def test_reachable_projects_resolves_artifact_upstream_chain(tmp_path):
+    (tmp_path / "tdd.toml").write_text(ARTIFACT_CHAIN_TOML)
+    cfg_c = config_mod.load(tmp_path)
+    # consumer is only reachable via prod -> artifact.base -> artifact.derived -> consumer
+    assert cfg_c.reachable_projects(["prod"]) == ["consumer", "prod"]
+
+
 # -- staging ---------------------------------------------------------------
 
 
