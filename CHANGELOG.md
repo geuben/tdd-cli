@@ -4,6 +4,26 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-08-19
+
+### Added
+
+- **gradle adapter** — Gradle driver for Kotlin/JVM and Android projects. Runs the
+  project's Gradle test task (`./gradlew test`, `testDebugUnitTest`, or
+  `connectedDebugAndroidTest`) and reads per-test verdicts from the JUnit XML Gradle
+  writes, rather than scraping the console — unit and instrumented tasks share one
+  parser, so the task is a config choice, not a code path. A compile failure maps to
+  `not_collected` rather than `failed`: Kotlin has no separate collection phase, so a
+  test referencing a missing symbol fails the build, and the "stub before RED"
+  discipline holds exactly as it does for a Python import error. The discriminator is
+  whether fresh JUnit XML was produced, not "BUILD FAILED" (a test failure prints that
+  too); a `--tests` filter matching nothing maps to `not_found`. Stale results are
+  cleared before each run, which also invalidates Gradle's up-to-date check so a
+  targeted run is scored only against the XML it produced. Collection is a per-file
+  grep of Kotlin/Java sources (Gradle has no cheap whole-suite enumerator), so one
+  unreadable file cannot destroy the set. `tdd doctor` gains a `gradle wrapper present`
+  check, active only when the command uses `./gradlew` (#41).
+
 ## [0.5.1] - 2026-08-17
 
 ### Added
