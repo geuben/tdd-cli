@@ -163,6 +163,34 @@ def test_reachable_projects_resolves_artifact_upstream_chain(tmp_path):
     assert cfg_c.reachable_projects(["prod"]) == ["consumer", "prod"]
 
 
+SWEEP_OPT_OUT_TOML = """
+[project.p1]
+root = "p1"
+adapter = "pytest"
+test_paths = ["tests/"]
+
+[project.p2]
+root = "p2"
+adapter = "pytest"
+test_paths = ["tests/"]
+in_close_sweep = false
+
+[artifact.x]
+path = "p1/x.json"
+produced_by = "p1"
+consumed_by = ["p2"]
+"""
+
+
+def test_reachable_projects_excludes_downstream_not_in_close_sweep(tmp_path):
+    (tmp_path / "tdd.toml").write_text(SWEEP_OPT_OUT_TOML)
+    cfg_o = config_mod.load(tmp_path)
+    # p2 opted out of close sweep → not added via artifact closure
+    assert cfg_o.reachable_projects(["p1"]) == ["p1"]
+    # but p2 declared explicitly always wins
+    assert cfg_o.reachable_projects(["p2"]) == ["p2"]
+
+
 # -- staging ---------------------------------------------------------------
 
 
