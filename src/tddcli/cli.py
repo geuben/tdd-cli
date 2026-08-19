@@ -489,14 +489,13 @@ def cmd_plan_register(args) -> Envelope:
     )
 
 
-def _probe_projects(cfg, worktree, ledger, on_progress):
-    """Probe every project's baseline (R9.5a): run + collect, timing each, emitting a
-    `baseline_captured` heartbeat, and calling `on_progress(done, name)` — extracted
-    from `cmd_run_start`, which carried claiming, timing, heartbeating and progress
-    updates inline past the point of legibility. Returns `{name: (verdict, collection)}`.
+def _probe_projects(projects, worktree, ledger, on_progress):
+    """Probe a mapping of projects' baselines (R9.5a): run + collect, timing each,
+    emitting a `baseline_captured` heartbeat, and calling `on_progress(done, name)`.
+    Returns `{name: (verdict, collection)}`.
     """
     probes = {}
-    for done, (name, project) in enumerate(cfg.projects.items(), start=1):
+    for done, (name, project) in enumerate(projects.items(), start=1):
         adapter = adapters.build(project, worktree)
         started = time.monotonic()
         verdict = adapter.run(None)
@@ -561,6 +560,15 @@ def cmd_run_start(args) -> Envelope:
     if contract_row["status"] == "undeclared" and not args.allow_undeclared:
         return failure("contract is undeclared; pass --allow-undeclared")
 
+    # R9.5c — scope baseline capture to plan-reachable projects unless opted out.
+    declared_cycles = contract_mod.cycles_from_json(contract_row["declared_cycles"])
+    if declared_cycles and not getattr(args, "baseline_all", False):
+        declared_names = [p for c in declared_cycles for p in c.projects]
+        reachable_names = cfg.reachable_projects(declared_names)
+        probe_projects = {n: cfg.projects[n] for n in reachable_names if n in cfg.projects}
+    else:
+        probe_projects = cfg.projects
+
     # Claim the worktree before probing: two `run start` calls against
     # one worktree must not both pass the baseline window. `Ledger.claim`'s `UNIQUE`
     # insert is the lock — do not read-then-write, which is the race this
@@ -576,7 +584,7 @@ def cmd_run_start(args) -> Envelope:
             str(worktree),
             hostname=socket.gethostname(),
             pid=os.getpid(),
-            projects_total=len(cfg.projects),
+            projects_total=len(probe_projects),
         )
     except sqlite3.IntegrityError:
         return failure(
@@ -594,7 +602,7 @@ def cmd_run_start(args) -> Envelope:
         # attempt — and must release the claim too, or the retry it invites is itself
         # refused.
         probes = _probe_projects(
-            cfg,
+            probe_projects,
             worktree,
             ledger,
             on_progress=lambda done, name: ledger.update_claim(
