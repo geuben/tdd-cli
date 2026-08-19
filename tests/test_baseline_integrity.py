@@ -222,7 +222,6 @@ def test_run_start_records_baseline_scoped_event(repo_three):
 
 
 def test_sweep_reports_unbaselined_failures_separately(repo_three):
-    import json as json_mod
     from tddcli import config as config_mod
     from tddcli.machine import Engine
 
