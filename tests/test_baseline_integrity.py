@@ -4,7 +4,9 @@ merely *looks* clean turns every pre-existing failure into a permanent regressio
 
 from __future__ import annotations
 
-from conftest import git, run_cli, write_plan
+from conftest import git, run_cli, run_cli_text, write_plan
+from tddcli.ledger import Ledger
+from tddcli import gitutil
 
 PLAN = """---
 cycles:
@@ -146,3 +148,34 @@ def test_unblocking_without_accept_failures_leaves_the_baseline_alone(repo):
     assert resumed["ok"], resumed
     assert "accepted_into_baseline" not in resumed["result"]
     assert run_cli(repo, "advance")["next_action"]["verb"] == "fix_regression"
+
+
+THREE_PROJECT_PLAN = """---
+cycles:
+  - n: 1
+    project: backend
+    title: "adding two numbers"
+    test: "tests/test_add.py::test_add_two_numbers"
+    stub_expected: ["app/calc.py"]
+    commit_red: "test: adding two numbers"
+    commit_green: "feat: add()"
+---
+
+# Plan
+"""
+
+
+def test_run_start_probes_only_reachable_projects(repo_three):
+    plan = write_plan(repo_three, THREE_PROJECT_PLAN)
+    run_cli(repo_three, "plan", "register", plan)
+    out = run_cli(repo_three, "run", "start", "--plan", plan)
+    assert out["ok"], out
+
+    # only backend (declared) and svc (consumed_by via schema artifact) are probed
+    assert out["result"]["baselines"] == {"backend": 0, "svc": 0}, out["result"]["baselines"]
+
+    ledger = Ledger(gitutil.repo_identity(repo_three))
+    run_id = out["run"]["id"]
+    rows = ledger.all("SELECT project FROM baseline WHERE run_id = ?", (run_id,))
+    probed = {r["project"] for r in rows}
+    assert probed == {"backend", "svc"}, probed

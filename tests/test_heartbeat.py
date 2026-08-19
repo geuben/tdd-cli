@@ -30,6 +30,24 @@ cycles:
 # Plan
 """
 
+PLAN_MULTI = """---
+cycles:
+  - n: 1
+    project: backend
+    title: "adding two numbers"
+    test: "tests/test_add.py::test_add_two_numbers"
+    stub_expected: ["app/calc.py"]
+    commit_red: "test: adding two numbers"
+    commit_green: "feat: add()"
+  - n: 2
+    project: frontend
+    refactor_cycle: true
+    commit_refactor: "refactor: frontend structure"
+---
+
+# Plan
+"""
+
 
 def register(repo):
     plan = write_plan(repo, PLAN)
@@ -87,7 +105,8 @@ def test_claim_records_projects_done_as_each_completes(repo_multi, monkeypatch):
     called once per project in `tdd.toml` order (`['backend', 'frontend']`), so the
     row seen on the second call reports `projects_done == 1` and
     `projects_total == 2`."""
-    plan = register(repo_multi)
+    plan = write_plan(repo_multi, PLAN_MULTI)
+    run_cli(repo_multi, "plan", "register", plan)
     real_build = adapters.build
     seen: list[dict | None] = []
 

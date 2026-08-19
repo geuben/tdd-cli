@@ -65,7 +65,8 @@ def repo(tmp_path, ledger_home):
 def repo_multi(repo, ledger_home):
     """`repo` plus an empty vitest `frontend` (a `package.json`, no test files).
 
-    Starts a run cleanly: `run start` reports `baselines: {backend: 0, frontend: 0}`.
+    Both projects are reachable from a plan that declares both, so `run start`
+    probes both and reports `baselines: {backend: 0, frontend: 0}`.
     """
     (repo / "frontend").mkdir()
     (repo / "frontend" / "package.json").write_text('{"name": "frontend", "version": "1.0.0"}\n')
@@ -86,6 +87,47 @@ def repo_multi(repo, ledger_home):
     )
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "add empty vitest frontend")
+    return repo
+
+
+@pytest.fixture
+def repo_three(repo, ledger_home):
+    """`repo` (backend) plus two extra pytest projects — `svc` and `other` — and an
+    artifact `schema` produced_by `backend`, consumed_by `svc`.
+
+    Under scoped baseline capture, `run start` with a plan declaring only `backend`
+    probes `backend` and `svc` (reachable via the artifact edge) but skips `other`.
+    """
+    for name in ("svc", "other"):
+        (repo / name / "tests").mkdir(parents=True)
+        (repo / name / "tests" / "test_smoke.py").write_text(
+            "def test_smoke():\n    assert True\n"
+        )
+    (repo / "backend" / "schema.json").write_text("{}")
+    (repo / "tdd.toml").write_text(
+        '[project.backend]\n'
+        'root       = "backend"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        '\n'
+        '[project.svc]\n'
+        'root       = "svc"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        '\n'
+        '[project.other]\n'
+        'root       = "other"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        '\n'
+        '[artifact.schema]\n'
+        'path        = "backend/schema.json"\n'
+        'produced_by = "backend"\n'
+        'consumed_by = ["svc"]\n'
+        'regenerate  = "true"\n'
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "add svc, other, schema artifact")
     return repo
 
 
