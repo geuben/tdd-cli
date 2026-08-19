@@ -182,7 +182,6 @@ def test_run_start_probes_only_reachable_projects(repo_three):
 
 
 def test_run_start_baseline_all_probes_every_project(repo_three):
-    import pytest
     plan = write_plan(repo_three, THREE_PROJECT_PLAN)
     run_cli(repo_three, "plan", "register", plan)
     out = run_cli(repo_three, "run", "start", "--plan", plan, "--baseline-all")
