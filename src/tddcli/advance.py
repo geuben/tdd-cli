@@ -310,6 +310,16 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     outcome = engine.sweep(cycle, touched, skip_own=skip_own)
 
     if not outcome.ok:
+        if outcome.unbaselined:
+            projects_list = ", ".join(sorted(outcome.unbaselined))
+            return _reply(
+                engine, cycle, Verb.RESOLVE_BLOCKER,
+                f"Close sweep found failures in un-baselined project(s): {projects_list}. "
+                "These are unattributable — no baseline exists to subtract. "
+                "File: tdd blocker --kind no_baseline_for_project --detail '...', "
+                "then resume --unblock --accept-failures to fold them into the baseline.",
+                unbaselined=outcome.unbaselined, commit=sha,
+            )
         if outcome.failures:
             return _reply(
                 engine, cycle, Verb.FIX_REGRESSION,
