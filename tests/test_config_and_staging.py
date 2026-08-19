@@ -88,6 +88,18 @@ def test_artifact_referencing_unknown_project_is_rejected(tmp_path):
         config_mod.load(tmp_path)
 
 
+# -- reachable_projects ----------------------------------------------------
+
+
+def test_reachable_projects_returns_declared_when_no_artifacts(tmp_path):
+    (tmp_path / "tdd.toml").write_text(
+        "[project.a]\nroot='a'\nadapter='pytest'\ntest_paths=['tests/']\n"
+        "[project.b]\nroot='b'\nadapter='pytest'\ntest_paths=['tests/']\n"
+    )
+    cfg_no_arts = config_mod.load(tmp_path)
+    assert cfg_no_arts.reachable_projects(["b"]) == ["b"]
+
+
 # -- staging ---------------------------------------------------------------
 
 
