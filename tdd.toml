@@ -1,0 +1,11 @@
+# Dogfood: tdd-cli developed under tdd-cli. The referee must be the *released*
+# tool (`uv tool install tdd-cli==<last release>` or `uvx tdd-cli@<last release>`),
+# never the working-tree editable install — the controller being edited mid-cycle
+# cannot also be the controller enforcing the cycle. The suites it runs are still
+# this working tree's, so new code is fully exercised; only the referee is pinned.
+
+[project.tddcli]
+root       = "."
+adapter    = "pytest"
+test_paths = ["tests/"]
+lint       = ["uv run ruff check"]
