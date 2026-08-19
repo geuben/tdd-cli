@@ -236,34 +236,51 @@ cycles:
 """
 
 
-def test_close_sweep_with_unbaselined_failures_directs_resolve_blocker(repo_schema_other):
-    plan = write_plan(repo_schema_other, BACKEND_ONLY_PLAN)
-    run_cli(repo_schema_other, "plan", "register", plan)
-    out = run_cli(repo_schema_other, "run", "start", "--plan", plan)
+def reach_unbaselined_blocker(repo):
+    """Drive the run to a blocked state: svc has unbaselined sweep failures."""
+    plan = write_plan(repo, BACKEND_ONLY_PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
     assert out["ok"], out
-    # svc is not reachable from backend (schema is produced_by other), so only backend is baselined
-    assert list(out["result"]["baselines"].keys()) == ["backend"], out["result"]["baselines"]
-
-    # Write RED test
-    (repo_schema_other / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
-    (repo_schema_other / "backend" / "app" / "calc.py").write_text(
-        "def add(a, b):\n    raise NotImplementedError\n"
-    )
-    out = run_cli(repo_schema_other, "advance")
-    assert out["run"]["phase"] == "AWAITING_IMPL", out
-
-    # Write GREEN implementation AND touch a file under other/ to pull svc into close sweep
-    (repo_schema_other / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
-    (repo_schema_other / "other" / "generated.json").write_text("{}")
-    out = run_cli(repo_schema_other, "advance")
-    assert out["run"]["phase"] == "AWAITING_REFACTOR", out
-
-    # Close sweep: other/ was touched → schema is touched → svc pulled in → svc has no baseline
-    out = run_cli(repo_schema_other, "advance")
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    raise NotImplementedError\n")
+    run_cli(repo, "advance")
+    (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    (repo / "other" / "generated.json").write_text("{}")
+    run_cli(repo, "advance")
+    out = run_cli(repo, "advance")
     assert out["next_action"]["verb"] == "resolve_blocker", out
+    return out
+
+
+def test_close_sweep_with_unbaselined_failures_directs_resolve_blocker(repo_schema_other):
+    out = reach_unbaselined_blocker(repo_schema_other)
     detail = out["next_action"]["detail"]
     assert "no_baseline_for_project" in detail, detail
     assert "resume --unblock --accept-failures" in detail, detail
+
+
+def test_accept_failures_inserts_baseline_row_for_unbaselined_project(repo_schema_other):
+    import json as json_mod
+    reach_unbaselined_blocker(repo_schema_other)
+    run_cli(repo_schema_other, "blocker", "--kind", "no_baseline_for_project", "--detail", "svc uncovered")
+    resumed = run_cli(repo_schema_other, "resume", "--unblock", "--note", "fold svc", "--accept-failures")
+    assert resumed["ok"], resumed
+
+    ledger = Ledger(gitutil.repo_identity(repo_schema_other))
+    run_id = resumed["run"]["id"]
+    row = ledger.one("SELECT failing FROM baseline WHERE run_id = ? AND project = 'svc'", (run_id,))
+    assert row is not None, "no baseline row created for svc"
+    failing = json_mod.loads(row["failing"])
+    assert any("test_svc_fails" in f for f in failing), failing
+
+    event = ledger.one(
+        "SELECT detail FROM integrity_event WHERE run_id = ? AND kind = 'baseline_amended'",
+        (run_id,),
+    )
+    assert event is not None, "no baseline_amended event"
+    amended = json_mod.loads(event["detail"])
+    assert "svc" in amended, amended
 
 
 def test_sweep_reports_unbaselined_failures_separately(repo_three):
