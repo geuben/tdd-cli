@@ -4,9 +4,9 @@ merely *looks* clean turns every pre-existing failure into a permanent regressio
 
 from __future__ import annotations
 
-from conftest import git, run_cli, run_cli_text, write_plan
-from tddcli.ledger import Ledger
+from conftest import git, run_cli, write_plan
 from tddcli import gitutil
+from tddcli.ledger import Ledger
 
 PLAN = """---
 cycles:
