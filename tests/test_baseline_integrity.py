@@ -190,7 +190,7 @@ def test_run_start_records_baseline_scoped_event(repo_three):
     run_id = out["run"]["id"]
     ledger = Ledger(gitutil.repo_identity(repo_three))
     event = ledger.one(
-        "SELECT detail FROM run_event WHERE run_id = ? AND kind = 'baseline_scoped'",
+        "SELECT detail FROM integrity_event WHERE run_id = ? AND kind = 'baseline_scoped'",
         (run_id,),
     )
     assert event is not None, "no baseline_scoped event found"

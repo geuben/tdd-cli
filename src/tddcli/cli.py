@@ -648,6 +648,9 @@ def cmd_run_start(args) -> Envelope:
         run = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
         if blob_changed:
             ledger.event(run_id, None, "plan_blob_changed", rel)
+        skipped = sorted(set(cfg.projects) - set(probe_projects))
+        if skipped:
+            ledger.event(run_id, None, "baseline_scoped", json.dumps(skipped))
 
         # Baselines and the collection snapshot, per project (R9.5, R8.9) — from the
         # probe above, so the suite is not run twice.
