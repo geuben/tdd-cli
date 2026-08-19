@@ -181,6 +181,22 @@ def test_run_start_probes_only_reachable_projects(repo_three):
     assert probed == {"backend", "svc"}, probed
 
 
+def test_run_start_baseline_all_probes_every_project(repo_three):
+    import pytest
+    plan = write_plan(repo_three, THREE_PROJECT_PLAN)
+    run_cli(repo_three, "plan", "register", plan)
+    out = run_cli(repo_three, "run", "start", "--plan", plan, "--baseline-all")
+    assert out["ok"], out
+    assert out["result"]["baselines"] == {"backend": 0, "other": 0, "svc": 0}, out["result"]["baselines"]
+    run_id = out["run"]["id"]
+    ledger = Ledger(gitutil.repo_identity(repo_three))
+    event = ledger.one(
+        "SELECT detail FROM integrity_event WHERE run_id = ? AND kind = 'baseline_scoped'",
+        (run_id,),
+    )
+    assert event is None, "baseline_scoped event must not exist when --baseline-all is used"
+
+
 def test_run_start_records_baseline_scoped_event(repo_three):
     plan = write_plan(repo_three, THREE_PROJECT_PLAN)
     run_cli(repo_three, "plan", "register", plan)
