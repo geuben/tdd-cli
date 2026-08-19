@@ -286,6 +286,34 @@ test_paths   = ["src/test/"]
 test_command = "./gradlew testDebugUnitTest"
 ```
 
+The `xctest` adapter drives Swift and Objective-C projects through `xcodebuild`. Test ids
+use xcodebuild's own `-only-testing:` format — `BundleName/ClassName/testMethodName` — so
+a single XCTest can be driven through RED → GREEN without any id translation. Collection
+prefers `xcodebuild test -enumerate-tests` (Xcode 16+) and falls back to grepping
+`class Foo: XCTestCase` / `func testBar()` out of the Swift sources under `test_paths`,
+deriving the bundle name from `-scheme`. As with gradle, a *build* failure maps to
+`not_collected` rather than `failed`, so a stub referencing a missing symbol is not
+mistaken for RED.
+
+`test_command` is required here — the adapter cannot guess the scheme, destination, or
+derived-data path. It appends `-only-testing:` for targeted runs and `-enumerate-tests`
+for collection, and changes nothing else. Simulator runs are serial in practice: give
+them a `lease` so two projects don't drive the same simulator at once.
+
+```toml
+[project.native-ios]
+root         = "native-ios"
+adapter      = "xctest"
+test_paths   = ["AppTests/"]
+test_command = """xcodebuild test \
+  -project App.xcodeproj \
+  -scheme AppTests \
+  -destination 'platform=iOS Simulator,name=App-Unit' \
+  -derivedDataPath /tmp/app-unit-dd"""
+lease        = "ios-simulator"
+timeout      = 900
+```
+
 Third-party adapters register under the
 `tddcli.adapters` entry-point group:
 
