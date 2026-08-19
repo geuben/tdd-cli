@@ -212,14 +212,23 @@ class Config:
             seen.add(up)
         return chain
 
+    def _root_project(self, produced_by: str) -> str | None:
+        """Resolve a produced_by value (project name or artifact.<name> chain) to a root project name."""
+        if produced_by.startswith("artifact."):
+            upstream = self.artifacts.get(produced_by.split(".", 1)[1])
+            if upstream is None:
+                return None
+            return self._root_project(upstream.produced_by)
+        return produced_by if produced_by in self.projects else None
+
     def reachable_projects(self, declared: list[str]) -> list[str]:
         reachable = set(declared)
         changed = True
         while changed:
             changed = False
             for art in self.artifacts.values():
-                producer = art.produced_by
-                if producer in reachable:
+                root = self._root_project(art.produced_by)
+                if root in reachable:
                     for consumer in art.consumed_by:
                         if consumer not in reachable:
                             reachable.add(consumer)
