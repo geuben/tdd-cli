@@ -132,6 +132,51 @@ def repo_three(repo, ledger_home):
 
 
 @pytest.fixture
+def repo_schema_other(repo, ledger_home):
+    """`repo` (backend) plus `svc` and `other` projects; artifact `schema` produced_by
+    `other`, consumed_by `svc`. Since the plan declares only `backend`, `svc` is
+    un-baselined — `other` is not reachable from `backend` via the artifact graph.
+
+    `svc` carries a pre-committed failing test; writing a file under `other/` during a
+    run touches `schema`'s producer root, pulling un-baselined `svc` into the close sweep.
+    """
+    for name in ("svc", "other"):
+        (repo / name / "tests").mkdir(parents=True)
+    (repo / "svc" / "tests" / "test_svc.py").write_text(
+        "def test_svc_fails():\n    assert False\n"
+    )
+    (repo / "other" / "tests" / "test_other.py").write_text(
+        "def test_other():\n    assert True\n"
+    )
+    (repo / "other" / "schema.json").write_text("{}")
+    (repo / "tdd.toml").write_text(
+        '[project.backend]\n'
+        'root       = "backend"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        '\n'
+        '[project.svc]\n'
+        'root       = "svc"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        '\n'
+        '[project.other]\n'
+        'root       = "other"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        '\n'
+        '[artifact.schema]\n'
+        'path        = "other/schema.json"\n'
+        'produced_by = "other"\n'
+        'consumed_by = ["svc"]\n'
+        'regenerate  = "true"\n'
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "add svc, other (schema from other to svc)")
+    return repo
+
+
+@pytest.fixture
 def repo_broken(repo, ledger_home):
     """`repo` plus a second pytest project `verify` that cannot collect.
 

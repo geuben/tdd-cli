@@ -221,6 +221,51 @@ def test_run_start_records_baseline_scoped_event(repo_three):
     assert skipped == ["other"], skipped
 
 
+BACKEND_ONLY_PLAN = """---
+cycles:
+  - n: 1
+    project: backend
+    title: "adding two numbers"
+    test: "tests/test_add.py::test_add_two_numbers"
+    stub_expected: ["app/calc.py"]
+    commit_red: "test: adding two numbers"
+    commit_green: "feat: add()"
+---
+
+# Plan
+"""
+
+
+def test_close_sweep_with_unbaselined_failures_directs_resolve_blocker(repo_schema_other):
+    plan = write_plan(repo_schema_other, BACKEND_ONLY_PLAN)
+    run_cli(repo_schema_other, "plan", "register", plan)
+    out = run_cli(repo_schema_other, "run", "start", "--plan", plan)
+    assert out["ok"], out
+    # svc is not reachable from backend (schema is produced_by other), so only backend is baselined
+    assert list(out["result"]["baselines"].keys()) == ["backend"], out["result"]["baselines"]
+
+    # Write RED test
+    (repo_schema_other / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    (repo_schema_other / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    raise NotImplementedError\n"
+    )
+    out = run_cli(repo_schema_other, "advance")
+    assert out["run"]["phase"] == "AWAITING_IMPL", out
+
+    # Write GREEN implementation AND touch a file under other/ to pull svc into close sweep
+    (repo_schema_other / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    (repo_schema_other / "other" / "generated.json").write_text("{}")
+    out = run_cli(repo_schema_other, "advance")
+    assert out["run"]["phase"] == "AWAITING_REFACTOR", out
+
+    # Close sweep: other/ was touched → schema is touched → svc pulled in → svc has no baseline
+    out = run_cli(repo_schema_other, "advance")
+    assert out["next_action"]["verb"] == "resolve_blocker", out
+    detail = out["next_action"]["detail"]
+    assert "no_baseline_for_project" in detail, detail
+    assert "resume --unblock --accept-failures" in detail, detail
+
+
 def test_sweep_reports_unbaselined_failures_separately(repo_three):
     from tddcli import config as config_mod
     from tddcli.machine import Engine
