@@ -179,3 +179,21 @@ def test_run_start_probes_only_reachable_projects(repo_three):
     rows = ledger.all("SELECT project FROM baseline WHERE run_id = ?", (run_id,))
     probed = {r["project"] for r in rows}
     assert probed == {"backend", "svc"}, probed
+
+
+def test_run_start_records_baseline_scoped_event(repo_three):
+    plan = write_plan(repo_three, THREE_PROJECT_PLAN)
+    run_cli(repo_three, "plan", "register", plan)
+    out = run_cli(repo_three, "run", "start", "--plan", plan)
+    assert out["ok"], out
+
+    run_id = out["run"]["id"]
+    ledger = Ledger(gitutil.repo_identity(repo_three))
+    event = ledger.one(
+        "SELECT detail FROM run_event WHERE run_id = ? AND kind = 'baseline_scoped'",
+        (run_id,),
+    )
+    assert event is not None, "no baseline_scoped event found"
+    import json
+    skipped = json.loads(event["detail"])
+    assert skipped == ["other"], skipped
