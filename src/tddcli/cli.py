@@ -48,6 +48,9 @@ BLOCKER_KINDS = {
     # Failing, but not caused by this run — a flake, or something the baseline missed.
     # Distinct from `regression`, which records a defect the run introduced.
     "pre_existing_failure",
+    # Failing in a project that was never baselined — not attributable as a regression
+    # (no baseline to subtract) vs. `pre_existing_failure` (baseline exists but missed it).
+    "no_baseline_for_project",
 }
 
 
