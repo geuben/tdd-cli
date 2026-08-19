@@ -75,6 +75,69 @@ def test_doctor_does_not_check_node_modules_for_a_pytest_project(repo_multi):
     assert not any(c["check"] == "node_modules present" for c in backend_checks), backend_checks
 
 
+def _wire_gradle(repo, test_command: str) -> None:
+    """Point `repo` at a single gradle project, root `android-app`."""
+    (repo / "android-app" / "src" / "test").mkdir(parents=True, exist_ok=True)
+    (repo / "tdd.toml").write_text(
+        "[project.android-app]\n"
+        'root         = "android-app"\n'
+        'adapter      = "gradle"\n'
+        'test_paths   = ["src/test/"]\n'
+        f'test_command = "{test_command}"\n'
+        "lint         = []\n"
+        "typecheck    = []\n"
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "wire gradle project")
+
+
+def _project_checks(out: dict, project: str) -> list[dict]:
+    return [c for c in out["result"]["checks"] if c.get("project") == project]
+
+
+def test_doctor_flags_a_missing_gradle_wrapper(repo):
+    """A gradle project whose command uses `./gradlew` but has no committed
+    wrapper fails the `gradle wrapper present` check with an actionable message."""
+    _wire_gradle(repo, "./gradlew testDebugUnitTest")
+    out = run_cli(repo, "doctor")
+    checks = _project_checks(out, "android-app")
+    wrapper = [c for c in checks if c["check"] == "gradle wrapper present"]
+    assert wrapper, checks
+    assert wrapper[0]["ok"] is False
+    assert "gradlew" in wrapper[0]["detail"]
+
+
+def test_doctor_passes_gradle_wrapper_check_when_present(repo):
+    """The wrapper check passes once `./gradlew` exists at the project root."""
+    _wire_gradle(repo, "./gradlew testDebugUnitTest")
+    (repo / "android-app" / "gradlew").write_text("#!/bin/sh\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "add wrapper")
+    out = run_cli(repo, "doctor")
+    checks = _project_checks(out, "android-app")
+    wrapper = [c for c in checks if c["check"] == "gradle wrapper present"]
+    assert wrapper, checks
+    assert wrapper[0]["ok"] is True
+
+
+def test_doctor_skips_wrapper_check_for_system_gradle(repo):
+    """A gradle project on a system `gradle` (no `./gradlew` in the command) must
+    not be held to a committed wrapper it does not use."""
+    _wire_gradle(repo, "gradle testDebugUnitTest")
+    out = run_cli(repo, "doctor")
+    checks = _project_checks(out, "android-app")
+    assert not any(c["check"] == "gradle wrapper present" for c in checks), checks
+
+
+def test_doctor_does_not_check_wrapper_for_a_pytest_project(repo_multi):
+    """The `gradle wrapper present` check is gradle-specific — a pytest project
+    must not be flagged for lacking a wrapper."""
+    out = run_cli(repo_multi, "doctor")
+    checks = _project_checks(out, "backend")
+    assert checks
+    assert not any(c["check"] == "gradle wrapper present" for c in checks), checks
+
+
 def test_doctor_flags_a_default_suite_that_reaches_override_files(repo):
     """R7.13's premise — "files the default runner config cannot reach" — is a
     config property nothing else enforces. With a bare `pytest` default, its own
@@ -96,7 +159,8 @@ def test_doctor_flags_a_default_suite_that_reaches_override_files(repo):
     )
     out = run_cli(repo, "doctor")
     isolation = [
-        c for c in out["result"]["checks"]
+        c
+        for c in out["result"]["checks"]
         if c["check"] == "default suite cannot reach override files"
     ]
     assert len(isolation) == 1
@@ -104,14 +168,19 @@ def test_doctor_flags_a_default_suite_that_reaches_override_files(repo):
     assert isolation[0]["project"] == "backend"
     assert "contract/test_api.py" in isolation[0]["detail"]
 
-    scoped = (repo / "tdd.toml").read_text().replace(
-        'test_paths = ["tests/"]\n',
-        'test_paths = ["tests/"]\ntest_command = "pytest tests"\n',
+    scoped = (
+        (repo / "tdd.toml")
+        .read_text()
+        .replace(
+            'test_paths = ["tests/"]\n',
+            'test_paths = ["tests/"]\ntest_command = "pytest tests"\n',
+        )
     )
     (repo / "tdd.toml").write_text(scoped)
     out = run_cli(repo, "doctor")
     isolation = [
-        c for c in out["result"]["checks"]
+        c
+        for c in out["result"]["checks"]
         if c["check"] == "default suite cannot reach override files"
     ]
     assert len(isolation) == 1

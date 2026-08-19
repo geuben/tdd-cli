@@ -262,12 +262,29 @@ the next plan is written.
 
 ## Adapters
 
-`pytest` and `vitest` are built in. The pytest adapter runs the suite through the
-project's own environment manager, detected from its marker files — `uv.lock`,
-`poetry.lock`, `Pipfile`, `pdm.lock`, or `[tool.poetry]` in `pyproject.toml` — checked at
-the project root first, then the worktree root (workspace layouts keep one lockfile at the
-top). With no marker, the active environment's bare `pytest` runs. An explicit
-`test_command` always wins.
+`pytest`, `vitest`, `gradle`, `xctest`, and `exec` are built in. The pytest adapter runs
+the suite through the project's own environment manager, detected from its marker files —
+`uv.lock`, `poetry.lock`, `Pipfile`, `pdm.lock`, or `[tool.poetry]` in `pyproject.toml` —
+checked at the project root first, then the worktree root (workspace layouts keep one
+lockfile at the top). With no marker, the active environment's bare `pytest` runs. An
+explicit `test_command` always wins.
+
+The `gradle` adapter drives Kotlin/JVM and Android projects. It runs the project's Gradle
+test task and reads per-test verdicts from the JUnit XML Gradle writes, rather than
+scraping the console. The task is a config choice — `./gradlew test` or `testDebugUnitTest`
+for fast JVM unit tests, `connectedDebugAndroidTest` for instrumented tests on a device
+(give those a longer `timeout` and a `lease` so only one run touches the device at a time).
+A *compile* failure maps to `not_collected`, not `failed`: Kotlin has no separate
+collection phase, so a stub referencing a missing symbol fails the build, and the "stub
+before RED" discipline holds exactly as it does for a Python import error.
+
+```toml
+[project.android-app]
+root         = "android-app"
+adapter      = "gradle"
+test_paths   = ["src/test/"]
+test_command = "./gradlew testDebugUnitTest"
+```
 
 Third-party adapters register under the
 `tddcli.adapters` entry-point group:
