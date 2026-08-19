@@ -22,29 +22,29 @@ TOML = """
 [project.native-ios]
 root         = "native-ios"
 adapter      = "xctest"
-test_paths   = ["CoParentTests/"]
-test_command = "xcodebuild test -project CoParent.xcodeproj -scheme CoParentTests -destination 'platform=iOS Simulator,name=CoParent-Unit'"
+test_paths   = ["AppTests/"]
+test_command = "xcodebuild test -project App.xcodeproj -scheme AppTests -destination 'platform=iOS Simulator,name=App-Unit'"
 """
 
 TOML_NO_CMD = """
 [project.native-ios]
 root       = "native-ios"
 adapter    = "xctest"
-test_paths = ["CoParentTests/"]
+test_paths = ["AppTests/"]
 """
 
 # Verbatim xcodebuild stdout for a two-test run: one passes, one fails
 XCODEBUILD_OUTPUT = """\
 Test Suite 'All tests' started at 2026-08-17 09:48:00.000.
-Test Suite 'CoParentTests.xctest' started at 2026-08-17 09:48:00.001.
+Test Suite 'AppTests.xctest' started at 2026-08-17 09:48:00.001.
 Test Suite 'PollCadenceTests' started at 2026-08-17 09:48:00.002.
-Test Case '-[CoParentTests.PollCadenceTests testPollIntervalScalesOnlyUnderE2E]' started.
-Test Case '-[CoParentTests.PollCadenceTests testPollIntervalScalesOnlyUnderE2E]' passed (0.001 seconds).
-Test Case '-[CoParentTests.PollCadenceTests testScaledIntervalIsFlooredAtOneSecond]' started.
-/path/to/test.swift:42: error: -[CoParentTests.PollCadenceTests testScaledIntervalIsFlooredAtOneSecond] : XCTAssertEqual failed: ("500000000") is not equal to ("1000000000") -
-Test Case '-[CoParentTests.PollCadenceTests testScaledIntervalIsFlooredAtOneSecond]' failed (0.002 seconds).
+Test Case '-[AppTests.PollCadenceTests testPollIntervalScalesOnlyUnderE2E]' started.
+Test Case '-[AppTests.PollCadenceTests testPollIntervalScalesOnlyUnderE2E]' passed (0.001 seconds).
+Test Case '-[AppTests.PollCadenceTests testScaledIntervalIsFlooredAtOneSecond]' started.
+/path/to/test.swift:42: error: -[AppTests.PollCadenceTests testScaledIntervalIsFlooredAtOneSecond] : XCTAssertEqual failed: ("500000000") is not equal to ("1000000000") -
+Test Case '-[AppTests.PollCadenceTests testScaledIntervalIsFlooredAtOneSecond]' failed (0.002 seconds).
 Test Suite 'PollCadenceTests' failed at 2026-08-17 09:48:00.004.
-Test Suite 'CoParentTests.xctest' failed at 2026-08-17 09:48:00.005.
+Test Suite 'AppTests.xctest' failed at 2026-08-17 09:48:00.005.
 Test Suite 'All tests' failed at 2026-08-17 09:48:00.006.
 ** TEST FAILED **
 """
@@ -55,15 +55,15 @@ BUILD_FAILED_OUTPUT = """\
 """
 
 ENUMERATE_OUTPUT = """\
-CoParentTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E
-CoParentTests/PollCadenceTests/testScaledIntervalIsFlooredAtOneSecond
-CoParentTests/E2ESeamTests/testE2EFlagIsDisabledByDefault
+AppTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E
+AppTests/PollCadenceTests/testScaledIntervalIsFlooredAtOneSecond
+AppTests/E2ESeamTests/testE2EFlagIsDisabledByDefault
 """
 
 
 def make_adapter(tmp_path: Path, toml: str = TOML) -> XCTestAdapter:
     (tmp_path / "tdd.toml").write_text(toml)
-    (tmp_path / "native-ios" / "CoParentTests").mkdir(parents=True)
+    (tmp_path / "native-ios" / "AppTests").mkdir(parents=True)
     cfg = config_mod.load(tmp_path)
     return XCTestAdapter(cfg.project("native-ios"), tmp_path)
 
@@ -81,12 +81,12 @@ def write_swift(path: Path, content: str) -> Path:
 
 def test_case_re_matches_passed_line():
     m = _CASE_RE.search(
-        "Test Case '-[CoParentTests.PollCadenceTests testPollIntervalScalesOnlyUnderE2E]'"
+        "Test Case '-[AppTests.PollCadenceTests testPollIntervalScalesOnlyUnderE2E]'"
         " passed (0.001 seconds)."
     )
     assert m is not None
     bundle, class_, method, outcome = m.groups()
-    assert bundle == "CoParentTests"
+    assert bundle == "AppTests"
     assert class_ == "PollCadenceTests"
     assert method == "testPollIntervalScalesOnlyUnderE2E"
     assert outcome == "passed"
@@ -94,7 +94,7 @@ def test_case_re_matches_passed_line():
 
 def test_case_re_matches_failed_line():
     m = _CASE_RE.search(
-        "Test Case '-[CoParentTests.PollCadenceTests testScaledIntervalIsFlooredAtOneSecond]'"
+        "Test Case '-[AppTests.PollCadenceTests testScaledIntervalIsFlooredAtOneSecond]'"
         " failed (0.002 seconds)."
     )
     assert m is not None
@@ -102,12 +102,10 @@ def test_case_re_matches_failed_line():
 
 
 def test_enumerate_line_re_matches_three_part_id():
-    m = _ENUMERATE_LINE_RE.search(
-        "CoParentTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E"
-    )
+    m = _ENUMERATE_LINE_RE.search("AppTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E")
     assert m is not None
     assert (m.group(1), m.group(2), m.group(3)) == (
-        "CoParentTests",
+        "AppTests",
         "PollCadenceTests",
         "testPollIntervalScalesOnlyUnderE2E",
     )
@@ -128,11 +126,10 @@ def test_run_output_produces_project_namespaced_ids(tmp_path):
     with patch.object(type(adapter), "_run_suite", return_value=(1, XCODEBUILD_OUTPUT, "")):
         verdict = adapter.run()
     assert (
-        "native-ios::CoParentTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E"
-        in verdict.passed
+        "native-ios::AppTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E" in verdict.passed
     )
     assert (
-        "native-ios::CoParentTests/PollCadenceTests/testScaledIntervalIsFlooredAtOneSecond"
+        "native-ios::AppTests/PollCadenceTests/testScaledIntervalIsFlooredAtOneSecond"
         in verdict.failed
     )
 
@@ -160,7 +157,7 @@ def test_passed_test_appears_in_passed(tmp_path):
 
 def test_failed_test_output_is_captured(tmp_path):
     adapter = make_adapter(tmp_path)
-    target = "native-ios::CoParentTests/PollCadenceTests/testScaledIntervalIsFlooredAtOneSecond"
+    target = "native-ios::AppTests/PollCadenceTests/testScaledIntervalIsFlooredAtOneSecond"
     with patch.object(type(adapter), "_run_suite", return_value=(1, XCODEBUILD_OUTPUT, "")):
         verdict = adapter.run(target)
     assert verdict.target_outcome == FAILED
@@ -169,7 +166,7 @@ def test_failed_test_output_is_captured(tmp_path):
 
 def test_passing_targeted_run_sets_passed(tmp_path):
     adapter = make_adapter(tmp_path)
-    target = "native-ios::CoParentTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E"
+    target = "native-ios::AppTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E"
     with patch.object(type(adapter), "_run_suite", return_value=(0, XCODEBUILD_OUTPUT, "")):
         verdict = adapter.run(target)
     assert verdict.target_outcome == PASSED
@@ -177,7 +174,7 @@ def test_passing_targeted_run_sets_passed(tmp_path):
 
 def test_absent_target_returns_not_found(tmp_path):
     adapter = make_adapter(tmp_path)
-    target = "native-ios::CoParentTests/PollCadenceTests/testDoesNotExist"
+    target = "native-ios::AppTests/PollCadenceTests/testDoesNotExist"
     with patch.object(type(adapter), "_run_suite", return_value=(0, XCODEBUILD_OUTPUT, "")):
         verdict = adapter.run(target)
     assert verdict.target_outcome == NOT_FOUND
@@ -190,7 +187,7 @@ def test_absent_target_returns_not_found(tmp_path):
 
 def test_build_failure_with_target_returns_not_collected(tmp_path):
     adapter = make_adapter(tmp_path)
-    target = "native-ios::CoParentTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E"
+    target = "native-ios::AppTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E"
     with patch.object(type(adapter), "_run_suite", return_value=(65, BUILD_FAILED_OUTPUT, "")):
         verdict = adapter.run(target)
     assert verdict.target_outcome == NOT_COLLECTED
@@ -220,7 +217,7 @@ def test_build_failure_includes_compiler_error_lines(tmp_path):
 
 def test_targeted_run_appends_only_testing_flag(tmp_path):
     adapter = make_adapter(tmp_path)
-    target = "native-ios::CoParentTests/PollCadenceTests/testFoo"
+    target = "native-ios::AppTests/PollCadenceTests/testFoo"
     commands_run = []
 
     def capture_suite(cmd, env=None):
@@ -231,7 +228,7 @@ def test_targeted_run_appends_only_testing_flag(tmp_path):
         adapter.run(target)
 
     assert len(commands_run) == 1
-    assert "-only-testing:CoParentTests/PollCadenceTests/testFoo" in commands_run[0]
+    assert "-only-testing:AppTests/PollCadenceTests/testFoo" in commands_run[0]
 
 
 def test_full_suite_run_does_not_add_only_testing(tmp_path):
@@ -260,16 +257,14 @@ def test_enumerate_tests_batch_parses_ids(tmp_path):
         type(adapter),
         "_enumerate_tests",
         return_value={
-            "native-ios::CoParentTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E",
-            "native-ios::CoParentTests/PollCadenceTests/testScaledIntervalIsFlooredAtOneSecond",
-            "native-ios::CoParentTests/E2ESeamTests/testE2EFlagIsDisabledByDefault",
+            "native-ios::AppTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E",
+            "native-ios::AppTests/PollCadenceTests/testScaledIntervalIsFlooredAtOneSecond",
+            "native-ios::AppTests/E2ESeamTests/testE2EFlagIsDisabledByDefault",
         },
     ):
         collection = adapter.collect()
     assert len(collection.tests) == 3
-    assert (
-        "native-ios::CoParentTests/E2ESeamTests/testE2EFlagIsDisabledByDefault" in collection.tests
-    )
+    assert "native-ios::AppTests/E2ESeamTests/testE2EFlagIsDisabledByDefault" in collection.tests
 
 
 def test_enumerate_tests_appends_flag_to_command(tmp_path):
@@ -314,7 +309,7 @@ def test_enumerate_tests_returns_none_when_no_ids_parsed(tmp_path):
 def test_grep_extracts_ids_from_swift_file(tmp_path):
     adapter = make_adapter(tmp_path)
     swift = write_swift(
-        tmp_path / "native-ios" / "CoParentTests" / "PollCadenceTests.swift",
+        tmp_path / "native-ios" / "AppTests" / "PollCadenceTests.swift",
         """\
 import XCTest
 
@@ -328,17 +323,15 @@ class PollCadenceTests: XCTestCase {
 }
 """,
     )
-    ids = adapter._grep_swift_tests(swift, "CoParentTests")
-    assert "native-ios::CoParentTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E" in ids
-    assert (
-        "native-ios::CoParentTests/PollCadenceTests/testScaledIntervalIsFlooredAtOneSecond" in ids
-    )
+    ids = adapter._grep_swift_tests(swift, "AppTests")
+    assert "native-ios::AppTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E" in ids
+    assert "native-ios::AppTests/PollCadenceTests/testScaledIntervalIsFlooredAtOneSecond" in ids
 
 
 def test_grep_fallback_used_when_enumerate_fails(tmp_path):
     adapter = make_adapter(tmp_path)
     write_swift(
-        tmp_path / "native-ios" / "CoParentTests" / "E2ESeamTests.swift",
+        tmp_path / "native-ios" / "AppTests" / "E2ESeamTests.swift",
         """\
 import XCTest
 
@@ -349,14 +342,12 @@ class E2ESeamTests: XCTestCase {
     )
     with patch.object(type(adapter), "_enumerate_tests", return_value=None):
         collection = adapter.collect()
-    assert (
-        "native-ios::CoParentTests/E2ESeamTests/testE2EFlagIsDisabledByDefault" in collection.tests
-    )
+    assert "native-ios::AppTests/E2ESeamTests/testE2EFlagIsDisabledByDefault" in collection.tests
 
 
 def test_bundle_extracted_from_scheme_flag(tmp_path):
     adapter = make_adapter(tmp_path)
-    assert adapter._bundle_from_test_command() == "CoParentTests"
+    assert adapter._bundle_from_test_command() == "AppTests"
 
 
 def test_bundle_falls_back_to_unknown_without_scheme(tmp_path):
@@ -366,7 +357,7 @@ def test_bundle_falls_back_to_unknown_without_scheme(tmp_path):
 
 def test_per_file_failed_file_recorded_on_read_error(tmp_path, monkeypatch):
     adapter = make_adapter(tmp_path)
-    bad = tmp_path / "native-ios" / "CoParentTests" / "Broken.swift"
+    bad = tmp_path / "native-ios" / "AppTests" / "Broken.swift"
     bad.parent.mkdir(parents=True, exist_ok=True)
     bad.write_text("class BrokenTests: XCTestCase { }")
 
@@ -420,7 +411,7 @@ def test_stub_hint_mentions_build_and_compile(tmp_path):
 def test_failure_for_extracts_assertion_lines(tmp_path):
     adapter = make_adapter(tmp_path)
     detail = adapter._failure_for(
-        XCODEBUILD_OUTPUT, "CoParentTests/PollCadenceTests/testScaledIntervalIsFlooredAtOneSecond"
+        XCODEBUILD_OUTPUT, "AppTests/PollCadenceTests/testScaledIntervalIsFlooredAtOneSecond"
     )
     assert "XCTAssertEqual failed" in detail
     # Should not contain lines from the other test

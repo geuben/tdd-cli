@@ -5,7 +5,7 @@ compose without translation:
 
     BundleName/ClassName/testMethodName
 
-e.g.  CoParentTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E
+e.g.  AppTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E
 
 A xcodebuild build failure maps to `not_collected` rather than `failed`.
 Swift has no separate collection phase — a test referencing a missing symbol
@@ -27,12 +27,12 @@ Config (`tdd.toml`):
     [project.native-ios]
     root         = "native-ios"
     adapter      = "xctest"
-    test_paths   = ["CoParentTests/"]           # Swift source directories
+    test_paths   = ["AppTests/"]           # Swift source directories
     test_command = "xcodebuild test \\
-      -project CoParent.xcodeproj \\
-      -scheme CoParentTests \\
-      -destination 'platform=iOS Simulator,name=CoParent-Unit' \\
-      -derivedDataPath /tmp/coparent-unit-dd"
+      -project App.xcodeproj \\
+      -scheme AppTests \\
+      -destination 'platform=iOS Simulator,name=App-Unit' \\
+      -derivedDataPath /tmp/app-unit-dd"
 
 `test_command` is required — the adapter cannot know the scheme, destination,
 or derived-data path otherwise.  The adapter appends `-only-testing:` for
@@ -60,14 +60,14 @@ from .base import (
 # Patterns applied to xcodebuild stdout
 # ---------------------------------------------------------------------------
 
-# "Test Case '-[CoParentTests.PollCadenceTests testPollIntervalScalesOnlyUnderE2E]' passed (0.001 seconds)."
+# "Test Case '-[AppTests.PollCadenceTests testPollIntervalScalesOnlyUnderE2E]' passed (0.001 seconds)."
 _CASE_RE = re.compile(r"Test Case '-\[(\w+)\.(\w+) (\w+)\]' (passed|failed)")
 
 # End-of-build marker for a failed build (no tests ran)
 _BUILD_FAILED_RE = re.compile(r"\*\* BUILD FAILED \*\*")
 
 # Lines emitted by xcodebuild test -enumerate-tests (Xcode 16+):
-#   CoParentTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E
+#   AppTests/PollCadenceTests/testPollIntervalScalesOnlyUnderE2E
 _ENUMERATE_LINE_RE = re.compile(r"^[ \t]*(\w+)/(\w+)/(test\w+)[ \t]*$", re.MULTILINE)
 
 # Swift source patterns for the per-file grep fallback
@@ -105,7 +105,7 @@ class XCTestAdapter(Adapter):
         """Best-effort: extract the test bundle name from `-scheme <Name>`.
 
         xcodebuild schemes typically share a name with their test bundle
-        (e.g. `-scheme CoParentTests` → bundle `CoParentTests`).  When the
+        (e.g. `-scheme AppTests` → bundle `AppTests`).  When the
         scheme cannot be parsed, fall back to `"Unknown"` — per-file ids will
         still be formed, just unaddressable by `-only-testing:` without the
         real bundle name.
@@ -284,9 +284,9 @@ class XCTestAdapter(Adapter):
         """Capture the assertion lines between 'started' and 'failed' for one test.
 
         xcodebuild interleaves test output like:
-            Test Case '-[CoParentTests.PollCadenceTests testSomething]' started.
+            Test Case '-[AppTests.PollCadenceTests testSomething]' started.
             /path/test.swift:42: error: … XCTAssertEqual failed: …
-            Test Case '-[CoParentTests.PollCadenceTests testSomething]' failed (0.001 seconds).
+            Test Case '-[AppTests.PollCadenceTests testSomething]' failed (0.001 seconds).
         """
         parts = native_id.split("/")
         if len(parts) != 3:
