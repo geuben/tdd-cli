@@ -216,6 +216,45 @@ def test_run_start_records_baseline_scoped_event(repo_three):
         (run_id,),
     )
     assert event is not None, "no baseline_scoped event found"
-    import json
-    skipped = json.loads(event["detail"])
+    import json as json_mod
+    skipped = json_mod.loads(event["detail"])
     assert skipped == ["other"], skipped
+
+
+def test_sweep_reports_unbaselined_failures_separately(repo_three):
+    import json as json_mod
+    from tddcli import config as config_mod
+    from tddcli.machine import Engine
+
+    # svc has a pre-committed failing test
+    (repo_three / "svc" / "tests" / "test_smoke.py").write_text(
+        "def test_smoke():\n    assert False\n"
+    )
+    git(repo_three, "add", "-A")
+    git(repo_three, "commit", "-q", "-m", "svc: failing smoke test")
+
+    plan = write_plan(repo_three, THREE_PROJECT_PLAN)
+    run_cli(repo_three, "plan", "register", plan)
+    out = run_cli(repo_three, "run", "start", "--plan", plan)
+    assert out["ok"], out
+
+    run_id = out["run"]["id"]
+    ledger = Ledger(gitutil.repo_identity(repo_three))
+    # Delete svc's baseline to simulate an un-baselined project
+    ledger.db.execute("DELETE FROM baseline WHERE run_id = ? AND project = 'svc'", (run_id,))
+    ledger.db.commit()
+
+    run_row = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
+    cycle_row = ledger.one("SELECT * FROM cycle WHERE run_id = ? ORDER BY id ASC LIMIT 1", (run_id,))
+    cfg = config_mod.load(repo_three)
+    engine = Engine(ledger, cfg, repo_three, run_row)
+
+    # Touch backend/schema.json so artifact edge pulls svc into the sweep
+    touched = {"backend/schema.json"}
+    outcome = engine.sweep(cycle_row, touched)
+
+    assert "svc" in outcome.unbaselined, outcome
+    svc_failures = outcome.unbaselined["svc"]
+    assert any("test_smoke" in f for f in svc_failures), svc_failures
+    assert not outcome.failures, outcome.failures
+    assert not outcome.ok
