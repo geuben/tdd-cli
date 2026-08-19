@@ -100,6 +100,40 @@ def test_reachable_projects_returns_declared_when_no_artifacts(tmp_path):
     assert cfg_no_arts.reachable_projects(["b"]) == ["b"]
 
 
+TRANSITIVE_TOML = """
+[project.p1]
+root = "p1"
+adapter = "pytest"
+test_paths = ["tests/"]
+
+[project.p2]
+root = "p2"
+adapter = "pytest"
+test_paths = ["tests/"]
+
+[project.p3]
+root = "p3"
+adapter = "pytest"
+test_paths = ["tests/"]
+
+[artifact.x]
+path = "p1/x.json"
+produced_by = "p1"
+consumed_by = ["p2"]
+
+[artifact.y]
+path = "p2/y.json"
+produced_by = "p2"
+consumed_by = ["p3"]
+"""
+
+
+def test_reachable_projects_includes_transitive_consumers(tmp_path):
+    (tmp_path / "tdd.toml").write_text(TRANSITIVE_TOML)
+    cfg_t = config_mod.load(tmp_path)
+    assert cfg_t.reachable_projects(["p1"]) == ["p1", "p2", "p3"]
+
+
 # -- staging ---------------------------------------------------------------
 
 
