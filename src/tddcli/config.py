@@ -212,6 +212,9 @@ class Config:
             seen.add(up)
         return chain
 
+    def reachable_projects(self, declared: list[str]) -> list[str]:
+        return sorted(set(declared))
+
     def close_sweep_projects(self, cycle_projects: list[str], touched: set[str]) -> list[str]:
         """R9.2 — the cycle's own projects, plus anything downstream of an artifact it touched."""
         names = {n for n in cycle_projects}
