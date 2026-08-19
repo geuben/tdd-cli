@@ -244,14 +244,10 @@ class Config:
         return [n for n in sorted(names) if self.projects[n].in_close_sweep]
 
     def _artifact_touched(self, art: Artifact, touched: set[str]) -> bool:
-        producer = art.produced_by
-        if producer.startswith("artifact."):
-            upstream = self.artifacts.get(producer.split(".", 1)[1])
-            return bool(upstream and self._artifact_touched(upstream, touched))
-        proj = self.projects.get(producer)
-        if proj is None:
+        root = self._root_project(art.produced_by)
+        if root is None:
             return False
-        return any(proj.owns(p) for p in touched)
+        return any(self.projects[root].owns(p) for p in touched)
 
     def full_sweep_projects(self) -> list[str]:
         return sorted(self.projects)
