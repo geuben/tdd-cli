@@ -100,6 +100,13 @@ def test_a_project_with_no_tests_at_all_is_not_an_error(repo):
     assert out["result"]["baselines"]["backend"] == 0
 
 
+def test_blocker_accepts_no_baseline_for_project_kind(repo):
+    reach_refactor(repo)
+    out = run_cli(repo, "blocker", "--kind", "no_baseline_for_project", "--detail", "svc has no baseline")
+    assert out["ok"], out
+    assert out["result"]["kind"] == "no_baseline_for_project"
+
+
 def test_a_failure_the_baseline_missed_has_its_own_blocker_kind(repo):
     """Filing it as `regression` is the only option today, which mislabels the run's
     integrity record as a defect the agent caused."""
