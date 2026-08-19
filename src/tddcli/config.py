@@ -222,6 +222,7 @@ class Config:
         return produced_by if produced_by in self.projects else None
 
     def reachable_projects(self, declared: list[str]) -> list[str]:
+        declared_set = set(declared)
         reachable = set(declared)
         changed = True
         while changed:
@@ -231,8 +232,10 @@ class Config:
                 if root in reachable:
                     for consumer in art.consumed_by:
                         if consumer not in reachable:
-                            reachable.add(consumer)
-                            changed = True
+                            proj = self.projects.get(consumer)
+                            if consumer in declared_set or (proj and proj.in_close_sweep):
+                                reachable.add(consumer)
+                                changed = True
         return sorted(reachable)
 
     def close_sweep_projects(self, cycle_projects: list[str], touched: set[str]) -> list[str]:
