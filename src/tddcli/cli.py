@@ -562,7 +562,7 @@ def cmd_run_start(args) -> Envelope:
 
     # R9.5c — scope baseline capture to plan-reachable projects unless opted out.
     declared_cycles = contract_mod.cycles_from_json(contract_row["declared_cycles"])
-    if declared_cycles and not getattr(args, "baseline_all", False):
+    if declared_cycles and not args.baseline_all:
         declared_names = [p for c in declared_cycles for p in c.projects]
         reachable_names = cfg.reachable_projects(declared_names)
         probe_projects = {n: cfg.projects[n] for n in reachable_names if n in cfg.projects}
@@ -1151,6 +1151,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--executor", help="human-supplied label; agents must not use this")
     s.add_argument("--allow-dirty", action="store_true")
     s.add_argument("--allow-undeclared", action="store_true")
+    s.add_argument("--baseline-all", action="store_true", help="probe all projects, skipping reachability scoping")
     s.set_defaults(fn=cmd_run_start)
 
     s = sub.add_parser("status")
