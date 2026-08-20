@@ -88,6 +88,109 @@ def test_artifact_referencing_unknown_project_is_rejected(tmp_path):
         config_mod.load(tmp_path)
 
 
+# -- reachable_projects ----------------------------------------------------
+
+
+def test_reachable_projects_returns_declared_when_no_artifacts(tmp_path):
+    (tmp_path / "tdd.toml").write_text(
+        "[project.a]\nroot='a'\nadapter='pytest'\ntest_paths=['tests/']\n"
+        "[project.b]\nroot='b'\nadapter='pytest'\ntest_paths=['tests/']\n"
+    )
+    cfg_no_arts = config_mod.load(tmp_path)
+    assert cfg_no_arts.reachable_projects(["b"]) == ["b"]
+
+
+TRANSITIVE_TOML = """
+[project.p1]
+root = "p1"
+adapter = "pytest"
+test_paths = ["tests/"]
+
+[project.p2]
+root = "p2"
+adapter = "pytest"
+test_paths = ["tests/"]
+
+[project.p3]
+root = "p3"
+adapter = "pytest"
+test_paths = ["tests/"]
+
+[artifact.x]
+path = "p1/x.json"
+produced_by = "p1"
+consumed_by = ["p2"]
+
+[artifact.y]
+path = "p2/y.json"
+produced_by = "p2"
+consumed_by = ["p3"]
+"""
+
+
+def test_reachable_projects_includes_transitive_consumers(tmp_path):
+    (tmp_path / "tdd.toml").write_text(TRANSITIVE_TOML)
+    cfg_t = config_mod.load(tmp_path)
+    assert cfg_t.reachable_projects(["p1"]) == ["p1", "p2", "p3"]
+
+
+ARTIFACT_CHAIN_TOML = """
+[project.prod]
+root = "prod"
+adapter = "pytest"
+test_paths = ["tests/"]
+
+[project.consumer]
+root = "consumer"
+adapter = "pytest"
+test_paths = ["tests/"]
+
+[artifact.base]
+path = "prod/base.json"
+produced_by = "prod"
+
+[artifact.derived]
+path = "prod/derived.json"
+produced_by = "artifact.base"
+consumed_by = ["consumer"]
+"""
+
+
+def test_reachable_projects_resolves_artifact_upstream_chain(tmp_path):
+    (tmp_path / "tdd.toml").write_text(ARTIFACT_CHAIN_TOML)
+    cfg_c = config_mod.load(tmp_path)
+    # consumer is only reachable via prod -> artifact.base -> artifact.derived -> consumer
+    assert cfg_c.reachable_projects(["prod"]) == ["consumer", "prod"]
+
+
+SWEEP_OPT_OUT_TOML = """
+[project.p1]
+root = "p1"
+adapter = "pytest"
+test_paths = ["tests/"]
+
+[project.p2]
+root = "p2"
+adapter = "pytest"
+test_paths = ["tests/"]
+in_close_sweep = false
+
+[artifact.x]
+path = "p1/x.json"
+produced_by = "p1"
+consumed_by = ["p2"]
+"""
+
+
+def test_reachable_projects_excludes_downstream_not_in_close_sweep(tmp_path):
+    (tmp_path / "tdd.toml").write_text(SWEEP_OPT_OUT_TOML)
+    cfg_o = config_mod.load(tmp_path)
+    # p2 opted out of close sweep → not added via artifact closure
+    assert cfg_o.reachable_projects(["p1"]) == ["p1"]
+    # but p2 declared explicitly always wins
+    assert cfg_o.reachable_projects(["p2"]) == ["p2"]
+
+
 # -- staging ---------------------------------------------------------------
 
 

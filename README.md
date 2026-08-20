@@ -375,9 +375,38 @@ and is never reclassified as a pin.
 | `tdd metrics` | fidelity, attempts, violations, interventions |
 | `tdd fleet [--json]` | all active runs across every worktree; read-only |
 
+## Scoped baseline capture (R9.5c)
+
+`run start` probes only the projects the plan can actually reach: the declared cycle projects
+plus the transitive `consumed_by` closure of artifacts whose producer is in that set. Projects
+outside the reachable set never run during the plan, so their baseline is never subtracted from
+anything — probing them is pure overhead. A `baseline_scoped` integrity event records which
+projects were skipped, so the scoping is auditable.
+
+Pass `--baseline-all` to probe every project in `tdd.toml` regardless:
+
+    tdd run start --plan tasks/plan.md --baseline-all
+
+Use this when a cycle may edit files outside the predicted reachable set and you want every
+project baselined up front rather than hitting the `no_baseline_for_project` escape hatch later.
+
+### When a sweep reaches an un-baselined project (R9.5d)
+
+If an edit during a run touches a file owned by an artifact that was outside the predicted
+reachable set, the close sweep may pull in a project that was never baselined. Its failures are
+unattributable — no baseline exists to subtract — so the sweep replies `resolve_blocker` with
+kind `no_baseline_for_project` rather than mislabelling them as regressions. Recovery:
+
+    tdd blocker --kind no_baseline_for_project --detail "svc pulled in unexpectedly"
+    tdd resume --unblock --accept-failures --note "folding svc sweep failures into baseline"
+
+`--accept-failures` inserts a fresh baseline row for the un-baselined project (recording those
+failures as pre-existing) and records a `baseline_amended` event. The next advance proceeds
+with the project properly baselined.
+
 ## Running a long baseline
 
-`run start` probes every project's suite before a run exists (R9.5a), and on a real project
+`run start` probes the reachable project set (R9.5c) before a run exists, and on a real project
 that can take minutes — well past an agent harness's default Bash timeout. If the command
 appears to hang or time out, **do not re-run it**: the probe is still making progress in the
 background, and a second `run start` against the same worktree is refused with

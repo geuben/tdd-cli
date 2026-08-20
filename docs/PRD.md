@@ -535,7 +535,21 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   baseline missed a failure cannot otherwise recover: unblocking returns it to the phase it
   blocked in, and the next sweep finds the same failure and blocks again. The flag is explicit
   and human-only precisely because it launders a failure into the accepted set — an unblock must
-  never do it silently.
+  never do it silently. If a close sweep reached a project that was never baselined, `--accept-failures`
+  inserts a fresh baseline row for it rather than skipping it.
+- **R9.5c** `run start` scopes baseline capture to plan-reachable projects. The reachable set is
+  the union of declared cycle projects plus the transitive `consumed_by` closure of artifacts
+  whose root producer is in that set (respecting `in_close_sweep = false` on closure-added
+  consumers). Projects outside the reachable set are never run during the plan, so there is no
+  later failure set to subtract their baseline from. The scoping is recorded as a
+  `baseline_scoped` integrity event listing the skipped projects. Pass `--baseline-all` to probe
+  every project and suppress the event.
+- **R9.5d** When a close sweep reaches a project with no baseline row (because an edit fell
+  outside the predicted reachable set, pulling an un-baselined consumer into the sweep), its
+  failures are classified as `unattributable` — there is no baseline to subtract, so they cannot
+  be labelled regressions. The advance reply is `resolve_blocker` with kind
+  `no_baseline_for_project`, directing the agent to file the blocker and recover via
+  `resume --unblock --accept-failures`, which inserts the missing baseline row.
 - **R9.6** Baseline failures are subtracted from `other_failures` in every subsequent invocation.
 - **R9.7** A baseline failure that starts passing is recorded, not ignored.
 

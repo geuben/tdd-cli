@@ -48,6 +48,9 @@ BLOCKER_KINDS = {
     # Failing, but not caused by this run — a flake, or something the baseline missed.
     # Distinct from `regression`, which records a defect the run introduced.
     "pre_existing_failure",
+    # Failing in a project that was never baselined — not attributable as a regression
+    # (no baseline to subtract) vs. `pre_existing_failure` (baseline exists but missed it).
+    "no_baseline_for_project",
 }
 
 
@@ -489,14 +492,13 @@ def cmd_plan_register(args) -> Envelope:
     )
 
 
-def _probe_projects(cfg, worktree, ledger, on_progress):
-    """Probe every project's baseline (R9.5a): run + collect, timing each, emitting a
-    `baseline_captured` heartbeat, and calling `on_progress(done, name)` — extracted
-    from `cmd_run_start`, which carried claiming, timing, heartbeating and progress
-    updates inline past the point of legibility. Returns `{name: (verdict, collection)}`.
+def _probe_projects(projects, worktree, ledger, on_progress):
+    """Probe a mapping of projects' baselines (R9.5a): run + collect, timing each,
+    emitting a `baseline_captured` heartbeat, and calling `on_progress(done, name)`.
+    Returns `{name: (verdict, collection)}`.
     """
     probes = {}
-    for done, (name, project) in enumerate(cfg.projects.items(), start=1):
+    for done, (name, project) in enumerate(projects.items(), start=1):
         adapter = adapters.build(project, worktree)
         started = time.monotonic()
         verdict = adapter.run(None)
@@ -561,6 +563,15 @@ def cmd_run_start(args) -> Envelope:
     if contract_row["status"] == "undeclared" and not args.allow_undeclared:
         return failure("contract is undeclared; pass --allow-undeclared")
 
+    # R9.5c — scope baseline capture to plan-reachable projects unless opted out.
+    declared_cycles = contract_mod.cycles_from_json(contract_row["declared_cycles"])
+    if declared_cycles and not args.baseline_all:
+        declared_names = [p for c in declared_cycles for p in c.projects]
+        reachable_names = cfg.reachable_projects(declared_names)
+        probe_projects = {n: cfg.projects[n] for n in reachable_names if n in cfg.projects}
+    else:
+        probe_projects = cfg.projects
+
     # Claim the worktree before probing: two `run start` calls against
     # one worktree must not both pass the baseline window. `Ledger.claim`'s `UNIQUE`
     # insert is the lock — do not read-then-write, which is the race this
@@ -576,7 +587,7 @@ def cmd_run_start(args) -> Envelope:
             str(worktree),
             hostname=socket.gethostname(),
             pid=os.getpid(),
-            projects_total=len(cfg.projects),
+            projects_total=len(probe_projects),
         )
     except sqlite3.IntegrityError:
         return failure(
@@ -594,7 +605,7 @@ def cmd_run_start(args) -> Envelope:
         # attempt — and must release the claim too, or the retry it invites is itself
         # refused.
         probes = _probe_projects(
-            cfg,
+            probe_projects,
             worktree,
             ledger,
             on_progress=lambda done, name: ledger.update_claim(
@@ -640,6 +651,9 @@ def cmd_run_start(args) -> Envelope:
         run = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
         if blob_changed:
             ledger.event(run_id, None, "plan_blob_changed", rel)
+        skipped = sorted(set(cfg.projects) - set(probe_projects))
+        if skipped:
+            ledger.event(run_id, None, "baseline_scoped", json.dumps(skipped))
 
         # Baselines and the collection snapshot, per project (R9.5, R8.9) — from the
         # probe above, so the suite is not run twice.
@@ -818,15 +832,27 @@ def _accept_failures_into_baseline(ledger: Ledger, run_id: int) -> dict[str, lis
     }
     accepted: dict[str, list[str]] = {}
     for sweep in latest:
-        row = rows.get(sweep["project"])
+        project = sweep["project"]
+        row = rows.get(project)
+        sweep_failed = sorted(json.loads(sweep["other_failures"]))
         if row is None:
-            continue
-        known = set(json.loads(row["failing"]))
-        new = sorted(set(json.loads(sweep["other_failures"])) - known)
-        if not new:
-            continue
-        ledger.update("baseline", row["id"], failing=json.dumps(sorted(known | set(new))))
-        accepted[sweep["project"]] = new
+            if not sweep_failed:
+                continue
+            ledger.insert(
+                "baseline",
+                run_id=run_id,
+                project=project,
+                failing=json.dumps(sweep_failed),
+                captured_at=now(),
+            )
+            accepted[project] = sweep_failed
+        else:
+            known = set(json.loads(row["failing"]))
+            new = sorted(set(sweep_failed) - known)
+            if not new:
+                continue
+            ledger.update("baseline", row["id"], failing=json.dumps(sorted(known | set(new))))
+            accepted[project] = new
     if accepted:
         ledger.event(run_id, None, "baseline_amended", json.dumps(accepted))
     return accepted
@@ -1140,6 +1166,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--executor", help="human-supplied label; agents must not use this")
     s.add_argument("--allow-dirty", action="store_true")
     s.add_argument("--allow-undeclared", action="store_true")
+    s.add_argument("--baseline-all", action="store_true", help="probe all projects, skipping reachability scoping")
     s.set_defaults(fn=cmd_run_start)
 
     s = sub.add_parser("status")

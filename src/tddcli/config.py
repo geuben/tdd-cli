@@ -212,6 +212,32 @@ class Config:
             seen.add(up)
         return chain
 
+    def _root_project(self, produced_by: str) -> str | None:
+        """Resolve a produced_by value (project name or artifact.<name> chain) to a root project name."""
+        if produced_by.startswith("artifact."):
+            upstream = self.artifacts.get(produced_by.split(".", 1)[1])
+            if upstream is None:
+                return None
+            return self._root_project(upstream.produced_by)
+        return produced_by if produced_by in self.projects else None
+
+    def reachable_projects(self, declared: list[str]) -> list[str]:
+        declared_set = set(declared)
+        reachable = set(declared)
+        changed = True
+        while changed:
+            changed = False
+            for art in self.artifacts.values():
+                root = self._root_project(art.produced_by)
+                if root in reachable:
+                    for consumer in art.consumed_by:
+                        if consumer not in reachable:
+                            proj = self.projects.get(consumer)
+                            if consumer in declared_set or (proj and proj.in_close_sweep):
+                                reachable.add(consumer)
+                                changed = True
+        return sorted(reachable)
+
     def close_sweep_projects(self, cycle_projects: list[str], touched: set[str]) -> list[str]:
         """R9.2 — the cycle's own projects, plus anything downstream of an artifact it touched."""
         names = {n for n in cycle_projects}
@@ -221,14 +247,10 @@ class Config:
         return [n for n in sorted(names) if self.projects[n].in_close_sweep]
 
     def _artifact_touched(self, art: Artifact, touched: set[str]) -> bool:
-        producer = art.produced_by
-        if producer.startswith("artifact."):
-            upstream = self.artifacts.get(producer.split(".", 1)[1])
-            return bool(upstream and self._artifact_touched(upstream, touched))
-        proj = self.projects.get(producer)
-        if proj is None:
+        root = self._root_project(art.produced_by)
+        if root is None:
             return False
-        return any(proj.owns(p) for p in touched)
+        return any(self.projects[root].owns(p) for p in touched)
 
     def full_sweep_projects(self) -> list[str]:
         return sorted(self.projects)
