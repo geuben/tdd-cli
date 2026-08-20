@@ -832,15 +832,27 @@ def _accept_failures_into_baseline(ledger: Ledger, run_id: int) -> dict[str, lis
     }
     accepted: dict[str, list[str]] = {}
     for sweep in latest:
-        row = rows.get(sweep["project"])
+        project = sweep["project"]
+        row = rows.get(project)
+        sweep_failed = sorted(json.loads(sweep["other_failures"]))
         if row is None:
-            continue
-        known = set(json.loads(row["failing"]))
-        new = sorted(set(json.loads(sweep["other_failures"])) - known)
-        if not new:
-            continue
-        ledger.update("baseline", row["id"], failing=json.dumps(sorted(known | set(new))))
-        accepted[sweep["project"]] = new
+            if not sweep_failed:
+                continue
+            ledger.insert(
+                "baseline",
+                run_id=run_id,
+                project=project,
+                failing=json.dumps(sweep_failed),
+                captured_at=now(),
+            )
+            accepted[project] = sweep_failed
+        else:
+            known = set(json.loads(row["failing"]))
+            new = sorted(set(sweep_failed) - known)
+            if not new:
+                continue
+            ledger.update("baseline", row["id"], failing=json.dumps(sorted(known | set(new))))
+            accepted[project] = new
     if accepted:
         ledger.event(run_id, None, "baseline_amended", json.dumps(accepted))
     return accepted
