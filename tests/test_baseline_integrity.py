@@ -344,3 +344,57 @@ def test_reuse_baselines_populates_cache_and_default_does_not(repo_three):
     assert out2["ok"], out2
     rows = ledger.all("SELECT project FROM baseline_cache")
     assert {r["project"] for r in rows} == {"backend", "svc"}
+
+
+def _hb_lines(stderr):
+    import json as _json
+    lines = []
+    for line in stderr.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            lines.append(_json.loads(line))
+        except _json.JSONDecodeError:
+            continue
+    return lines
+
+
+def test_second_reuse_run_reuses_cached_baseline(repo_three, capsys):
+    plan = write_plan(repo_three, THREE_PROJECT_PLAN)
+    run_cli(repo_three, "plan", "register", plan)
+
+    # first run: populate the cache
+    out = run_cli(repo_three, "run", "start", "--plan", plan, "--reuse-baselines")
+    assert out["ok"], out
+    capsys.readouterr()  # discard first run's heartbeats
+
+    # abandon first run
+    ledger = Ledger(gitutil.repo_identity(repo_three))
+    from tddcli.ledger import now as ledger_now
+    ledger.db.execute(
+        "UPDATE run SET ended_at = ?, outcome = 'abandoned' WHERE ended_at IS NULL",
+        (ledger_now(),),
+    )
+    ledger.db.commit()
+
+    # second run: should reuse cache on an unchanged tree
+    out2 = run_cli(repo_three, "run", "start", "--plan", plan, "--reuse-baselines", "--allow-dirty")
+    assert out2["ok"], out2
+    assert out2["result"]["baselines"] == {"backend": 0, "svc": 0}
+
+    run2_id = out2["run"]["id"]
+    captured = capsys.readouterr()
+    hb = _hb_lines(captured.err)
+
+    reused_projects = {h["project"] for h in hb if h.get("event") == "baseline_reused"}
+    assert reused_projects == {"backend", "svc"}, f"expected reused, got: {hb}"
+
+    captured_projects = {h["project"] for h in hb if h.get("event") == "baseline_captured"}
+    assert not (captured_projects & {"backend", "svc"}), f"unexpectedly re-probed: {captured_projects}"
+
+    # baseline and collection_snapshot rows carry the cached data
+    b_rows = ledger.all("SELECT * FROM baseline WHERE run_id = ?", (run2_id,))
+    assert {r["project"] for r in b_rows} == {"backend", "svc"}
+    snap_rows = ledger.all("SELECT * FROM collection_snapshot WHERE run_id = ?", (run2_id,))
+    assert {r["project"] for r in snap_rows} == {"backend", "svc"}
