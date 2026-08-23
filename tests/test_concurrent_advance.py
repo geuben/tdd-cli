@@ -1,3 +1,6 @@
+import os
+import socket
+
 from conftest import run_cli, write_plan
 from tddcli import gitutil
 from tddcli.ledger import Ledger
@@ -37,8 +40,6 @@ def test_close_cycle_is_idempotent_when_the_row_is_already_closed(repo):
     )
     cfg = config_mod.load(repo)
     engine = Engine(ledger, cfg, repo, run_row)
-
-    closed_at_after_first = None
 
     engine.close_cycle(cycle_row)
 
@@ -94,3 +95,17 @@ def test_open_cycle_returns_the_existing_open_row_for_an_ordinal(repo):
         "SELECT * FROM cycle WHERE run_id = ? AND ordinal = 2", (run_id,)
     )
     assert len(ordinal_2_rows) == 1
+
+
+def test_advance_is_rejected_while_another_advance_is_in_flight(repo):
+    plan = write_plan(repo, TWO_CYCLE_PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+
+    led = Ledger(gitutil.repo_identity(repo))
+    led.claim_advance(str(repo), hostname=socket.gethostname(), pid=os.getpid())
+
+    out = run_cli(repo, "advance")
+    assert out["ok"] is False
+    assert out["result"]["reason"] == "advance_in_flight"
