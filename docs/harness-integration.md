@@ -115,6 +115,23 @@ started by a subagent is attributed to the **parent's** model. The run itself is
 unaffected — but if you are comparing models across runs, dispatch executors as
 separate top-level sessions, not as subagents, or the comparison is silently wrong.
 
+## Concurrent-command refusals
+
+Two long-running commands — `tdd run start` and `tdd advance` — are protected by a
+per-worktree claim that serialises concurrent invocations.
+
+**`baseline_in_progress`** (`reason: "baseline_in_progress"`): a second `run start`
+while the first is still probing baselines. `tdd progress` reports progress and emits
+`next_action.verb == "await_baseline"`. Never re-run `run start`; the refusal will
+just stack.
+
+**`advance_in_flight`** (`reason: "advance_in_flight"`): a second `advance` while the
+first is still running its close sweep. The refusal body carries `pid`, `started_at`,
+and `elapsed_s` so the agent can verify the first process is still alive. Run
+`tdd status` to see the current run state; never re-run `advance` or kill the
+in-flight process. A dead holder's claim is reclaimed automatically on the next
+`advance` call.
+
 ## Rules for the skill
 
 1. **Dispatch on the verb, never on the prose.** The `detail` string may be reworded in
