@@ -267,3 +267,8 @@ def test_commit_message_prefers_the_plan(cfg):
     d = declared(commit_messages={"red": "test: from the plan"})
     assert staging.default_message(staging.RED, d, 1) == "test: from the plan"
     assert staging.default_message(staging.GREEN, d, 1).startswith("feat:")
+
+
+def test_upstream_producer_roots_includes_self_and_upstream_producers(cfg):
+    assert cfg.upstream_producer_roots("frontend") == ["backend", "frontend"]
+    assert cfg.upstream_producer_roots("backend") == ["backend"]
