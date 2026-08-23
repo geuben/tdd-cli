@@ -340,7 +340,7 @@ def test_reuse_baselines_populates_cache_and_default_does_not(repo_three):
     ledger.db.commit()
 
     # with flag: populates cache for each probed project
-    out2 = run_cli(repo_three, "run", "start", "--plan", plan, "--reuse-baselines")
+    out2 = run_cli(repo_three, "run", "start", "--plan", plan, "--reuse-baselines", "--allow-dirty")
     assert out2["ok"], out2
     rows = ledger.all("SELECT project FROM baseline_cache")
     assert {r["project"] for r in rows} == {"backend", "svc"}

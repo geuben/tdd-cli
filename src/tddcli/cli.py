@@ -492,14 +492,32 @@ def cmd_plan_register(args) -> Envelope:
     )
 
 
-def _probe_projects(projects, worktree, ledger, on_progress):
+def _probe_projects(projects, worktree, ledger, on_progress, cfg=None, config_sha=None, reuse_baselines=False, reuse_max_age=None):
     """Probe a mapping of projects' baselines (R9.5a): run + collect, timing each,
     emitting a `baseline_captured` heartbeat, and calling `on_progress(done, name)`.
-    Returns `{name: (verdict, collection)}`.
+    Returns `({name: (verdict, collection)}, reused_set)`.
     """
     probes = {}
+    reused = set()
     for done, (name, project) in enumerate(projects.items(), start=1):
         adapter = adapters.build(project, worktree)
+        if reuse_baselines and cfg is not None and config_sha is not None:
+            roots = cfg.upstream_producer_roots(name)
+            tree_hash = gitutil.tree_hash(worktree, roots)
+            cached = ledger.cached_baseline(name, tree_hash, config_sha, max_age_s=reuse_max_age)
+            if cached is not None:
+                verdict = adapters.base.Verdict(project=name, adapter=adapter.name, failed=json.loads(cached["failing"]))
+                collection = adapters.base.Collection(tests=set(json.loads(cached["tests"])), failed_files=json.loads(cached["failed_files"]))
+                probes[name] = (verdict, collection)
+                reused.add(name)
+                heartbeat(
+                    event="baseline_reused",
+                    project=name,
+                    test_count=len(collection.tests),
+                    tree_hash=tree_hash[:8],
+                )
+                on_progress(done, name)
+                continue
         started = time.monotonic()
         verdict = adapter.run(None)
         ran = time.monotonic()
@@ -517,8 +535,15 @@ def _probe_projects(projects, worktree, ledger, on_progress):
             run_s=round(ran - started, 2),
             collect_s=round(elapsed - (ran - started), 2),
         )
+        if reuse_baselines and cfg is not None and config_sha is not None:
+            ledger.cache_baseline(
+                name, tree_hash, config_sha,
+                failing=sorted(verdict.failed),
+                tests=sorted(collection.tests),
+                failed_files=collection.failed_files,
+            )
         on_progress(done, name)
-    return probes
+    return probes, reused
 
 
 def cmd_run_start(args) -> Envelope:
@@ -604,7 +629,8 @@ def cmd_run_start(args) -> Envelope:
         # Refusing here also leaves no half-started run behind to block the next
         # attempt — and must release the claim too, or the retry it invites is itself
         # refused.
-        probes = _probe_projects(
+        _cfg_sha = config_mod.config_sha(worktree)
+        probes, reused = _probe_projects(
             probe_projects,
             worktree,
             ledger,
@@ -613,8 +639,14 @@ def cmd_run_start(args) -> Envelope:
                 projects_done=done,
                 current_project=name,
             ),
+            cfg=cfg,
+            config_sha=_cfg_sha,
+            reuse_baselines=args.reuse_baselines,
+            reuse_max_age=args.reuse_max_age,
         )
         for name, (verdict, collection) in probes.items():
+            if name in reused:
+                continue
             if not collection.tests and collection.failed_files:
                 sample = sorted(collection.failed_files)[0]
                 return failure(
@@ -1191,6 +1223,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--allow-dirty", action="store_true")
     s.add_argument("--allow-undeclared", action="store_true")
     s.add_argument("--baseline-all", action="store_true", help="probe all projects, skipping reachability scoping")
+    s.add_argument("--reuse-baselines", action="store_true", help="cache and reuse baseline probe results keyed by content hash")
+    s.add_argument("--reuse-max-age", type=float, default=None, help="max age in seconds for a cached baseline entry")
     s.set_defaults(fn=cmd_run_start)
 
     s = sub.add_parser("status")
