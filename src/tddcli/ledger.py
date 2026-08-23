@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class LedgerVersionError(RuntimeError):
@@ -31,6 +31,8 @@ MIGRATIONS: dict[int, str] = {
     1: "",
     # v2 -> v3 added the advance_claim table; CREATE TABLE IF NOT EXISTS covers it.
     2: "",
+    # v3 -> v4 added the baseline_cache table; CREATE TABLE IF NOT EXISTS covers it.
+    3: "",
 }
 
 SCHEMA = """
@@ -220,6 +222,18 @@ CREATE TABLE IF NOT EXISTS human_intervention (
     at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS baseline_cache (
+    id INTEGER PRIMARY KEY,
+    project TEXT NOT NULL,
+    tree_hash TEXT NOT NULL,
+    config_sha TEXT NOT NULL,
+    failing TEXT NOT NULL,              -- json list
+    tests TEXT NOT NULL,                -- json list
+    failed_files TEXT NOT NULL,         -- json map path -> error
+    created_at TEXT NOT NULL,
+    UNIQUE(project, tree_hash, config_sha)
+);
+
 CREATE INDEX IF NOT EXISTS idx_cycle_run ON cycle(run_id);
 CREATE INDEX IF NOT EXISTS idx_inv_cycle ON invocation(cycle_id);
 """
@@ -389,6 +403,52 @@ class Ledger:
             kind=kind,
             detail=detail,
             at=now(),
+        )
+
+    # -- baseline cache ----------------------------------------------------
+
+    def cache_baseline(
+        self,
+        project: str,
+        tree_hash: str,
+        config_sha: str,
+        *,
+        failing: list[str],
+        tests: list[str],
+        failed_files: dict,
+    ) -> None:
+        self.db.execute(
+            """
+            INSERT INTO baseline_cache (project, tree_hash, config_sha, failing, tests, failed_files, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(project, tree_hash, config_sha) DO UPDATE SET
+                failing = excluded.failing,
+                tests = excluded.tests,
+                failed_files = excluded.failed_files,
+                created_at = excluded.created_at
+            """,
+            (project, tree_hash, config_sha,
+             json.dumps(failing), json.dumps(tests), json.dumps(failed_files),
+             now()),
+        )
+        self.db.commit()
+
+    def cached_baseline(
+        self,
+        project: str,
+        tree_hash: str,
+        config_sha: str,
+        max_age_s: float | None = None,
+    ) -> sqlite3.Row | None:
+        if max_age_s is not None:
+            cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max_age_s)).isoformat()
+            return self.one(
+                "SELECT * FROM baseline_cache WHERE project=? AND tree_hash=? AND config_sha=? AND created_at >= ?",
+                (project, tree_hash, config_sha, cutoff),
+            )
+        return self.one(
+            "SELECT * FROM baseline_cache WHERE project=? AND tree_hash=? AND config_sha=?",
+            (project, tree_hash, config_sha),
         )
 
     # -- baseline claim ----------------------------------------------------
