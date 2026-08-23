@@ -686,6 +686,8 @@ def cmd_run_start(args) -> Envelope:
         skipped = sorted(set(cfg.projects) - set(probe_projects))
         if skipped:
             ledger.event(run_id, None, "baseline_scoped", json.dumps(skipped))
+        if reused:
+            ledger.event(run_id, None, "baseline_reused", json.dumps(sorted(reused)))
 
         # Baselines and the collection snapshot, per project (R9.5, R8.9) — from the
         # probe above, so the suite is not run twice.
@@ -696,6 +698,7 @@ def cmd_run_start(args) -> Envelope:
                 project=name,
                 failing=json.dumps(sorted(verdict.failed)),
                 captured_at=now(),
+                source="reused" if name in reused else "probed",
             )
             ledger.insert(
                 "collection_snapshot",

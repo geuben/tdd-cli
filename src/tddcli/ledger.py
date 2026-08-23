@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class LedgerVersionError(RuntimeError):
@@ -33,6 +33,8 @@ MIGRATIONS: dict[int, str] = {
     2: "",
     # v3 -> v4 added the baseline_cache table; CREATE TABLE IF NOT EXISTS covers it.
     3: "",
+    # v4 -> v5 added source column to baseline; ALTER TABLE covers old ledgers.
+    4: "ALTER TABLE baseline ADD COLUMN source TEXT NOT NULL DEFAULT 'probed';",
 }
 
 SCHEMA = """
@@ -88,7 +90,8 @@ CREATE TABLE IF NOT EXISTS baseline (
     run_id INTEGER NOT NULL REFERENCES run(id),
     project TEXT NOT NULL,
     failing TEXT NOT NULL,              -- json
-    captured_at TEXT NOT NULL
+    captured_at TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'probed'
 );
 
 CREATE TABLE IF NOT EXISTS collection_snapshot (
@@ -275,7 +278,17 @@ class Ledger:
             )
         self.db.executescript(SCHEMA)
         while stored is not None and stored < SCHEMA_VERSION:
-            self.db.executescript(MIGRATIONS[stored])
+            migration = MIGRATIONS[stored]
+            if migration:
+                try:
+                    self.db.executescript(migration)
+                except sqlite3.OperationalError as exc:
+                    # ALTER TABLE ... ADD COLUMN is idempotent in intent; if the
+                    # column already exists (only possible when a ledger's stored
+                    # version was manually set below its actual schema version),
+                    # ignore the error rather than refusing to open the ledger.
+                    if "duplicate column name" not in str(exc).lower():
+                        raise
             stored += 1
         self.db.execute(
             "INSERT INTO meta(key, value) VALUES ('schema_version', ?)"
