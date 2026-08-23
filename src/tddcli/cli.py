@@ -737,6 +737,10 @@ def cmd_advance(args) -> Envelope:
             run={"id": run["id"], "phase": CLOSED},
             next_action=NextAction(Verb.COMPLETE, "All cycles complete."),
         )
+    existing_advance = ledger.active_advance_claim(str(worktree))
+    if existing_advance is not None and existing_advance["stale"]:
+        ledger.release_advance_claim(str(worktree))
+
     try:
         ledger.claim_advance(str(worktree), hostname=socket.gethostname(), pid=os.getpid())
     except sqlite3.IntegrityError:

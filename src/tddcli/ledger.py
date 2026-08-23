@@ -438,6 +438,28 @@ class Ledger:
         self.db.execute("DELETE FROM advance_claim WHERE worktree_path = ?", (worktree,))
         self.db.commit()
 
+    def active_advance_claim(self, worktree: str) -> dict | None:
+        """Read-only observer — staleness computed but no row deleted."""
+        row = self.one("SELECT * FROM advance_claim WHERE worktree_path = ?", (worktree,))
+        if row is None:
+            return None
+        claim = dict(row)
+        if claim["hostname"] == socket.gethostname():
+            try:
+                os.kill(claim["pid"], 0)
+                stale = False
+            except ProcessLookupError:
+                stale = True
+            except PermissionError:
+                stale = False
+        else:
+            started = datetime.fromisoformat(claim["started_at"])
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            stale = datetime.now(timezone.utc) - started > timedelta(minutes=60)
+        claim["stale"] = stale
+        return claim
+
     def active_claim(self, worktree: str) -> dict | None:
         """Read-only, per the store's append-only contract — `cmd_progress` and
         `cmd_status` call this as pure observers. Only `cmd_run_start` acts on the
