@@ -109,3 +109,21 @@ def test_advance_is_rejected_while_another_advance_is_in_flight(repo):
     out = run_cli(repo, "advance")
     assert out["ok"] is False
     assert out["result"]["reason"] == "advance_in_flight"
+
+
+def test_advance_in_flight_directs_the_agent_to_wait(repo):
+    plan = write_plan(repo, TWO_CYCLE_PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+
+    led = Ledger(gitutil.repo_identity(repo))
+    led.claim_advance(str(repo), hostname=socket.gethostname(), pid=os.getpid())
+
+    out = run_cli(repo, "advance")
+    assert out["ok"] is False
+    assert "do not re-run" in out["error"]
+    assert "tdd status" in out["error"]
+    assert isinstance(out["result"]["pid"], int)
+    assert out["result"]["started_at"] is not None
+    assert isinstance(out["result"]["elapsed_s"], int)
