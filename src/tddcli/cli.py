@@ -757,8 +757,10 @@ def cmd_advance(args) -> Envelope:
             started_at=held["started_at"],
             elapsed_s=elapsed_s,
         )
-    result = do_advance(engine, cycle, retry=args.retry)
-    ledger.release_advance_claim(str(worktree))
+    try:
+        result = do_advance(engine, cycle, retry=args.retry)
+    finally:
+        ledger.release_advance_claim(str(worktree))
     return result
 
 
