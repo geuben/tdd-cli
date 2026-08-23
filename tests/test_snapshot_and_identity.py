@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from tddcli import config as config_mod
 from tddcli import identity, snapshot
 from tddcli.ledger import Ledger
