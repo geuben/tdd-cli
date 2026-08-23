@@ -470,6 +470,10 @@ raise the PR — see Done-criteria below.
 
 - `tdd advance` is the only command that changes phase. Do not `git add` or `git commit` — the
   tool stages and commits, deriving the file set from the phase.
+- `tdd advance` can run for minutes (a close sweep runs every project's suite and gates). If it
+  is slow or your harness backgrounds it, it is still running: wait for its envelope. Never
+  re-run it to test whether it is alive — two concurrent advances close the same cycle twice
+  and fork the run. Do not pipe it through `tail`/`head`/`grep`; they buffer and hide progress.
 - The baseline is captured at `run start` and subtracted from later verdicts. State the expected
   summary line so a moved branch is caught.
 - Map the verbs the plan will actually hit: `run_sensitivity_check` → `tdd sensitivity

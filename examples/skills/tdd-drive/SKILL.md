@@ -18,6 +18,9 @@ repository.
   target and, for stubs, the language idiom) but never branch on its wording.
 - If `next_action.verb_set_version` is not `2` or `envelope_version` is not `1`,
   stop and report that this skill predates the installed tdd-cli.
+- Never pipe a `tdd` command through `tail`, `head`, or `grep`. They buffer until the
+  process exits, so a slow command looks dead when it is working. Run it bare and read
+  the whole envelope.
 
 ## Loop
 
@@ -83,6 +86,22 @@ cycle annotation it doesn't belong to.
 `no_change_since_last_run` in an envelope means the tree is identical to the last run.
 Change the code, or — only for a flaky or environmental failure — `tdd advance --retry`.
 Three unchanged retries produce `resolve_blocker`; do not try to outlast it.
+
+## When `advance` is slow
+
+A close sweep regenerates artifacts and runs every project's suite and gates — minutes
+on a large repo. It is not hung: tdd-cli writes progress heartbeats to stderr as each
+project finishes.
+
+- If `tdd advance` exceeds your harness's command timeout and is moved to the
+  background, **it is still running**. Wait for it and read its output for the envelope.
+- Never re-run `tdd advance` to find out whether the first one is alive. Unlike
+  `tdd run start`, which refuses a second call with `baseline_in_progress`, a second
+  `advance` is not refused: both processes sweep, both close the same cycle, and the run
+  silently forks into two parallel cycle chains that execute every remaining cycle
+  twice.
+- To check position while one is in flight, run `tdd status` — it is read-only and never
+  changes phase.
 
 ## Recovery
 

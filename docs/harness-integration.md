@@ -132,6 +132,14 @@ separate top-level sessions, not as subagents, or the comparison is silently wro
 5. **Recover with `tdd status`, not memory.** After a crash, a compaction, or an
    inherited worktree, one `tdd status` call reconstructs the position. The skill
    should never carry its own record of where the run is.
+6. **One `tdd advance` at a time.** A close sweep runs every project's suite and gates
+   and can exceed a harness's command timeout; a harness that backgrounds the command
+   leaves it *running*. The skill must wait for that envelope, never re-issue `advance`
+   to test whether the first call is alive — two concurrent advances close the same
+   cycle twice and fork the run into parallel cycle chains. `tdd status` is read-only
+   and safe to call meanwhile. Relatedly, never pipe a `tdd` command through
+   `tail`/`head`/`grep`: they buffer until exit, hiding the stderr progress heartbeats
+   that show a slow command is alive.
 
 ## What not to build
 
