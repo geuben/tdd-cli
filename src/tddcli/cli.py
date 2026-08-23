@@ -740,10 +740,18 @@ def cmd_advance(args) -> Envelope:
     try:
         ledger.claim_advance(str(worktree), hostname=socket.gethostname(), pid=os.getpid())
     except sqlite3.IntegrityError:
+        held = ledger.one("SELECT * FROM advance_claim WHERE worktree_path = ?", (str(worktree),))
+        started = datetime.fromisoformat(held["started_at"])
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        elapsed_s = int((datetime.now(timezone.utc) - started).total_seconds())
         return failure(
             "an advance is already in flight for this worktree; do not re-run or kill it"
             " — wait for its envelope, then run `tdd status` to see where the run stands",
             reason="advance_in_flight",
+            pid=held["pid"],
+            started_at=held["started_at"],
+            elapsed_s=elapsed_s,
         )
     result = do_advance(engine, cycle, retry=args.retry)
     ledger.release_advance_claim(str(worktree))
