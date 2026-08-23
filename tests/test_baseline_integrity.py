@@ -400,6 +400,50 @@ def test_second_reuse_run_reuses_cached_baseline(repo_three, capsys):
     assert {r["project"] for r in snap_rows} == {"backend", "svc"}
 
 
+def test_stale_reused_baseline_recovers_via_accept_failures(repo):
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+
+    # first run: cold cache → probes fresh, writes cache
+    out1 = run_cli(repo, "run", "start", "--plan", plan, "--reuse-baselines")
+    assert out1["ok"], out1
+    ledger = Ledger(gitutil.repo_identity(repo))
+    from tddcli.ledger import now as ledger_now
+    ledger.db.execute(
+        "UPDATE run SET ended_at = ?, outcome = 'abandoned' WHERE ended_at IS NULL",
+        (ledger_now(),),
+    )
+    ledger.db.commit()
+
+    # second run: warm cache → reuses baseline (source == "reused")
+    out2 = run_cli(repo, "run", "start", "--plan", plan, "--reuse-baselines", "--allow-dirty")
+    assert out2["ok"], out2
+
+    # advance through cycle to AWAITING_REFACTOR
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    raise NotImplementedError\n"
+    )
+    run_cli(repo, "advance")
+    (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    out = run_cli(repo, "advance")
+    assert out["run"]["phase"] == "AWAITING_REFACTOR", out
+
+    # introduce a failure absent from the reused baseline
+    (repo / "backend" / "tests" / "test_smoke.py").write_text(
+        "def test_smoke():\n    assert False\n"
+    )
+    run_cli(repo, "advance")
+    run_cli(repo, "blocker", "--kind", "pre_existing_failure", "--detail", "drifted reused baseline")
+
+    resumed = run_cli(repo, "resume", "--unblock", "--note", "verified against main", "--accept-failures")
+    assert resumed["ok"], resumed
+    assert "backend" in resumed["result"]["accepted_into_baseline"]
+
+    closed = run_cli(repo, "advance")
+    assert closed["next_action"]["verb"] == "complete", closed
+
+
 def test_reused_baseline_records_provenance_and_event(repo_three):
     import json as _json
 
