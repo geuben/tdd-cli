@@ -300,6 +300,12 @@ class Engine:
         declared = self.declared_for(ordinal)
         if declared is None:
             return None
+        existing = self.ledger.one(
+            "SELECT * FROM cycle WHERE run_id = ? AND ordinal = ? AND closed_at IS NULL",
+            (self.run["id"], ordinal),
+        )
+        if existing is not None:
+            return existing
         phase = OPENING_PHASE.get(declared.kind, AWAITING_TEST)
         cycle_id = self.ledger.insert(
             "cycle",
