@@ -610,6 +610,15 @@ The CLI stages; it never delegates staging to the agent, and it never runs `git 
 - **R9.21** `run start` refuses a dirty working tree unless `--allow-dirty` is given. When allowed,
   the pre-existing modified and untracked set is recorded and permanently excluded from authorship
   attribution, so pre-existing edits are never absorbed into the first cycle's commits.
+- **R9.22** A run has **at most one open cycle row** at any time. `open_cycle` returns the existing
+  open row for an ordinal rather than inserting a duplicate; `close_cycle` re-reads `closed_at` and
+  no-ops if the row is already closed (returning the currently-open cycle so the caller can reply
+  with the run's real position).
+- **R9.23** `advance` is **single-flight per worktree**. Before dispatching to the advance handler,
+  the command acquires a per-worktree `advance_claim`. A second concurrent `advance` is refused with
+  `ok: false` and `reason: "advance_in_flight"`. A claim held by a dead pid is reclaimed before the
+  new claim is inserted. The claim is released in a `finally` so a raising handler cannot leave the
+  worktree wedged.
 
 ### 9.5 Test identity
 - **R9.12** Test ids are namespaced by project: `backend::tests/x.py::test_y`,
@@ -730,6 +739,7 @@ depend on any of them being installed.
 ### 13.1 Storage
 - **R13.1** SQLite, single file, append-only for invocations and events.
 - **R13.2** Schema versioned and migrated. The schema is the long-lived asset; the transport is not.
+  Current schema version: **3** (v3 adds the `advance_claim` table, R9.23).
 
 ### 13.2 Location
 - **R13.3** **One ledger per repository**, in a per-user data directory keyed by the repository's

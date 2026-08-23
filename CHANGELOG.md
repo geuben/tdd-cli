@@ -4,6 +4,30 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Concurrent `tdd advance` no longer corrupts a run.** Two `advance` processes
+  racing on the same worktree could both close the same cycle row. Because
+  `close_cycle` unconditionally opened the next ordinal, a double-close forked the
+  run into two parallel cycle chains; every remaining cycle ran twice, the run
+  "completed" with one chain's last row permanently open, and the doubling was
+  invisible from the agent's perspective. `close_cycle` now re-reads `closed_at`
+  before acting; if the row is already closed it returns the currently-open cycle
+  without transitioning or opening anything. `open_cycle` returns the existing open
+  row for an ordinal rather than inserting a duplicate.
+
+### Added
+
+- **Per-worktree advance claim.** `tdd advance` now acquires a `advance_claim` row
+  before dispatching. A second concurrent `advance` is refused immediately with
+  `ok: false`, `reason: "advance_in_flight"`, and metadata (`pid`, `started_at`,
+  `elapsed_s`) that lets the agent confirm the holder is still alive. The claim is
+  released in a `finally` so a raising handler cannot wedge the worktree; a claim
+  held by a dead pid is reclaimed automatically on the next call. Schema version
+  bumped to 3.
+
 ## [0.6.0] - 2026-08-19
 
 ### Added
