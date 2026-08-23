@@ -1,6 +1,8 @@
 import os
 import socket
+import subprocess
 
+import pytest
 from conftest import run_cli, write_plan
 from tddcli import gitutil
 from tddcli.ledger import Ledger
@@ -127,3 +129,22 @@ def test_advance_in_flight_directs_the_agent_to_wait(repo):
     assert isinstance(out["result"]["pid"], int)
     assert out["result"]["started_at"] is not None
     assert isinstance(out["result"]["elapsed_s"], int)
+
+
+def test_a_dead_advance_claim_is_reclaimed(repo):
+    proc = subprocess.Popen(["true"])
+    proc.wait()
+    dead_pid = proc.pid
+    with pytest.raises(ProcessLookupError):
+        os.kill(dead_pid, 0)
+
+    plan = write_plan(repo, TWO_CYCLE_PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+
+    led = Ledger(gitutil.repo_identity(repo))
+    led.claim_advance(str(repo), hostname=socket.gethostname(), pid=dead_pid)
+
+    out = run_cli(repo, "advance")
+    assert out["ok"] is True, out
