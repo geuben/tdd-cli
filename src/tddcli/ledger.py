@@ -438,26 +438,36 @@ class Ledger:
         self.db.execute("DELETE FROM advance_claim WHERE worktree_path = ?", (worktree,))
         self.db.commit()
 
+    @staticmethod
+    def _claim_is_stale(hostname: str, pid: int, started_at: str) -> bool:
+        """Staleness rule shared by all claim kinds.
+
+        Same host → liveness via os.kill(pid, 0). Cross-host → age > 60 min
+        (a pid is meaningless from another host; reused pids would make a
+        liveness check actively wrong, so we fall back to age).
+        """
+        if hostname == socket.gethostname():
+            try:
+                os.kill(pid, 0)
+                return False
+            except ProcessLookupError:
+                # Same host, pid no longer running.
+                return True
+            except PermissionError:
+                # Pid exists but owned by someone else — alive.
+                return False
+        started = datetime.fromisoformat(started_at)
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - started > timedelta(minutes=60)
+
     def active_advance_claim(self, worktree: str) -> dict | None:
         """Read-only observer — staleness computed but no row deleted."""
         row = self.one("SELECT * FROM advance_claim WHERE worktree_path = ?", (worktree,))
         if row is None:
             return None
         claim = dict(row)
-        if claim["hostname"] == socket.gethostname():
-            try:
-                os.kill(claim["pid"], 0)
-                stale = False
-            except ProcessLookupError:
-                stale = True
-            except PermissionError:
-                stale = False
-        else:
-            started = datetime.fromisoformat(claim["started_at"])
-            if started.tzinfo is None:
-                started = started.replace(tzinfo=timezone.utc)
-            stale = datetime.now(timezone.utc) - started > timedelta(minutes=60)
-        claim["stale"] = stale
+        claim["stale"] = self._claim_is_stale(claim["hostname"], claim["pid"], claim["started_at"])
         return claim
 
     def active_claim(self, worktree: str) -> dict | None:
@@ -468,23 +478,8 @@ class Ledger:
         if row is None:
             return None
         claim = dict(row)
-        if claim["hostname"] == socket.gethostname():
-            try:
-                os.kill(claim["pid"], 0)
-                stale = False
-            except ProcessLookupError:
-                # Same host, pid no longer running (e.g. a `SIGKILL`ed `run start`).
-                stale = True
-            except PermissionError:
-                # Pid exists but is owned by someone else — alive.
-                stale = False
-        else:
-            # A pid is meaningless from another host, and reused pids would make a
-            # host-crossing liveness check actively wrong. Fall back to age: a false
-            # "alive" bricks the worktree, a false "dead" reopens the bug (Decisions).
-            started = datetime.fromisoformat(claim["started_at"])
-            if started.tzinfo is None:
-                started = started.replace(tzinfo=timezone.utc)
-            stale = datetime.now(timezone.utc) - started > timedelta(minutes=60)
-        claim["stale"] = stale
+        # A pid is meaningless from another host, and reused pids would make a
+        # host-crossing liveness check actively wrong. Fall back to age: a false
+        # "alive" bricks the worktree, a false "dead" reopens the bug (Decisions).
+        claim["stale"] = self._claim_is_stale(claim["hostname"], claim["pid"], claim["started_at"])
         return claim
