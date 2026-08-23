@@ -1,3 +1,4 @@
+import argparse
 import os
 import socket
 import subprocess
@@ -149,3 +150,29 @@ def test_a_dead_advance_claim_is_reclaimed(repo):
 
     out = run_cli(repo, "advance")
     assert out["ok"] is True, out
+
+
+def test_advance_releases_its_claim_when_the_handler_raises(repo, monkeypatch):
+    from tddcli.cli import cmd_advance
+
+    plan = write_plan(repo, TWO_CYCLE_PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+
+    def raiser(*args, **kwargs):
+        raise RuntimeError("injected failure")
+
+    monkeypatch.setattr("tddcli.cli.do_advance", raiser)
+
+    prev = os.getcwd()
+    os.chdir(repo)
+    try:
+        with pytest.raises(RuntimeError, match="injected failure"):
+            cmd_advance(argparse.Namespace(retry=False))
+    finally:
+        os.chdir(prev)
+
+    led = Ledger(gitutil.repo_identity(repo))
+    rows = led.all("SELECT * FROM advance_claim WHERE worktree_path = ?", (str(repo),))
+    assert rows == []
