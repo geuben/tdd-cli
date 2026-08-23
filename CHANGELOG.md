@@ -6,6 +6,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-23
+
 ### Fixed
 
 - **Concurrent `tdd advance` no longer corrupts a run.** Two `advance` processes
