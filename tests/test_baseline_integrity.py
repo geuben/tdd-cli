@@ -319,3 +319,28 @@ def test_sweep_reports_unbaselined_failures_separately(repo_three):
     assert any("test_smoke" in f for f in svc_failures), svc_failures
     assert not outcome.failures, outcome.failures
     assert not outcome.ok
+
+
+def test_reuse_baselines_populates_cache_and_default_does_not(repo_three):
+    plan = write_plan(repo_three, THREE_PROJECT_PLAN)
+    run_cli(repo_three, "plan", "register", plan)
+
+    # plain run: cache stays empty
+    out = run_cli(repo_three, "run", "start", "--plan", plan)
+    assert out["ok"], out
+    ledger = Ledger(gitutil.repo_identity(repo_three))
+    assert ledger.one("SELECT COUNT(*) as n FROM baseline_cache")["n"] == 0
+
+    # close the first run so a second run start is allowed
+    from tddcli.ledger import now as ledger_now
+    ledger.db.execute(
+        "UPDATE run SET ended_at = ?, outcome = 'abandoned' WHERE ended_at IS NULL",
+        (ledger_now(),),
+    )
+    ledger.db.commit()
+
+    # with flag: populates cache for each probed project
+    out2 = run_cli(repo_three, "run", "start", "--plan", plan, "--reuse-baselines")
+    assert out2["ok"], out2
+    rows = ledger.all("SELECT project FROM baseline_cache")
+    assert {r["project"] for r in rows} == {"backend", "svc"}
