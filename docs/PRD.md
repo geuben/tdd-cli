@@ -414,6 +414,7 @@ streams of events use it:
 | Event | When | Fields |
 |---|---|---|
 | `baseline_captured` | after each project's baseline (§8.2) | `project`, `test_count`, `elapsed_s`, `run_s`, `collect_s` |
+| `baseline_reused` | when `--reuse-baselines` hits a cache entry (§8.2, R9.5e) | `project`, `test_count`, `tree_hash` (first 8 chars) |
 | `command_timing` | per subprocess, only under `TDD_TIMING=1` | `label`, `command`, `cwd`, `duration_ms`, `exit_code` |
 
 `run_s` and `collect_s` are reported separately because their cost models are unrelated — a suite
@@ -550,6 +551,19 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   be labelled regressions. The advance reply is `resolve_blocker` with kind
   `no_baseline_for_project`, directing the agent to file the blocker and recover via
   `resume --unblock --accept-failures`, which inserts the missing baseline row.
+- **R9.5e** `run start --reuse-baselines` enables opt-in cross-run baseline reuse. The cache key
+  is `(project, tree_hash(project root ∪ upstream producer roots), config_sha)`, where
+  `upstream_producer_roots` is the fixpoint closure of all artifact-graph producers that feed
+  into the project (a `backend` edit regenerates an artifact `svc` consumes, so the key for
+  `svc` covers both roots). On a cache hit, the cached failing set and collection snapshot are
+  reused verbatim — no suite is run for that project — and a `baseline_reused` heartbeat is
+  emitted to stderr. Reuse is **loud**: the baseline row carries `source = "reused"` (vs.
+  `"probed"` for a fresh probe), and a `baseline_reused` integrity event lists the reused
+  projects. The default (`--reuse-baselines` absent) neither reads nor writes the cache, leaving
+  behaviour byte-identical to before. An optional TTL (`--reuse-max-age <seconds>`) ignores
+  entries older than that many seconds, bounding how stale a reused baseline may be. A stale or
+  wrong reused baseline is always recoverable via `resume --unblock --accept-failures`
+  (R9.5b), which treats a reused baseline row as an ordinary row.
 - **R9.6** Baseline failures are subtracted from `other_failures` in every subsequent invocation.
 - **R9.7** A baseline failure that starts passing is recorded, not ignored.
 
