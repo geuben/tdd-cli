@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class LedgerVersionError(RuntimeError):
@@ -29,6 +29,8 @@ class LedgerVersionError(RuntimeError):
 MIGRATIONS: dict[int, str] = {
     # v1 -> v2 added the baseline_claim table; CREATE TABLE IF NOT EXISTS covers it.
     1: "",
+    # v2 -> v3 added the advance_claim table; CREATE TABLE IF NOT EXISTS covers it.
+    2: "",
 }
 
 SCHEMA = """
@@ -42,6 +44,14 @@ CREATE TABLE IF NOT EXISTS baseline_claim (
     projects_total INTEGER NOT NULL DEFAULT 0,
     projects_done INTEGER NOT NULL DEFAULT 0,
     current_project TEXT,
+    started_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS advance_claim (
+    id INTEGER PRIMARY KEY,
+    worktree_path TEXT NOT NULL UNIQUE,
+    hostname TEXT NOT NULL,
+    pid INTEGER NOT NULL,
     started_at TEXT NOT NULL
 );
 
@@ -410,6 +420,22 @@ class Ledger:
             " WHERE worktree_path = ?",
             (projects_done, current_project, worktree),
         )
+        self.db.commit()
+
+    def claim_advance(self, worktree: str, hostname: str, pid: int) -> int:
+        """Insert the advance claim row. The insert is the lock: `worktree_path`
+        carries `UNIQUE`, so a second claim on the same worktree raises
+        `sqlite3.IntegrityError` rather than racing a read-then-write check."""
+        return self.insert(
+            "advance_claim",
+            worktree_path=worktree,
+            hostname=hostname,
+            pid=pid,
+            started_at=now(),
+        )
+
+    def release_advance_claim(self, worktree: str) -> None:
+        self.db.execute("DELETE FROM advance_claim WHERE worktree_path = ?", (worktree,))
         self.db.commit()
 
     def active_claim(self, worktree: str) -> dict | None:
