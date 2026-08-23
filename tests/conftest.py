@@ -51,6 +51,9 @@ def repo(tmp_path, ledger_home):
         "import sys, pathlib\n"
         "sys.path.insert(0, str(pathlib.Path(__file__).parent))\n"
     )
+    (root / ".gitignore").write_text(
+        ".pytest_cache/\n__pycache__/\n*.pyc\n.coverage\njsonreport*.json\n"
+    )
 
     git(root.parent, "init", "-q", str(root)) if False else None
     subprocess.run(["git", "init", "-q", str(root)], check=True)

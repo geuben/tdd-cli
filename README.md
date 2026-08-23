@@ -390,6 +390,29 @@ Pass `--baseline-all` to probe every project in `tdd.toml` regardless:
 Use this when a cycle may edit files outside the predicted reachable set and you want every
 project baselined up front rather than hitting the `no_baseline_for_project` escape hatch later.
 
+### Reusing baselines across runs (R9.5e)
+
+On repos where runs are frequent and most projects change rarely, re-probing unchanged suites
+wastes time. Pass `--reuse-baselines` to cache probe results and skip re-probing on the next run
+when nothing in the project changed:
+
+    tdd run start --plan tasks/plan.md --reuse-baselines
+
+The cache key is `(project, tree_hash(project root ∪ upstream producer roots), config_sha)`.
+If the key matches a previous entry, the cached failing set and collection snapshot are used —
+no suite is run — and a `baseline_reused` heartbeat appears on stderr. The baseline row carries
+`source = "reused"` for auditability, and a `baseline_reused` integrity event lists which
+projects were skipped. Without the flag, the cache is neither read nor written.
+
+A stale or wrong reused baseline is always recoverable via `resume --unblock --accept-failures`
+(see below) — reuse is loud by design, never silent.
+
+To limit how old a cached entry may be, pass `--reuse-max-age <seconds>`:
+
+    tdd run start --plan tasks/plan.md --reuse-baselines --reuse-max-age 3600
+
+Entries older than the given threshold are ignored and re-probed fresh.
+
 ### When a sweep reaches an un-baselined project (R9.5d)
 
 If an edit during a run touches a file owned by an artifact that was outside the predicted
