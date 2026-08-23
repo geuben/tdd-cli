@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from tddcli import config as config_mod
 from tddcli import identity, snapshot
+from tddcli.ledger import Ledger
 
 
 def cfg_for(repo: Path):
@@ -104,3 +107,23 @@ def test_last_model_wins_when_a_session_switches(tmp_path, monkeypatch):
     monkeypatch.setattr(identity, "TRANSCRIPT_ROOT", root)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "s")
     assert identity.resolve(None).model == "claude-sonnet-4-6"
+
+
+def test_baseline_cache_round_trips_by_content_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("TDD_LEDGER_HOME", str(tmp_path))
+    ledger = Ledger(tmp_path / "repo")
+
+    ledger.cache_baseline(
+        "svc", "treeA", "cfgA",
+        failing=["svc::t::a"],
+        tests=["svc::t::a", "svc::t::b"],
+        failed_files={},
+    )
+
+    row = ledger.cached_baseline("svc", "treeA", "cfgA")
+    assert json.loads(row["failing"]) == ["svc::t::a"]
+    assert json.loads(row["tests"]) == ["svc::t::a", "svc::t::b"]
+    assert json.loads(row["failed_files"]) == {}
+
+    assert ledger.cached_baseline("svc", "treeB", "cfgA") is None
+    assert ledger.cached_baseline("svc", "treeA", "cfgB") is None
