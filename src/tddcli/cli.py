@@ -737,7 +737,31 @@ def cmd_advance(args) -> Envelope:
             run={"id": run["id"], "phase": CLOSED},
             next_action=NextAction(Verb.COMPLETE, "All cycles complete."),
         )
-    return do_advance(engine, cycle, retry=args.retry)
+    existing_advance = ledger.active_advance_claim(str(worktree))
+    if existing_advance is not None and existing_advance["stale"]:
+        ledger.release_advance_claim(str(worktree))
+
+    try:
+        ledger.claim_advance(str(worktree), hostname=socket.gethostname(), pid=os.getpid())
+    except sqlite3.IntegrityError:
+        held = ledger.one("SELECT * FROM advance_claim WHERE worktree_path = ?", (str(worktree),))
+        started = datetime.fromisoformat(held["started_at"])
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        elapsed_s = int((datetime.now(timezone.utc) - started).total_seconds())
+        return failure(
+            "an advance is already in flight for this worktree; do not re-run or kill it"
+            " — wait for its envelope, then run `tdd status` to see where the run stands",
+            reason="advance_in_flight",
+            pid=held["pid"],
+            started_at=held["started_at"],
+            elapsed_s=elapsed_s,
+        )
+    try:
+        result = do_advance(engine, cycle, retry=args.retry)
+    finally:
+        ledger.release_advance_claim(str(worktree))
+    return result
 
 
 def cmd_cycle_skip(args) -> Envelope:

@@ -300,6 +300,12 @@ class Engine:
         declared = self.declared_for(ordinal)
         if declared is None:
             return None
+        existing = self.ledger.one(
+            "SELECT * FROM cycle WHERE run_id = ? AND ordinal = ? AND closed_at IS NULL",
+            (self.run["id"], ordinal),
+        )
+        if existing is not None:
+            return existing
         phase = OPENING_PHASE.get(declared.kind, AWAITING_TEST)
         cycle_id = self.ledger.insert(
             "cycle",
@@ -340,6 +346,9 @@ class Engine:
         self.ledger.update("cycle", cycle_row["id"], phase=to_phase)
 
     def close_cycle(self, cycle_row):
+        row = self.ledger.one("SELECT closed_at FROM cycle WHERE id = ?", (cycle_row["id"],))
+        if row and row["closed_at"] is not None:
+            return self.ledger.open_cycle(self.run["id"])
         self.transition(cycle_row, CLOSED)
         self.ledger.update("cycle", cycle_row["id"], closed_at=now())
         nxt = next(

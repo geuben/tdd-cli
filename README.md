@@ -411,7 +411,13 @@ that can take minutes — well past an agent harness's default Bash timeout. If 
 appears to hang or time out, **do not re-run it**: the probe is still making progress in the
 background, and a second `run start` against the same worktree is refused with
 `reason: "baseline_in_progress"` — retrying on timeout just stacks refusals on top of a
-baseline that was never stuck. In order of preference:
+baseline that was never stuck.
+
+`tdd advance` is similarly single-flight per worktree. A close sweep (artifact regeneration, full
+suite, lint, typecheck) can run for several minutes. If an advance appears to hang, **do not
+re-run it**: a second `advance` against the same worktree is refused with
+`reason: "advance_in_flight"`. The refusal carries `pid`, `started_at`, and `elapsed_s` so the
+agent can confirm the first process is still alive. Run `tdd status` to see the current run state. In order of preference:
 
 1. **Background it.** Run `tdd run start` in the background if your harness supports it. The
    heartbeat (`baseline_captured` / `project_completed` lines on stderr) lands in the task log
