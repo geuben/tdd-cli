@@ -481,3 +481,11 @@ def test_reused_baseline_records_provenance_and_event(repo_three):
     )
     assert event is not None, "no baseline_reused event found"
     assert _json.loads(event["detail"]) == sorted(["backend", "svc"])
+
+
+def test_run_start_accepts_baseline_jobs_flag(repo):
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan, "--baseline-jobs", "2")
+    assert out["ok"], out
+    assert out["result"]["baselines"] == {"backend": 0}, out["result"]["baselines"]
