@@ -545,6 +545,17 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   later failure set to subtract their baseline from. The scoping is recorded as a
   `baseline_scoped` integrity event listing the skipped projects. Pass `--baseline-all` to probe
   every project and suppress the event.
+- **R9.5e** `run start` probes reachable projects serially by default (`--baseline-jobs 1`).
+  Pass `--baseline-jobs N` (N ≥ 2) to probe up to N projects concurrently on a bounded
+  `ThreadPoolExecutor`. Each probe is independent — one adapter instance, one `Verdict`, one
+  `Collection` — so the schedule does not affect which projects are probed, the refusal checks
+  (R9.5a), or the baseline rows written. The ledger connection is main-thread-only: workers run
+  only the adapter and return results; all ledger writes and `baseline_captured` heartbeats are
+  emitted on the main thread as each probe completes. If any probe raises, `run start` returns a
+  failure attributed to that project's name, no run row is written, and the worktree claim is
+  released so the caller may retry. `--baseline-jobs 0` is refused before probing. Suites that
+  contend for global resources (e.g. xctest simulators, fixed ports) may need `--baseline-jobs 1`;
+  suites that declare a `lease` name serialize automatically even inside the pool.
 - **R9.5d** When a close sweep reaches a project with no baseline row (because an edit fell
   outside the predicted reachable set, pulling an un-baselined consumer into the sweep), its
   failures are classified as `unattributable` — there is no baseline to subtract, so they cannot
