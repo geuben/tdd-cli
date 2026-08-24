@@ -111,3 +111,15 @@ def test_successful_regeneration_marks_artifact_check_regenerated(repo):
     )
     assert row is not None, "expected a stale artifact_check row for openapi"
     assert row["regenerated"] == 1, f"expected regenerated=1, got {row['regenerated']}"
+
+
+def test_resolved_stale_artifact_emits_no_event(repo):
+    """When the tool resolves staleness with a commit, no stale_artifact event is emitted."""
+    run_id = _start_run_with_id(repo, OPENAPI_ARTIFACT_TOML)
+
+    ledger = Ledger(gitutil.repo_identity(repo))
+    events = ledger.all(
+        "SELECT * FROM integrity_event WHERE run_id = ? AND kind = 'stale_artifact'",
+        (run_id,),
+    )
+    assert events == [], f"expected no stale_artifact events, got {events}"
