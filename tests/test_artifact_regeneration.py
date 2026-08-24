@@ -123,3 +123,28 @@ def test_resolved_stale_artifact_emits_no_event(repo):
         (run_id,),
     )
     assert events == [], f"expected no stale_artifact events, got {events}"
+
+
+def test_unresolved_stale_artifact_still_emits_event(repo):
+    """A stale artifact with no regenerate hook must still emit stale_artifact."""
+    with (repo / "tdd.toml").open("a") as f:
+        f.write(
+            "\n[artifact.spec]\n"
+            'path        = "backend/spec.json"\n'
+            'produced_by = "backend"\n'
+            'check       = "false"\n'
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "declare spec artifact")
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+    run_id = out["run"]["id"]
+
+    ledger = Ledger(gitutil.repo_identity(repo))
+    event = ledger.one(
+        "SELECT * FROM integrity_event WHERE run_id = ? AND kind = 'stale_artifact' AND detail = 'spec'",
+        (run_id,),
+    )
+    assert event is not None, "expected a stale_artifact event for spec"
