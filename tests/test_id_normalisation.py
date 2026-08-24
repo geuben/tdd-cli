@@ -64,6 +64,36 @@ def test_vitest_normalise_id_collapses_describe_separator(tmp_path):
     assert adapter.normalise_id(file_only) == file_only
 
 
+def test_vitest_run_matches_separator_only_target(tmp_path):
+    """VitestAdapter.run() returns PASSED for a target differing only by the describe separator.
+
+    Also verifies a genuinely different target still returns NOT_FOUND (not over-matched).
+    """
+    from tddcli.adapters.base import NOT_FOUND, PASSED
+
+    adapter = vitest_adapter_for(tmp_path)
+
+    # Canned JSON report: one passing test with space-joined fullName
+    suite_path = str(tmp_path / "frontend" / "a.test.ts")
+    canned_json = (
+        '{"duration": 0, "testResults": [{"name": "'
+        + suite_path
+        + '", "status": "passed", "assertionResults": ['
+        + '{"fullName": "someHelper formats a value", "status": "passed", "failureMessages": []}'
+        + "]}]}"
+    )
+    adapter._run_suite = lambda cmd, env=None, timeout=None: (0, canned_json, "")
+
+    # The collected id is "frontend::a.test.ts > someHelper formats a value"
+    # The declared target uses ' > ' between describe and name — should still match
+    verdict = adapter.run("frontend::a.test.ts > someHelper > formats a value")
+    assert verdict.target_outcome == PASSED
+
+    # A genuinely different target must NOT match (normalisation must not over-match)
+    verdict2 = adapter.run("frontend::a.test.ts > someHelper > a different test")
+    assert verdict2.target_outcome == NOT_FOUND
+
+
 def test_base_adapter_normalise_id_is_identity(tmp_path):
     """The base hook returns the id unchanged — pytest ids need no normalisation."""
     adapter = pytest_adapter_for(tmp_path)
