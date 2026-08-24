@@ -8,7 +8,7 @@ set changes — a genuinely new path appeared).
 
 from __future__ import annotations
 
-from conftest import git, run_cli, write_plan
+from conftest import run_cli, write_plan
 
 # ---------------------------------------------------------------------------
 # Shared plan bodies
