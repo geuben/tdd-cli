@@ -89,10 +89,14 @@ def _stage_and_commit(engine: Engine, cycle, phase: str, declared) -> tuple[str 
                 json.dumps(classification.implementation),
             )
     if classification.outside:
-        engine.ledger.event(
-            engine.run["id"], cycle["id"], "undeclared_file_touched",
-            json.dumps(classification.outside),
-        )
+        if engine.ledger.one(
+            "SELECT id FROM integrity_event WHERE run_id = ? AND kind = 'undeclared_file_touched'",
+            (engine.run["id"],),
+        ) is None:
+            engine.ledger.event(
+                engine.run["id"], cycle["id"], "undeclared_file_touched",
+                json.dumps(classification.outside),
+            )
     paths = staging.paths_for_phase(phase, classification)
     message = staging.default_message(phase, declared, cycle["ordinal"])
     sha, staged = staging.commit(
