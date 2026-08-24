@@ -148,3 +148,19 @@ def test_unresolved_stale_artifact_still_emits_event(repo):
         (run_id,),
     )
     assert event is not None, "expected a stale_artifact event for spec"
+
+
+def test_friction_log_reports_regenerated_artifacts_benignly(repo):
+    """The friction log must list auto-regenerated artifacts without using stale_artifact."""
+    _start_run(repo, OPENAPI_ARTIFACT_TOML)
+    out = run_cli(repo, "advance")
+    assert out["next_action"]["verb"] == "complete", out
+
+    friction_path = repo / "friction.md"
+    render_out = run_cli(repo, "log", "render", "--out", str(friction_path))
+    assert render_out["ok"], render_out
+
+    text = friction_path.read_text()
+    assert "auto-regenerated" in text, "expected 'auto-regenerated' in friction log"
+    assert "openapi" in text, "expected 'openapi' in friction log"
+    assert "stale_artifact" not in text, "stale_artifact must not appear in friction log"
