@@ -62,3 +62,38 @@ def test_unchanged_outside_file_is_flagged_once_per_cycle(repo):
     assert events.get("undeclared_file_touched", 0) == 1
 
 
+# ---------------------------------------------------------------------------
+# Cycle 2 — a newly-appearing undeclared path re-emits
+# ---------------------------------------------------------------------------
+
+def test_a_new_undeclared_path_re_emits(repo):
+    """When a second undeclared path appears mid-cycle, a new event is emitted."""
+    plan = write_plan(repo, SINGLE_CYCLE_PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    assert run_cli(repo, "run", "start", "--plan", plan)["ok"]
+
+    # Create a.md before RED so it is classified as outside at RED.
+    (repo / "a.md").write_text("note A\n")
+
+    # RED: outside == ["a.md"]
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    raise NotImplementedError\n"
+    )
+    run_cli(repo, "advance")  # → AWAITING_IMPL
+
+    # Before GREEN, add b.md — now outside == ["a.md", "b.md"] (sorted).
+    (repo / "b.md").write_text("note B\n")
+
+    (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    run_cli(repo, "advance")  # → AWAITING_REFACTOR
+    run_cli(repo, "advance")  # → complete
+
+    events = run_cli(repo, "metrics")["result"]["runs"][0]["integrity_events"]
+    assert events.get("undeclared_file_touched", 0) == 2
+
+    # The second event must carry the enlarged set.
+    log_path = repo / "friction.md"
+    run_cli(repo, "log", "render", "--out", str(log_path))
+    log_text = log_path.read_text()
+    assert '["a.md", "b.md"]' in log_text
