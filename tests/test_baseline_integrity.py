@@ -4,8 +4,11 @@ merely *looks* clean turns every pre-existing failure into a permanent regressio
 
 from __future__ import annotations
 
+import threading
+
 from conftest import git, run_cli, write_plan
-from tddcli import gitutil
+from tddcli import adapters, gitutil
+from tddcli.adapters.base import Collection, Verdict
 from tddcli.ledger import Ledger
 
 PLAN = """---
@@ -500,3 +503,40 @@ def test_run_start_refuses_baseline_jobs_below_one(repo):
     ledger = Ledger(gitutil.repo_identity(repo))
     rows = ledger.all("SELECT * FROM run WHERE worktree_path = ?", (str(repo),))
     assert rows == [], rows
+
+
+def test_run_start_probes_concurrently_under_a_bounded_pool(repo_three, monkeypatch):
+    barrier = threading.Barrier(2, timeout=5)
+    lock = threading.Lock()
+    active = 0
+    peak = 0
+
+    class FakeAdapter:
+        def __init__(self, name):
+            self.name = name
+
+        def run(self, target=None):
+            nonlocal active, peak
+            with lock:
+                active += 1
+                if active > peak:
+                    peak = active
+            barrier.wait()
+            with lock:
+                active -= 1
+            return Verdict(project=self.name, adapter="pytest", passed=["t::a"])
+
+        def collect(self):
+            return Collection(tests={"t::a", "t::b"})
+
+    def fake_build(project, worktree):
+        return FakeAdapter(project.name)
+
+    monkeypatch.setattr(adapters, "build", fake_build)
+
+    plan = write_plan(repo_three, THREE_PROJECT_PLAN)
+    run_cli(repo_three, "plan", "register", plan)
+    out = run_cli(repo_three, "run", "start", "--plan", plan, "--baseline-jobs", "2")
+    assert out["ok"], out
+    assert out["result"]["baselines"] == {"backend": 0, "svc": 0}, out["result"]["baselines"]
+    assert peak == 2, f"expected peak concurrency of 2, got {peak}"
