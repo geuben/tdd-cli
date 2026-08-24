@@ -505,6 +505,50 @@ def test_run_start_refuses_baseline_jobs_below_one(repo):
     assert rows == [], rows
 
 
+def test_concurrent_probe_failure_aborts_and_releases_claim(repo_three, monkeypatch):
+    class BackendAdapter:
+        def __init__(self, name):
+            self.name = name
+
+        def run(self, target=None):
+            return Verdict(project=self.name, adapter="pytest", passed=["t::a"])
+
+        def collect(self):
+            return Collection(tests={"t::a"})
+
+    class SvcAdapter:
+        def __init__(self, name):
+            self.name = name
+
+        def run(self, target=None):
+            raise RuntimeError("svc probe failed")
+
+        def collect(self):
+            return Collection(tests={"t::a"})
+
+    def fake_build_failing(project, worktree):
+        if project.name == "svc":
+            return SvcAdapter(project.name)
+        return BackendAdapter(project.name)
+
+    monkeypatch.setattr(adapters, "build", fake_build_failing)
+
+    plan = write_plan(repo_three, THREE_PROJECT_PLAN)
+    run_cli(repo_three, "plan", "register", plan)
+    out = run_cli(repo_three, "run", "start", "--plan", plan, "--baseline-jobs", "2")
+    assert not out["ok"], out
+    assert "svc" in out["error"], out["error"]
+
+    ledger = Ledger(gitutil.repo_identity(repo_three))
+    rows = ledger.all("SELECT * FROM run WHERE worktree_path = ?", (str(repo_three),))
+    assert rows == [], rows
+
+    # Claim was released — a retry must not be rejected as "baseline_in_progress"
+    monkeypatch.setattr(adapters, "build", lambda p, w: BackendAdapter(p.name))
+    retry = run_cli(repo_three, "run", "start", "--plan", plan, "--baseline-jobs", "2")
+    assert retry.get("result", {}).get("reason") != "baseline_in_progress", retry
+
+
 def test_run_start_probes_concurrently_under_a_bounded_pool(repo_three, monkeypatch):
     barrier = threading.Barrier(2, timeout=5)
     lock = threading.Lock()
