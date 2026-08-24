@@ -126,14 +126,18 @@ class VitestAdapter(Adapter):
             verdict.target_outcome = NOT_FOUND
             return verdict
 
-        if target in verdict.passed:
+        ntarget = self.normalise_id(target)
+        passed_norm = {self.normalise_id(t): t for t in verdict.passed}
+        failed_norm = {self.normalise_id(t): t for t in verdict.failed}
+
+        if ntarget in passed_norm:
             verdict.target_outcome = PASSED
             return verdict
-        if target in verdict.failed:
+        if ntarget in failed_norm:
             verdict.target_outcome = FAILED
             for suite in suites:
                 for t in suite.get("assertionResults", []):
-                    if self._id_for(suite.get("name", ""), t["fullName"]) == target:
+                    if self.normalise_id(self._id_for(suite.get("name", ""), t["fullName"])) == ntarget:
                         verdict.target_failure = "\n".join(
                             clip_failure(m, 600)
                             for m in t.get("failureMessages", [])[:3]
