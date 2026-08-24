@@ -89,10 +89,13 @@ def _stage_and_commit(engine: Engine, cycle, phase: str, declared) -> tuple[str 
                 json.dumps(classification.implementation),
             )
     if classification.outside:
-        if engine.ledger.one(
-            "SELECT id FROM integrity_event WHERE run_id = ? AND kind = 'undeclared_file_touched'",
+        _last = engine.ledger.one(
+            "SELECT detail FROM integrity_event"
+            " WHERE run_id = ? AND kind = 'undeclared_file_touched'"
+            " ORDER BY id DESC LIMIT 1",
             (engine.run["id"],),
-        ) is None:
+        )
+        if _last is None or _last["detail"] != json.dumps(classification.outside):
             engine.ledger.event(
                 engine.run["id"], cycle["id"], "undeclared_file_touched",
                 json.dumps(classification.outside),
