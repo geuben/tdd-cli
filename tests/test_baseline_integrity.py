@@ -489,3 +489,14 @@ def test_run_start_accepts_baseline_jobs_flag(repo):
     out = run_cli(repo, "run", "start", "--plan", plan, "--baseline-jobs", "2")
     assert out["ok"], out
     assert out["result"]["baselines"] == {"backend": 0}, out["result"]["baselines"]
+
+
+def test_run_start_refuses_baseline_jobs_below_one(repo):
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan, "--baseline-jobs", "0")
+    assert not out["ok"], out
+    assert "--baseline-jobs" in out["error"], out["error"]
+    ledger = Ledger(gitutil.repo_identity(repo))
+    rows = ledger.all("SELECT * FROM run WHERE worktree_path = ?", (str(repo),))
+    assert rows == [], rows
