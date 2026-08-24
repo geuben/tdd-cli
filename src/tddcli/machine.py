@@ -250,10 +250,6 @@ class Engine:
             )
             if not stale:
                 continue
-            self.ledger.event(
-                self.run["id"], cycle_row["id"] if cycle_row else None,
-                "stale_artifact", art.name,
-            )
             if art.regenerate:
                 adapters.base.run_command(art.regenerate, self.worktree)
                 # The artifact's own path is staged even without `generated = true`,
