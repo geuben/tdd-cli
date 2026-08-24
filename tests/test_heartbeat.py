@@ -14,6 +14,7 @@ import json
 
 from conftest import run_cli, write_plan
 from tddcli import adapters, gitutil
+from tddcli.adapters.base import Collection, Verdict
 from tddcli.ledger import Ledger
 
 PLAN = """---
@@ -192,3 +193,51 @@ def test_close_sweep_emits_a_project_completed_line(repo, capsys):
     ]
     assert lines, "no CLOSE_SWEEP project_completed line in stderr"
     assert isinstance(lines[0]["elapsed_s"], (int, float))
+
+
+THREE_PROJECT_PLAN = """---
+cycles:
+  - n: 1
+    project: backend
+    title: "adding two numbers"
+    test: "tests/test_add.py::test_add_two_numbers"
+    stub_expected: ["app/calc.py"]
+    commit_red: "test: adding two numbers"
+    commit_green: "feat: add()"
+---
+
+# Plan
+"""
+
+
+def test_baseline_captured_lines_emitted_under_concurrency(repo_three, capsys, monkeypatch):
+    class FakeAdapter:
+        def __init__(self, name):
+            self.name = name
+
+        def run(self, target=None):
+            return Verdict(project=self.name, adapter="pytest", passed=["t::a"])
+
+        def collect(self):
+            return Collection(tests={"t::a", "t::b"})
+
+    def fake_build(project, worktree):
+        return FakeAdapter(project.name)
+
+    monkeypatch.setattr(adapters, "build", fake_build)
+
+    plan = write_plan(repo_three, THREE_PROJECT_PLAN)
+    run_cli(repo_three, "plan", "register", plan)
+    out = run_cli(repo_three, "run", "start", "--plan", plan, "--baseline-jobs", "2")
+    assert out["ok"], out
+
+    captured = capsys.readouterr()
+    hb_lines = [
+        line for line in _heartbeat_lines(captured.err)
+        if line.get("event") == "baseline_captured"
+    ]
+    probed_projects = {line["project"] for line in hb_lines}
+    assert probed_projects == {"backend", "svc"}, probed_projects
+    for line in hb_lines:
+        assert isinstance(line["test_count"], int), line
+        assert isinstance(line["elapsed_s"], (int, float)), line
