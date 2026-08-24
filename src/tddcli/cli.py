@@ -1228,6 +1228,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--baseline-all", action="store_true", help="probe all projects, skipping reachability scoping")
     s.add_argument("--reuse-baselines", action="store_true", help="cache and reuse baseline probe results keyed by content hash")
     s.add_argument("--reuse-max-age", type=float, default=None, help="max age in seconds for a cached baseline entry")
+    s.add_argument("--baseline-jobs", type=int, default=1, help="number of parallel baseline probes (default: 1, serial)")
     s.set_defaults(fn=cmd_run_start)
 
     s = sub.add_parser("status")
