@@ -94,6 +94,32 @@ def test_vitest_run_matches_separator_only_target(tmp_path):
     assert verdict2.target_outcome == NOT_FOUND
 
 
+def test_vitest_run_attaches_failure_message_for_separator_only_target(tmp_path):
+    """VitestAdapter.run() attaches target_failure when a separator-only target FAILS.
+
+    Exercises the normalise_id comparison inside the FAILED branch's inner loop so
+    that the failure-message lookup uses the normalised id, not the raw declared id.
+    """
+    from tddcli.adapters.base import FAILED
+
+    adapter = vitest_adapter_for(tmp_path)
+
+    suite_path = str(tmp_path / "frontend" / "a.test.ts")
+    canned_json = (
+        '{"duration": 0, "testResults": [{"name": "'
+        + suite_path
+        + '", "status": "failed", "assertionResults": ['
+        + '{"fullName": "someHelper formats a value", "status": "failed",'
+        + ' "failureMessages": ["Expected 1 to equal 2"]}'
+        + "]}]}"
+    )
+    adapter._run_suite = lambda cmd, env=None, timeout=None: (0, canned_json, "")
+
+    verdict = adapter.run("frontend::a.test.ts > someHelper > formats a value")
+    assert verdict.target_outcome == FAILED
+    assert "Expected 1 to equal 2" in (verdict.target_failure or "")
+
+
 def test_base_adapter_normalise_id_is_identity(tmp_path):
     """The base hook returns the id unchanged — pytest ids need no normalisation."""
     adapter = pytest_adapter_for(tmp_path)
