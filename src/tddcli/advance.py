@@ -58,6 +58,16 @@ def _stub_directive_issued(engine: Engine, cycle) -> bool:
     ) is not None
 
 
+def _last_outside_emitted(engine: Engine, cycle) -> str | None:
+    row = engine.ledger.one(
+        "SELECT detail FROM integrity_event"
+        " WHERE cycle_id = ? AND kind = 'undeclared_file_touched'"
+        " ORDER BY id DESC LIMIT 1",
+        (cycle["id"],),
+    )
+    return row["detail"] if row else None
+
+
 def _sanctioned_stubs(engine: Engine, cycle, implementation: list[str]) -> list[str]:
     """The files that answer a `create_stub` directive the tool itself issued.
 
@@ -89,16 +99,11 @@ def _stage_and_commit(engine: Engine, cycle, phase: str, declared) -> tuple[str 
                 json.dumps(classification.implementation),
             )
     if classification.outside:
-        _last = engine.ledger.one(
-            "SELECT detail FROM integrity_event"
-            " WHERE cycle_id = ? AND kind = 'undeclared_file_touched'"
-            " ORDER BY id DESC LIMIT 1",
-            (cycle["id"],),
-        )
-        if _last is None or _last["detail"] != json.dumps(classification.outside):
+        _detail = json.dumps(classification.outside)
+        if _last_outside_emitted(engine, cycle) != _detail:
             engine.ledger.event(
                 engine.run["id"], cycle["id"], "undeclared_file_touched",
-                json.dumps(classification.outside),
+                _detail,
             )
     paths = staging.paths_for_phase(phase, classification)
     message = staging.default_message(phase, declared, cycle["ordinal"])
