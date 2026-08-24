@@ -588,6 +588,9 @@ def cmd_run_start(args) -> Envelope:
     if contract_row["status"] == "undeclared" and not args.allow_undeclared:
         return failure("contract is undeclared; pass --allow-undeclared")
 
+    if args.baseline_jobs < 1:
+        return failure("--baseline-jobs must be >= 1")
+
     # R9.5c — scope baseline capture to plan-reachable projects unless opted out.
     declared_cycles = contract_mod.cycles_from_json(contract_row["declared_cycles"])
     if declared_cycles and not args.baseline_all:
