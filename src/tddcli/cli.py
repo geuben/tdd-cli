@@ -562,7 +562,11 @@ def _probe_projects(projects, worktree, ledger, on_progress, cfg=None, config_sh
         for name, project in projects.items():
             futures[pool.submit(_worker, name, project)] = name
         for done, future in enumerate(concurrent.futures.as_completed(futures), start=1):
-            name, verdict, collection, run_s, collect_s, elapsed_s = future.result()
+            proj_name = futures[future]
+            try:
+                name, verdict, collection, run_s, collect_s, elapsed_s = future.result()
+            except Exception as exc:
+                raise RuntimeError(f"{proj_name}: baseline probe failed: {exc}") from exc
             probes[name] = (verdict, collection)
             heartbeat(
                 event="baseline_captured",
@@ -663,21 +667,24 @@ def cmd_run_start(args) -> Envelope:
         # attempt — and must release the claim too, or the retry it invites is itself
         # refused.
         _cfg_sha = config_mod.config_sha(worktree)
-        probes, reused = _probe_projects(
-            probe_projects,
-            worktree,
-            ledger,
-            on_progress=lambda done, name: ledger.update_claim(
-                str(worktree),
-                projects_done=done,
-                current_project=name,
-            ),
-            cfg=cfg,
-            config_sha=_cfg_sha,
-            reuse_baselines=args.reuse_baselines,
-            reuse_max_age=args.reuse_max_age,
-            jobs=args.baseline_jobs,
-        )
+        try:
+            probes, reused = _probe_projects(
+                probe_projects,
+                worktree,
+                ledger,
+                on_progress=lambda done, name: ledger.update_claim(
+                    str(worktree),
+                    projects_done=done,
+                    current_project=name,
+                ),
+                cfg=cfg,
+                config_sha=_cfg_sha,
+                reuse_baselines=args.reuse_baselines,
+                reuse_max_age=args.reuse_max_age,
+                jobs=args.baseline_jobs,
+            )
+        except RuntimeError as exc:
+            return failure(str(exc))
         for name, (verdict, collection) in probes.items():
             if name in reused:
                 continue
