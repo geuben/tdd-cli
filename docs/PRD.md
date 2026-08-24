@@ -663,6 +663,17 @@ Adapter.typecheck(project)               -> GateResult
 - **R10.5** Where per-file collection still yields nothing usable, the tool falls back to the
   contract's declared test id and records the degradation.
 - **R10.6** Adding an adapter requires no change to core logic.
+- **R10.8** `Adapter.normalise_id(test_id) -> str` is the per-adapter target-matching hook.
+  The base implementation is an identity (no rewrite); subclasses override when the runner's
+  collected ids differ from a natural human spelling. `VitestAdapter` overrides it to
+  canonicalise the describe/test separator: vitest's `fullName` joins ancestor titles and the
+  test title with a **space**, but a human or planner naturally writes ` > ` between nesting
+  levels. `normalise_id` strips the `<project>::` prefix, splits off the structural ` > ` after
+  the file path, collapses any further ` > ` separators in the name to a single space, and
+  re-qualifies. The result: a declared id that differs from the collected id only by the
+  separator is matched silently — no `declared_test_mismatch` event and no extra advance round
+  trip. `PytestAdapter` inherits the identity hook (pytest node ids use `::` and carry no
+  describe/test separator ambiguity).
 - **R10.7** `collectable()` is a single **whole-suite** `--collect-only` (pytest) / `vitest list`
   (vitest) probe used only by `tdd doctor` (§8.1, issues #3/#5). `collect()` now opens with the
   same *shape* (R10.3) but remains a distinct path: `collectable()` reports whether a suite can be
