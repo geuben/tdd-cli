@@ -47,6 +47,24 @@ class VitestAdapter(Adapter):
     def stub_hint(self) -> str:
         return "`throw new Error(\"not implemented\")` in every body"
 
+    def normalise_id(self, test_id: str) -> str:
+        """Canonicalise the describe/test separator for target matching.
+
+        vitest's `fullName` joins ancestor titles and the test title with a space,
+        so collected ids look like `frontend::a.test.ts > someHelper formats a value`.
+        A planner naturally writes ` > ` at each nesting level. Treating both as
+        equivalent prevents a formatting-only difference from producing NOT_FOUND.
+
+        The structural ` > ` between the file and the name is preserved; only the
+        ` > ` separators inside the name part are collapsed to a space.
+        """
+        raw = self.strip(test_id)
+        file_part, sep, remainder = raw.partition(" > ")
+        if not sep:
+            return test_id
+        name = " ".join(part.strip() for part in remainder.split(" > "))
+        return self.qualify(f"{file_part} > {name}")
+
     def _id_for(self, suite_path: str, full_name: str) -> str:
         abs_path = Path(suite_path)
         try:
