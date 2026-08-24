@@ -6,6 +6,7 @@ No command accepts a phase, a cycle number, or executor identity (R8.3).
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import difflib
 import json
 import os
@@ -492,57 +493,86 @@ def cmd_plan_register(args) -> Envelope:
     )
 
 
-def _probe_projects(projects, worktree, ledger, on_progress, cfg=None, config_sha=None, reuse_baselines=False, reuse_max_age=None):
+def _probe_projects(projects, worktree, ledger, on_progress, cfg=None, config_sha=None, reuse_baselines=False, reuse_max_age=None, jobs: int = 1):
     """Probe a mapping of projects' baselines (R9.5a): run + collect, timing each,
     emitting a `baseline_captured` heartbeat, and calling `on_progress(done, name)`.
     Returns `({name: (verdict, collection)}, reused_set)`.
     """
     probes = {}
     reused = set()
-    for done, (name, project) in enumerate(projects.items(), start=1):
-        adapter = adapters.build(project, worktree)
-        if reuse_baselines and cfg is not None and config_sha is not None:
-            roots = cfg.upstream_producer_roots(name)
-            tree_hash = gitutil.tree_hash(worktree, roots)
-            cached = ledger.cached_baseline(name, tree_hash, config_sha, max_age_s=reuse_max_age)
-            if cached is not None:
-                verdict = adapters.base.Verdict(project=name, adapter=adapter.name, failed=json.loads(cached["failing"]))
-                collection = adapters.base.Collection(tests=set(json.loads(cached["tests"])), failed_files=json.loads(cached["failed_files"]))
-                probes[name] = (verdict, collection)
-                reused.add(name)
-                heartbeat(
-                    event="baseline_reused",
-                    project=name,
-                    test_count=len(collection.tests),
-                    tree_hash=tree_hash[:8],
+
+    if jobs <= 1:
+        for done, (name, project) in enumerate(projects.items(), start=1):
+            adapter = adapters.build(project, worktree)
+            if reuse_baselines and cfg is not None and config_sha is not None:
+                roots = cfg.upstream_producer_roots(name)
+                tree_hash = gitutil.tree_hash(worktree, roots)
+                cached = ledger.cached_baseline(name, tree_hash, config_sha, max_age_s=reuse_max_age)
+                if cached is not None:
+                    verdict = adapters.base.Verdict(project=name, adapter=adapter.name, failed=json.loads(cached["failing"]))
+                    collection = adapters.base.Collection(tests=set(json.loads(cached["tests"])), failed_files=json.loads(cached["failed_files"]))
+                    probes[name] = (verdict, collection)
+                    reused.add(name)
+                    heartbeat(
+                        event="baseline_reused",
+                        project=name,
+                        test_count=len(collection.tests),
+                        tree_hash=tree_hash[:8],
+                    )
+                    on_progress(done, name)
+                    continue
+            started = time.monotonic()
+            verdict = adapter.run(None)
+            ran = time.monotonic()
+            collection = adapter.collect()
+            elapsed = time.monotonic() - started
+            probes[name] = (verdict, collection)
+            # Split, not just totalled: `run` and `collect` have unrelated cost models
+            # — one scales with tests, the other with files — and a single number sends
+            # whoever asks "why was that slow?" out of the tool to measure by hand.
+            heartbeat(
+                event="baseline_captured",
+                project=name,
+                test_count=len(collection.tests),
+                elapsed_s=round(elapsed, 2),
+                run_s=round(ran - started, 2),
+                collect_s=round(elapsed - (ran - started), 2),
+            )
+            if reuse_baselines and cfg is not None and config_sha is not None:
+                ledger.cache_baseline(
+                    name, tree_hash, config_sha,
+                    failing=sorted(verdict.failed),
+                    tests=sorted(collection.tests),
+                    failed_files=collection.failed_files,
                 )
-                on_progress(done, name)
-                continue
+            on_progress(done, name)
+        return probes, reused
+
+    def _worker(name, project):
+        adapter = adapters.build(project, worktree)
         started = time.monotonic()
         verdict = adapter.run(None)
         ran = time.monotonic()
         collection = adapter.collect()
         elapsed = time.monotonic() - started
-        probes[name] = (verdict, collection)
-        # Split, not just totalled: `run` and `collect` have unrelated cost models
-        # — one scales with tests, the other with files — and a single number sends
-        # whoever asks "why was that slow?" out of the tool to measure by hand.
-        heartbeat(
-            event="baseline_captured",
-            project=name,
-            test_count=len(collection.tests),
-            elapsed_s=round(elapsed, 2),
-            run_s=round(ran - started, 2),
-            collect_s=round(elapsed - (ran - started), 2),
-        )
-        if reuse_baselines and cfg is not None and config_sha is not None:
-            ledger.cache_baseline(
-                name, tree_hash, config_sha,
-                failing=sorted(verdict.failed),
-                tests=sorted(collection.tests),
-                failed_files=collection.failed_files,
+        return name, verdict, collection, round(ran - started, 2), round(elapsed - (ran - started), 2), round(elapsed, 2)
+
+    futures = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+        for name, project in projects.items():
+            futures[pool.submit(_worker, name, project)] = name
+        for done, future in enumerate(concurrent.futures.as_completed(futures), start=1):
+            name, verdict, collection, run_s, collect_s, elapsed_s = future.result()
+            probes[name] = (verdict, collection)
+            heartbeat(
+                event="baseline_captured",
+                project=name,
+                test_count=len(collection.tests),
+                elapsed_s=elapsed_s,
+                run_s=run_s,
+                collect_s=collect_s,
             )
-        on_progress(done, name)
+            on_progress(done, name)
     return probes, reused
 
 
@@ -646,6 +676,7 @@ def cmd_run_start(args) -> Envelope:
             config_sha=_cfg_sha,
             reuse_baselines=args.reuse_baselines,
             reuse_max_age=args.reuse_max_age,
+            jobs=args.baseline_jobs,
         )
         for name, (verdict, collection) in probes.items():
             if name in reused:
