@@ -154,6 +154,21 @@ def test_meta_survives_storage_round_trip():
     assert restored[0].meta == {"covers": ["B1", "B2"], "owner": "alice"}
 
 
+def test_unknown_per_cycle_keys_are_silently_ignored():
+    from tddcli.contract import parse_cycle
+
+    raw = {
+        "n": 1,
+        "project": "backend",
+        "test": "tests/test_x.py::test_one",
+        "future_key": "some-value",
+        "another_unknown": 42,
+    }
+    # Must not raise — unknown keys are tolerated (leniency pin)
+    cycle = parse_cycle(raw, None)
+    assert cycle.ordinal == 1
+
+
 def test_non_mapping_meta_raises_contract_error():
     from tddcli.contract import ContractError, parse_cycle
 
