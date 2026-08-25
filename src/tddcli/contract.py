@@ -52,6 +52,7 @@ class DeclaredCycle:
             "stub_expected": self.stub_expected,
             "modifies_tests": self.modifies_tests,
             "commit_messages": self.commit_messages,
+            "meta": self.meta,
         }
 
     @staticmethod
@@ -66,6 +67,7 @@ class DeclaredCycle:
             stub_expected=d.get("stub_expected", []),
             modifies_tests=d.get("modifies_tests", []),
             commit_messages=d.get("commit_messages", {}),
+            meta=d.get("meta", {}),
         )
 
 
