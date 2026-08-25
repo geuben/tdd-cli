@@ -39,6 +39,7 @@ class DeclaredCycle:
     stub_expected: list[str] = field(default_factory=list)
     modifies_tests: list[str] = field(default_factory=list)
     commit_messages: dict[str, str] = field(default_factory=dict)
+    meta: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -165,6 +166,11 @@ def parse_cycle(raw: dict, config: Config | None) -> DeclaredCycle:
                 raise ContractError(f"cycle {ordinal}: commit_{phase_key} must be a string")
             commits[phase_key] = msg
 
+    meta_raw = raw.get("meta")
+    if meta_raw is not None and not isinstance(meta_raw, dict):
+        raise ContractError(f"cycle {ordinal}: meta must be a mapping, got {type(meta_raw).__name__}")
+    meta = dict(meta_raw) if meta_raw is not None else {}
+
     return DeclaredCycle(
         ordinal=ordinal,
         kind=kind,
@@ -175,6 +181,7 @@ def parse_cycle(raw: dict, config: Config | None) -> DeclaredCycle:
         stub_expected=_as_list(raw.get("stub_expected"), "stub_expected", ordinal),
         modifies_tests=_as_list(raw.get("modifies_tests"), "modifies_tests", ordinal),
         commit_messages=commits,
+        meta=meta,
     )
 
 
