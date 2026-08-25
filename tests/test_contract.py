@@ -137,3 +137,16 @@ cycles:
 def test_cycle_without_project_hard_fails():
     with pytest.raises(ContractError, match="no project declared"):
         parse('---\ncycles:\n  - n: 1\n    test: "a::x"\n---\n', "tasks/p.md")
+
+
+def test_parse_cycle_accepts_meta_mapping():
+    from tddcli.contract import parse_cycle
+
+    raw = {
+        "n": 1,
+        "project": "backend",
+        "test": "tests/test_x.py::test_one",
+        "meta": {"covers": ["B1", "B2"], "owner": "alice"},
+    }
+    cycle = parse_cycle(raw, None)
+    assert cycle.meta == {"covers": ["B1", "B2"], "owner": "alice"}
