@@ -140,7 +140,7 @@ def test_cycle_without_project_hard_fails():
 
 
 def test_meta_survives_storage_round_trip():
-    from tddcli.contract import DeclaredCycle, STANDARD, cycles_from_json, cycles_to_json
+    from tddcli.contract import STANDARD, DeclaredCycle, cycles_from_json, cycles_to_json
 
     cycle = DeclaredCycle(
         ordinal=1,
