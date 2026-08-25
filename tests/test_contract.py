@@ -139,6 +139,21 @@ def test_cycle_without_project_hard_fails():
         parse('---\ncycles:\n  - n: 1\n    test: "a::x"\n---\n', "tasks/p.md")
 
 
+def test_meta_survives_storage_round_trip():
+    from tddcli.contract import DeclaredCycle, STANDARD, cycles_from_json, cycles_to_json
+
+    cycle = DeclaredCycle(
+        ordinal=1,
+        kind=STANDARD,
+        projects=["backend"],
+        tests=["tests/test_x.py::test_one"],
+        meta={"covers": ["B1", "B2"], "owner": "alice"},
+    )
+    restored = cycles_from_json(cycles_to_json([cycle]))
+    assert len(restored) == 1
+    assert restored[0].meta == {"covers": ["B1", "B2"], "owner": "alice"}
+
+
 def test_parse_cycle_accepts_meta_mapping():
     from tddcli.contract import parse_cycle
 
