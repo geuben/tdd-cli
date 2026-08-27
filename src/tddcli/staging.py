@@ -71,6 +71,9 @@ def classify(
         if config.is_generated(rel):          # R7.7
             out.generated.append(rel)
             continue
+        if rel in (ancillary or set()):
+            out.ancillary.append(rel)
+            continue
         owner = config.owning_project(rel)
         if owner is None or owner.root not in roots:
             out.outside.append(rel)
@@ -92,6 +95,7 @@ def paths_for_phase(phase: str, classification: Classification) -> list[str]:
     # GREEN and REFACTOR take everything authored inside the cycle's projects.
     return sorted(
         classification.tests + classification.stubs + classification.implementation
+        + classification.ancillary
     )
 
 
