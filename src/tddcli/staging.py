@@ -31,6 +31,7 @@ class Classification:
     outside: list[str] = field(default_factory=list)      # outside every project root
     excluded: list[str] = field(default_factory=list)     # pre-existing dirt (R9.21)
     ignored: list[str] = field(default_factory=list)      # build output; never authored
+    ancillary: list[str] = field(default_factory=list)    # plan-declared cross-project paths
 
     @property
     def undeclared_impl(self) -> list[str]:
@@ -54,6 +55,7 @@ def classify(
     cycle_projects: list[str],
     declared: DeclaredCycle | None,
     excluded: set[str],
+    ancillary: set[str] | None = None,
 ) -> Classification:
     out = Classification()
     stub_set = set(declared.stub_expected) if declared else set()
