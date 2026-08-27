@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 from conftest import run_cli, write_plan
 
 
@@ -30,6 +28,8 @@ def test_plan_register_persists_ancillary_files(repo, ledger_home):
     plan_rel = write_plan(repo, PLAN_WITH_ANCILLARY, name="tasks/plan.md")
     result = run_cli(repo, "plan", "register", plan_rel)
     assert result["ok"] is True
+
+    import json
 
     ledger = Ledger(gitutil.repo_identity(repo))
     row = ledger.one(
