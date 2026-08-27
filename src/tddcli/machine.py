@@ -60,6 +60,7 @@ class Engine:
         )
         self.declared = contract_mod.cycles_from_json(self.contract_row["declared_cycles"])
         self.annotation_keys = json.loads(self.contract_row["annotation_keys"])
+        self.ancillary_files = json.loads(self.contract_row["ancillary_files"])
         self.excluded = set(json.loads(run_row["preexisting_dirty"]))
 
     # -- helpers ---------------------------------------------------------
