@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from conftest import run_cli, write_plan
 
-
 PLAN_WITH_ANCILLARY = """---
 cycles:
   - n: 1
