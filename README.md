@@ -199,6 +199,8 @@ cycles:
     stub_expected: ["app/exception_map.py"]
     commit_red: "test: unmapped exception is not swallowed"
     commit_green: "feat: domain exception map skeleton"
+    meta:                           # optional authored-at-plan-time metadata; opaque to the tool
+      covers: ["B1", "B2"]         # any mapping is valid; contents are tool-opaque
   - n: 8
     project: backend
     pin_cycle: true                 # characterisation; passes on arrival by design
@@ -212,6 +214,15 @@ cycles:
 annotation_keys: ["literal_detail_handlers_kept"]
 ---
 ```
+
+**Per-cycle keys:** `n` (ordinal), `project`/`projects`, `test`/`tests`, `title`, `files`,
+`stub_expected`, `modifies_tests`, `commit_red`, `commit_green`, `commit_refactor`,
+`commit_pin`, `pin_cycle`, `contract_cycle`, `refactor_cycle`, and `meta`.
+`meta` is a reserved passthrough mapping: its *shape* is validated (must be a mapping),
+but its *contents* are opaque to the tool — any key/value pairs are accepted and
+round-tripped intact through `cycles_to_json`/`cycles_from_json`. Use it for
+authored-at-plan-time metadata that external tooling (e.g. a behaviour-coverage checker)
+needs to read back. Other unknown per-cycle keys are silently ignored.
 
 Absent front-matter is legitimate — the run proceeds as `undeclared` with
 `--allow-undeclared`, and fidelity metrics are unavailable. **Malformed** front-matter
