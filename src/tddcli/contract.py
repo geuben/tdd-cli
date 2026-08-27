@@ -77,6 +77,7 @@ class PlanContract:
     status: str                      # declared | undeclared
     cycles: list[DeclaredCycle]
     annotation_keys: list[str]
+    ancillary_files: list[str] = field(default_factory=list)
     blob_sha: str | None = None
     commit_sha: str | None = None
 
@@ -215,11 +216,14 @@ def parse(text: str, plan_path: str, config: Config | None = None) -> PlanContra
     if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys):
         raise ContractError("annotation_keys must be a list of strings")
 
+    anc = data.get("ancillary_files", [])
+
     return PlanContract(
         plan_path=plan_path,
         status="declared",
         cycles=cycles,
         annotation_keys=keys,
+        ancillary_files=anc,
     )
 
 
