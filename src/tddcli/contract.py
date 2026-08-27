@@ -217,6 +217,8 @@ def parse(text: str, plan_path: str, config: Config | None = None) -> PlanContra
         raise ContractError("annotation_keys must be a list of strings")
 
     anc = data.get("ancillary_files", [])
+    if not isinstance(anc, list) or not all(isinstance(p, str) for p in anc):
+        raise ContractError("ancillary_files must be a list of strings")
 
     return PlanContract(
         plan_path=plan_path,
