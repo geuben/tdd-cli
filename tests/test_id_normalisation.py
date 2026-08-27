@@ -1,0 +1,127 @@
+"""Tests for per-adapter target-id normalisation (issue #57).
+
+Covers:
+  - Base Adapter identity hook (pytest ids are byte-for-byte unchanged)
+  - VitestAdapter separator canonicalisation
+  - VitestAdapter.run() matches a target differing only by the describe/test separator
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from tddcli import config as config_mod
+from tddcli.adapters.pytest_adapter import PytestAdapter
+from tddcli.adapters.vitest_adapter import VitestAdapter
+
+PYTEST_TOML = """
+[project.backend]
+root       = "backend"
+adapter    = "pytest"
+test_paths = ["tests/"]
+"""
+
+VITEST_TOML = """
+[project.frontend]
+root       = "frontend"
+adapter    = "vitest"
+test_paths = ["**/*.test.ts"]
+"""
+
+
+def vitest_adapter_for(tmp_path: Path) -> VitestAdapter:
+    (tmp_path / "tdd.toml").write_text(VITEST_TOML)
+    (tmp_path / "frontend").mkdir()
+    cfg = config_mod.load(tmp_path)
+    return VitestAdapter(cfg.project("frontend"), tmp_path)
+
+
+def pytest_adapter_for(tmp_path: Path) -> PytestAdapter:
+    (tmp_path / "tdd.toml").write_text(PYTEST_TOML)
+    (tmp_path / "backend").mkdir()
+    cfg = config_mod.load(tmp_path)
+    return PytestAdapter(cfg.project("backend"), tmp_path)
+
+
+def test_vitest_normalise_id_collapses_describe_separator(tmp_path):
+    """VitestAdapter.normalise_id folds ' > ' between nesting levels to a space."""
+    adapter = vitest_adapter_for(tmp_path)
+
+    # Primary case: ' > ' between describe and test name is collapsed to a space
+    declared = "frontend::a.test.ts > someHelper > formats a value"
+    canonical = "frontend::a.test.ts > someHelper formats a value"
+    assert adapter.normalise_id(declared) == canonical
+
+    # Idempotent: already-canonical (space-joined) id is returned unchanged
+    assert adapter.normalise_id(canonical) == canonical
+
+    # Multi-level: ' > ' at every nesting level all collapse
+    multi = "frontend::a.test.ts > a > b > c"
+    assert adapter.normalise_id(multi) == "frontend::a.test.ts > a b c"
+
+    # No ' > ' after the file segment (unusual, file-only) — returned unchanged
+    file_only = "frontend::a.test.ts"
+    assert adapter.normalise_id(file_only) == file_only
+
+
+def test_vitest_run_matches_separator_only_target(tmp_path):
+    """VitestAdapter.run() returns PASSED for a target differing only by the describe separator.
+
+    Also verifies a genuinely different target still returns NOT_FOUND (not over-matched).
+    """
+    from tddcli.adapters.base import NOT_FOUND, PASSED
+
+    adapter = vitest_adapter_for(tmp_path)
+
+    # Canned JSON report: one passing test with space-joined fullName
+    suite_path = str(tmp_path / "frontend" / "a.test.ts")
+    canned_json = (
+        '{"duration": 0, "testResults": [{"name": "'
+        + suite_path
+        + '", "status": "passed", "assertionResults": ['
+        + '{"fullName": "someHelper formats a value", "status": "passed", "failureMessages": []}'
+        + "]}]}"
+    )
+    adapter._run_suite = lambda cmd, env=None, timeout=None: (0, canned_json, "")
+
+    # The collected id is "frontend::a.test.ts > someHelper formats a value"
+    # The declared target uses ' > ' between describe and name — should still match
+    verdict = adapter.run("frontend::a.test.ts > someHelper > formats a value")
+    assert verdict.target_outcome == PASSED
+
+    # A genuinely different target must NOT match (normalisation must not over-match)
+    verdict2 = adapter.run("frontend::a.test.ts > someHelper > a different test")
+    assert verdict2.target_outcome == NOT_FOUND
+
+
+def test_vitest_run_attaches_failure_message_for_separator_only_target(tmp_path):
+    """VitestAdapter.run() attaches target_failure when a separator-only target FAILS.
+
+    Exercises the normalise_id comparison inside the FAILED branch's inner loop so
+    that the failure-message lookup uses the normalised id, not the raw declared id.
+    """
+    from tddcli.adapters.base import FAILED
+
+    adapter = vitest_adapter_for(tmp_path)
+
+    suite_path = str(tmp_path / "frontend" / "a.test.ts")
+    canned_json = (
+        '{"duration": 0, "testResults": [{"name": "'
+        + suite_path
+        + '", "status": "failed", "assertionResults": ['
+        + '{"fullName": "someHelper formats a value", "status": "failed",'
+        + ' "failureMessages": ["Expected 1 to equal 2"]}'
+        + "]}]}"
+    )
+    adapter._run_suite = lambda cmd, env=None, timeout=None: (0, canned_json, "")
+
+    verdict = adapter.run("frontend::a.test.ts > someHelper > formats a value")
+    assert verdict.target_outcome == FAILED
+    assert "Expected 1 to equal 2" in (verdict.target_failure or "")
+
+
+def test_base_adapter_normalise_id_is_identity(tmp_path):
+    """The base hook returns the id unchanged — pytest ids need no normalisation."""
+    adapter = pytest_adapter_for(tmp_path)
+    test_id = "backend::tests/test_x.py::test_y"
+    assert adapter.normalise_id(test_id) == test_id
