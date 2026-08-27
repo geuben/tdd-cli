@@ -414,6 +414,7 @@ streams of events use it:
 | Event | When | Fields |
 |---|---|---|
 | `baseline_captured` | after each project's baseline (§8.2) | `project`, `test_count`, `elapsed_s`, `run_s`, `collect_s` |
+| `baseline_reused` | when `--reuse-baselines` hits a cache entry (§8.2, R9.5e) | `project`, `test_count`, `tree_hash` (first 8 chars) |
 | `command_timing` | per subprocess, only under `TDD_TIMING=1` | `label`, `command`, `cwd`, `duration_ms`, `exit_code` |
 
 `run_s` and `collect_s` are reported separately because their cost models are unrelated — a suite
@@ -550,6 +551,19 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   be labelled regressions. The advance reply is `resolve_blocker` with kind
   `no_baseline_for_project`, directing the agent to file the blocker and recover via
   `resume --unblock --accept-failures`, which inserts the missing baseline row.
+- **R9.5e** `run start --reuse-baselines` enables opt-in cross-run baseline reuse. The cache key
+  is `(project, tree_hash(project root ∪ upstream producer roots), config_sha)`, where
+  `upstream_producer_roots` is the fixpoint closure of all artifact-graph producers that feed
+  into the project (a `backend` edit regenerates an artifact `svc` consumes, so the key for
+  `svc` covers both roots). On a cache hit, the cached failing set and collection snapshot are
+  reused verbatim — no suite is run for that project — and a `baseline_reused` heartbeat is
+  emitted to stderr. Reuse is **loud**: the baseline row carries `source = "reused"` (vs.
+  `"probed"` for a fresh probe), and a `baseline_reused` integrity event lists the reused
+  projects. The default (`--reuse-baselines` absent) neither reads nor writes the cache, leaving
+  behaviour byte-identical to before. An optional TTL (`--reuse-max-age <seconds>`) ignores
+  entries older than that many seconds, bounding how stale a reused baseline may be. A stale or
+  wrong reused baseline is always recoverable via `resume --unblock --accept-failures`
+  (R9.5b), which treats a reused baseline row as an ordinary row.
 - **R9.6** Baseline failures are subtracted from `other_failures` in every subsequent invocation.
 - **R9.7** A baseline failure that starts passing is recorded, not ignored.
 
@@ -565,9 +579,12 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
 - **R9.11** Lint and typecheck results are part of the close-sweep verdict, surfaced alongside
   test failures rather than discovered later at commit time.
 - **R9.12** Before a run starts and at every cycle close, declared artifacts are checked for
-  staleness against their producer. A stale artifact emits `stale_artifact` and blocks the close
-  until regenerated — this is one of the few hard gates (§12), because a stale contract produces
-  a *green* wrong answer.
+  staleness against their producer. When the tool cannot resolve staleness itself (no `regenerate`
+  command, or the regenerate hook produced no commit), it emits `stale_artifact` and blocks the
+  close — this is one of the few hard gates (§12), because a stale contract produces a *green*
+  wrong answer. When the tool resolves staleness by regenerating and committing, it records
+  resolution in `artifact_check.regenerated` and the friction log surfaces it as a benign
+  "Artifacts auto-regenerated" header line; no `stale_artifact` event is emitted.
 
 ### 9.5 Staging and commits
 
@@ -604,9 +621,11 @@ The CLI stages; it never delegates staging to the agent, and it never runs `git 
 - **R9.19** Committing is refused while a sensitivity check is open (§8.4).
 - **R9.20** When an artifact is stale, the **tool** runs its declared `regenerate` command; the
   agent is informed, not asked. The regenerated paths are staged and committed **separately** from
-  the GREEN commit, as `chore(<artifact>): regenerate`, and an `artifact_regenerated` event is
-  recorded. Hand-written and generated changes stay independently reviewable, which matters most
-  on exactly the contract cycles that touch both.
+  the GREEN commit, as `chore(<artifact>): regenerate`. Resolution is recorded as
+  `artifact_check.regenerated = 1` (set only when the hook produces a commit, i.e. `sha` is
+  truthy); the friction log reads this column and renders a benign run-level line — "Artifacts
+  auto-regenerated: `<name>`" — rather than an integrity event. Hand-written and generated changes
+  stay independently reviewable, which matters most on exactly the contract cycles that touch both.
 - **R9.21** `run start` refuses a dirty working tree unless `--allow-dirty` is given. When allowed,
   the pre-existing modified and untracked set is recorded and permanently excluded from authorship
   attribution, so pre-existing edits are never absorbed into the first cycle's commits.

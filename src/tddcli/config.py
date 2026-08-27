@@ -221,6 +221,19 @@ class Config:
             return self._root_project(upstream.produced_by)
         return produced_by if produced_by in self.projects else None
 
+    def upstream_producer_roots(self, project: str) -> list[str]:
+        sources = {project}
+        changed = True
+        while changed:
+            changed = False
+            for art in self.artifacts.values():
+                if any(c in sources for c in art.consumed_by):
+                    root = self._root_project(art.produced_by)
+                    if root is not None and root not in sources:
+                        sources.add(root)
+                        changed = True
+        return sorted({self.projects[n].root for n in sources})
+
     def reachable_projects(self, declared: list[str]) -> list[str]:
         declared_set = set(declared)
         reachable = set(declared)

@@ -199,6 +199,8 @@ cycles:
     stub_expected: ["app/exception_map.py"]
     commit_red: "test: unmapped exception is not swallowed"
     commit_green: "feat: domain exception map skeleton"
+    meta:                           # optional authored-at-plan-time metadata; opaque to the tool
+      covers: ["B1", "B2"]         # any mapping is valid; contents are tool-opaque
   - n: 8
     project: backend
     pin_cycle: true                 # characterisation; passes on arrival by design
@@ -212,6 +214,15 @@ cycles:
 annotation_keys: ["literal_detail_handlers_kept"]
 ---
 ```
+
+**Per-cycle keys:** `n` (ordinal), `project`/`projects`, `test`/`tests`, `title`, `files`,
+`stub_expected`, `modifies_tests`, `commit_red`, `commit_green`, `commit_refactor`,
+`commit_pin`, `pin_cycle`, `contract_cycle`, `refactor_cycle`, and `meta`.
+`meta` is a reserved passthrough mapping: its *shape* is validated (must be a mapping),
+but its *contents* are opaque to the tool — any key/value pairs are accepted and
+round-tripped intact through `cycles_to_json`/`cycles_from_json`. Use it for
+authored-at-plan-time metadata that external tooling (e.g. a behaviour-coverage checker)
+needs to read back. Other unknown per-cycle keys are silently ignored.
 
 Absent front-matter is legitimate — the run proceeds as `undeclared` with
 `--allow-undeclared`, and fidelity metrics are unavailable. **Malformed** front-matter
@@ -389,6 +400,29 @@ Pass `--baseline-all` to probe every project in `tdd.toml` regardless:
 
 Use this when a cycle may edit files outside the predicted reachable set and you want every
 project baselined up front rather than hitting the `no_baseline_for_project` escape hatch later.
+
+### Reusing baselines across runs (R9.5e)
+
+On repos where runs are frequent and most projects change rarely, re-probing unchanged suites
+wastes time. Pass `--reuse-baselines` to cache probe results and skip re-probing on the next run
+when nothing in the project changed:
+
+    tdd run start --plan tasks/plan.md --reuse-baselines
+
+The cache key is `(project, tree_hash(project root ∪ upstream producer roots), config_sha)`.
+If the key matches a previous entry, the cached failing set and collection snapshot are used —
+no suite is run — and a `baseline_reused` heartbeat appears on stderr. The baseline row carries
+`source = "reused"` for auditability, and a `baseline_reused` integrity event lists which
+projects were skipped. Without the flag, the cache is neither read nor written.
+
+A stale or wrong reused baseline is always recoverable via `resume --unblock --accept-failures`
+(see below) — reuse is loud by design, never silent.
+
+To limit how old a cached entry may be, pass `--reuse-max-age <seconds>`:
+
+    tdd run start --plan tasks/plan.md --reuse-baselines --reuse-max-age 3600
+
+Entries older than the given threshold are ignored and re-probed fresh.
 
 ### When a sweep reaches an un-baselined project (R9.5d)
 

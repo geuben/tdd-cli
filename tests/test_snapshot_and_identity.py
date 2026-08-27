@@ -5,6 +5,7 @@ from pathlib import Path
 
 from tddcli import config as config_mod
 from tddcli import identity, snapshot
+from tddcli.ledger import Ledger
 
 
 def cfg_for(repo: Path):
@@ -104,3 +105,47 @@ def test_last_model_wins_when_a_session_switches(tmp_path, monkeypatch):
     monkeypatch.setattr(identity, "TRANSCRIPT_ROOT", root)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "s")
     assert identity.resolve(None).model == "claude-sonnet-4-6"
+
+
+def test_cached_baseline_respects_max_age(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    monkeypatch.setenv("TDD_LEDGER_HOME", str(tmp_path))
+    ledger = Ledger(tmp_path / "repo")
+
+    ledger.cache_baseline(
+        "svc", "treeA", "cfgA",
+        failing=[],
+        tests=["svc::t::a"],
+        failed_files={},
+    )
+    # back-date the entry to 2 minutes ago
+    old_ts = (datetime.now(timezone.utc) - timedelta(seconds=120)).isoformat()
+    ledger.db.execute(
+        "UPDATE baseline_cache SET created_at = ? WHERE project = 'svc'", (old_ts,)
+    )
+    ledger.db.commit()
+
+    # with a 60-second TTL the entry is too old → None
+    assert ledger.cached_baseline("svc", "treeA", "cfgA", max_age_s=60) is None
+    # with no TTL the entry is still returned
+    assert ledger.cached_baseline("svc", "treeA", "cfgA") is not None
+
+
+def test_baseline_cache_round_trips_by_content_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("TDD_LEDGER_HOME", str(tmp_path))
+    ledger = Ledger(tmp_path / "repo")
+
+    ledger.cache_baseline(
+        "svc", "treeA", "cfgA",
+        failing=["svc::t::a"],
+        tests=["svc::t::a", "svc::t::b"],
+        failed_files={},
+    )
+
+    row = ledger.cached_baseline("svc", "treeA", "cfgA")
+    assert json.loads(row["failing"]) == ["svc::t::a"]
+    assert json.loads(row["tests"]) == ["svc::t::a", "svc::t::b"]
+    assert json.loads(row["failed_files"]) == {}
+
+    assert ledger.cached_baseline("svc", "treeB", "cfgA") is None
+    assert ledger.cached_baseline("svc", "treeA", "cfgB") is None
