@@ -239,7 +239,7 @@ class Engine:
             if not art.check and not art.regenerate:
                 continue
             stale = self._artifact_stale(art)
-            self.ledger.insert(
+            check_id = self.ledger.insert(
                 "artifact_check",
                 run_id=self.run["id"],
                 cycle_id=cycle_row["id"] if cycle_row else None,
@@ -250,10 +250,7 @@ class Engine:
             )
             if not stale:
                 continue
-            self.ledger.event(
-                self.run["id"], cycle_row["id"] if cycle_row else None,
-                "stale_artifact", art.name,
-            )
+            resolved = False
             if art.regenerate:
                 adapters.base.run_command(art.regenerate, self.worktree)
                 # The artifact's own path is staged even without `generated = true`,
@@ -281,7 +278,14 @@ class Engine:
                         files=json.dumps(staged),
                         at=now(),
                     )
+                    self.ledger.update("artifact_check", check_id, regenerated=1)
+                    resolved = True
                 regenerated.append(art.name)
+            if not resolved:
+                self.ledger.event(
+                    self.run["id"], cycle_row["id"] if cycle_row else None,
+                    "stale_artifact", art.name,
+                )
         return regenerated
 
     def _artifact_stale(self, art) -> bool:

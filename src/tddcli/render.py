@@ -34,6 +34,12 @@ def friction_log(ledger: Ledger, run) -> str:
     baselines = ledger.baselines(run["id"])
     a("- Baseline failures at start: "
       + (", ".join(f"{k}={len(v)}" for k, v in baselines.items()) or "none"))
+    regen_rows = ledger.all(
+        "SELECT DISTINCT artifact FROM artifact_check WHERE run_id = ? AND regenerated = 1",
+        (run["id"],),
+    )
+    if regen_rows:
+        a("- Artifacts auto-regenerated: " + _fmt_list([r["artifact"] for r in regen_rows]))
     a("")
 
     declared = json.loads(contract["declared_cycles"])

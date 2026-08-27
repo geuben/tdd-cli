@@ -579,9 +579,12 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
 - **R9.11** Lint and typecheck results are part of the close-sweep verdict, surfaced alongside
   test failures rather than discovered later at commit time.
 - **R9.12** Before a run starts and at every cycle close, declared artifacts are checked for
-  staleness against their producer. A stale artifact emits `stale_artifact` and blocks the close
-  until regenerated — this is one of the few hard gates (§12), because a stale contract produces
-  a *green* wrong answer.
+  staleness against their producer. When the tool cannot resolve staleness itself (no `regenerate`
+  command, or the regenerate hook produced no commit), it emits `stale_artifact` and blocks the
+  close — this is one of the few hard gates (§12), because a stale contract produces a *green*
+  wrong answer. When the tool resolves staleness by regenerating and committing, it records
+  resolution in `artifact_check.regenerated` and the friction log surfaces it as a benign
+  "Artifacts auto-regenerated" header line; no `stale_artifact` event is emitted.
 
 ### 9.5 Staging and commits
 
@@ -618,9 +621,11 @@ The CLI stages; it never delegates staging to the agent, and it never runs `git 
 - **R9.19** Committing is refused while a sensitivity check is open (§8.4).
 - **R9.20** When an artifact is stale, the **tool** runs its declared `regenerate` command; the
   agent is informed, not asked. The regenerated paths are staged and committed **separately** from
-  the GREEN commit, as `chore(<artifact>): regenerate`, and an `artifact_regenerated` event is
-  recorded. Hand-written and generated changes stay independently reviewable, which matters most
-  on exactly the contract cycles that touch both.
+  the GREEN commit, as `chore(<artifact>): regenerate`. Resolution is recorded as
+  `artifact_check.regenerated = 1` (set only when the hook produces a commit, i.e. `sha` is
+  truthy); the friction log reads this column and renders a benign run-level line — "Artifacts
+  auto-regenerated: `<name>`" — rather than an integrity event. Hand-written and generated changes
+  stay independently reviewable, which matters most on exactly the contract cycles that touch both.
 - **R9.21** `run start` refuses a dirty working tree unless `--allow-dirty` is given. When allowed,
   the pre-existing modified and untracked set is recorded and permanently excluded from authorship
   attribution, so pre-existing edits are never absorbed into the first cycle's commits.
