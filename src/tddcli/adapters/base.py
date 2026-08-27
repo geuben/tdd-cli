@@ -139,6 +139,14 @@ class Adapter:
         prefix = f"{self.project.name}::"
         return qualified[len(prefix) :] if qualified.startswith(prefix) else qualified
 
+    def normalise_id(self, test_id: str) -> str:
+        """Return the canonical form of a declared target id for matching against collected ids.
+
+        The default is an identity — subclasses override when the runner's collected
+        ids differ from a natural human spelling (e.g. vitest's describe/test separator).
+        """
+        return test_id
+
     def run(self, target: str | None = None) -> Verdict:
         raise NotImplementedError
 

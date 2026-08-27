@@ -319,3 +319,165 @@ def test_sweep_reports_unbaselined_failures_separately(repo_three):
     assert any("test_smoke" in f for f in svc_failures), svc_failures
     assert not outcome.failures, outcome.failures
     assert not outcome.ok
+
+
+def test_reuse_baselines_populates_cache_and_default_does_not(repo_three):
+    plan = write_plan(repo_three, THREE_PROJECT_PLAN)
+    run_cli(repo_three, "plan", "register", plan)
+
+    # plain run: cache stays empty
+    out = run_cli(repo_three, "run", "start", "--plan", plan)
+    assert out["ok"], out
+    ledger = Ledger(gitutil.repo_identity(repo_three))
+    assert ledger.one("SELECT COUNT(*) as n FROM baseline_cache")["n"] == 0
+
+    # close the first run so a second run start is allowed
+    from tddcli.ledger import now as ledger_now
+    ledger.db.execute(
+        "UPDATE run SET ended_at = ?, outcome = 'abandoned' WHERE ended_at IS NULL",
+        (ledger_now(),),
+    )
+    ledger.db.commit()
+
+    # with flag: populates cache for each probed project
+    out2 = run_cli(repo_three, "run", "start", "--plan", plan, "--reuse-baselines", "--allow-dirty")
+    assert out2["ok"], out2
+    rows = ledger.all("SELECT project FROM baseline_cache")
+    assert {r["project"] for r in rows} == {"backend", "svc"}
+
+
+def _hb_lines(stderr):
+    import json as _json
+    lines = []
+    for line in stderr.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            lines.append(_json.loads(line))
+        except _json.JSONDecodeError:
+            continue
+    return lines
+
+
+def test_second_reuse_run_reuses_cached_baseline(repo_three, capsys):
+    plan = write_plan(repo_three, THREE_PROJECT_PLAN)
+    run_cli(repo_three, "plan", "register", plan)
+
+    # first run: populate the cache
+    out = run_cli(repo_three, "run", "start", "--plan", plan, "--reuse-baselines")
+    assert out["ok"], out
+    capsys.readouterr()  # discard first run's heartbeats
+
+    # abandon first run
+    ledger = Ledger(gitutil.repo_identity(repo_three))
+    from tddcli.ledger import now as ledger_now
+    ledger.db.execute(
+        "UPDATE run SET ended_at = ?, outcome = 'abandoned' WHERE ended_at IS NULL",
+        (ledger_now(),),
+    )
+    ledger.db.commit()
+
+    # second run: should reuse cache on an unchanged tree
+    out2 = run_cli(repo_three, "run", "start", "--plan", plan, "--reuse-baselines", "--allow-dirty")
+    assert out2["ok"], out2
+    assert out2["result"]["baselines"] == {"backend": 0, "svc": 0}
+
+    run2_id = out2["run"]["id"]
+    captured = capsys.readouterr()
+    hb = _hb_lines(captured.err)
+
+    reused_projects = {h["project"] for h in hb if h.get("event") == "baseline_reused"}
+    assert reused_projects == {"backend", "svc"}, f"expected reused, got: {hb}"
+
+    captured_projects = {h["project"] for h in hb if h.get("event") == "baseline_captured"}
+    assert not (captured_projects & {"backend", "svc"}), f"unexpectedly re-probed: {captured_projects}"
+
+    # baseline and collection_snapshot rows carry the cached data
+    b_rows = ledger.all("SELECT * FROM baseline WHERE run_id = ?", (run2_id,))
+    assert {r["project"] for r in b_rows} == {"backend", "svc"}
+    snap_rows = ledger.all("SELECT * FROM collection_snapshot WHERE run_id = ?", (run2_id,))
+    assert {r["project"] for r in snap_rows} == {"backend", "svc"}
+
+
+def test_stale_reused_baseline_recovers_via_accept_failures(repo):
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+
+    # first run: cold cache → probes fresh, writes cache
+    out1 = run_cli(repo, "run", "start", "--plan", plan, "--reuse-baselines")
+    assert out1["ok"], out1
+    ledger = Ledger(gitutil.repo_identity(repo))
+    from tddcli.ledger import now as ledger_now
+    ledger.db.execute(
+        "UPDATE run SET ended_at = ?, outcome = 'abandoned' WHERE ended_at IS NULL",
+        (ledger_now(),),
+    )
+    ledger.db.commit()
+
+    # second run: warm cache → reuses baseline (source == "reused")
+    out2 = run_cli(repo, "run", "start", "--plan", plan, "--reuse-baselines", "--allow-dirty")
+    assert out2["ok"], out2
+
+    # advance through cycle to AWAITING_REFACTOR
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    raise NotImplementedError\n"
+    )
+    run_cli(repo, "advance")
+    (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    out = run_cli(repo, "advance")
+    assert out["run"]["phase"] == "AWAITING_REFACTOR", out
+
+    # introduce a failure absent from the reused baseline
+    (repo / "backend" / "tests" / "test_smoke.py").write_text(
+        "def test_smoke():\n    assert False\n"
+    )
+    run_cli(repo, "advance")
+    run_cli(repo, "blocker", "--kind", "pre_existing_failure", "--detail", "drifted reused baseline")
+
+    resumed = run_cli(repo, "resume", "--unblock", "--note", "verified against main", "--accept-failures")
+    assert resumed["ok"], resumed
+    assert "backend" in resumed["result"]["accepted_into_baseline"]
+
+    closed = run_cli(repo, "advance")
+    assert closed["next_action"]["verb"] == "complete", closed
+
+
+def test_reused_baseline_records_provenance_and_event(repo_three):
+    import json as _json
+
+    plan = write_plan(repo_three, THREE_PROJECT_PLAN)
+    run_cli(repo_three, "plan", "register", plan)
+
+    # first run: cold cache, probes fresh → source should be "probed"
+    out1 = run_cli(repo_three, "run", "start", "--plan", plan, "--reuse-baselines")
+    assert out1["ok"], out1
+    ledger = Ledger(gitutil.repo_identity(repo_three))
+    run1_id = out1["run"]["id"]
+    b1 = {r["project"]: r["source"] for r in ledger.all("SELECT project, source FROM baseline WHERE run_id = ?", (run1_id,))}
+    assert b1 == {"backend": "probed", "svc": "probed"}, b1
+
+    # abandon first run, start second with --reuse-baselines
+    from tddcli.ledger import now as ledger_now
+    ledger.db.execute(
+        "UPDATE run SET ended_at = ?, outcome = 'abandoned' WHERE ended_at IS NULL",
+        (ledger_now(),),
+    )
+    ledger.db.commit()
+
+    out2 = run_cli(repo_three, "run", "start", "--plan", plan, "--reuse-baselines", "--allow-dirty")
+    assert out2["ok"], out2
+    run2_id = out2["run"]["id"]
+
+    # reused rows have source == "reused"
+    b2 = {r["project"]: r["source"] for r in ledger.all("SELECT project, source FROM baseline WHERE run_id = ?", (run2_id,))}
+    assert b2 == {"backend": "reused", "svc": "reused"}, b2
+
+    # baseline_reused integrity event lists the reused projects
+    event = ledger.one(
+        "SELECT detail FROM integrity_event WHERE run_id = ? AND kind = 'baseline_reused'",
+        (run2_id,),
+    )
+    assert event is not None, "no baseline_reused event found"
+    assert _json.loads(event["detail"]) == sorted(["backend", "svc"])

@@ -45,7 +45,25 @@ class VitestAdapter(Adapter):
     name = "vitest"
 
     def stub_hint(self) -> str:
-        return "`throw new Error(\"not implemented\")` in every body"
+        return '`throw new Error("not implemented")` in every body'
+
+    def normalise_id(self, test_id: str) -> str:
+        """Canonicalise the describe/test separator for target matching.
+
+        vitest's `fullName` joins ancestor titles and the test title with a space,
+        so collected ids look like `frontend::a.test.ts > someHelper formats a value`.
+        A planner naturally writes ` > ` at each nesting level. Treating both as
+        equivalent prevents a formatting-only difference from producing NOT_FOUND.
+
+        The structural ` > ` between the file and the name is preserved; only the
+        ` > ` separators inside the name part are collapsed to a space.
+        """
+        raw = self.strip(test_id)
+        file_part, sep, remainder = raw.partition(" > ")
+        if not sep:
+            return test_id
+        name = " ".join(part.strip() for part in remainder.split(" > "))
+        return self.qualify(f"{file_part} > {name}")
 
     def _id_for(self, suite_path: str, full_name: str) -> str:
         abs_path = Path(suite_path)
@@ -72,18 +90,18 @@ class VitestAdapter(Adapter):
             code, out, err = self._run_suite(f"{base} --reporter=json", extra_env)
             report = _extract_json(out)
             if report is None:
-                verdict.error = (
-                    f"`{base}` produced no JSON output: {(err or out)[:500]}"
-                )
+                verdict.error = f"`{base}` produced no JSON output: {(err or out)[:500]}"
                 return verdict
             verdict.duration_ms += int(report.get("duration") or 0)
             results = report.get("testResults", [])
             suites.extend(results)
-            suite_ids.append({
-                self._id_for(s.get("name", ""), t["fullName"])
-                for s in results
-                for t in s.get("assertionResults", [])
-            })
+            suite_ids.append(
+                {
+                    self._id_for(s.get("name", ""), t["fullName"])
+                    for s in results
+                    for t in s.get("assertionResults", [])
+                }
+            )
 
         overlap = _suite_overlap(suite_ids)
         if overlap:
@@ -108,17 +126,23 @@ class VitestAdapter(Adapter):
             verdict.target_outcome = NOT_FOUND
             return verdict
 
-        if target in verdict.passed:
+        ntarget = self.normalise_id(target)
+        passed_norm = {self.normalise_id(t): t for t in verdict.passed}
+        failed_norm = {self.normalise_id(t): t for t in verdict.failed}
+
+        if ntarget in passed_norm:
             verdict.target_outcome = PASSED
             return verdict
-        if target in verdict.failed:
+        if ntarget in failed_norm:
             verdict.target_outcome = FAILED
             for suite in suites:
                 for t in suite.get("assertionResults", []):
-                    if self._id_for(suite.get("name", ""), t["fullName"]) == target:
+                    if (
+                        self.normalise_id(self._id_for(suite.get("name", ""), t["fullName"]))
+                        == ntarget
+                    ):
                         verdict.target_failure = "\n".join(
-                            clip_failure(m, 600)
-                            for m in t.get("failureMessages", [])[:3]
+                            clip_failure(m, 600) for m in t.get("failureMessages", [])[:3]
                         )
             return verdict
 
@@ -206,22 +230,26 @@ class VitestAdapter(Adapter):
         code, out, err = run_command(
             self._collect_cmd(), self.root, extra_env=self._suite_env(None), label="doctor"
         )
-        reached = sorted({
-            f for f in (
-                line.strip().partition(" > ")[0]
-                for line in out.splitlines()
-                if " > " in line
-            )
-            if self.project.override_for(f)
-        })
+        reached = sorted(
+            {
+                f
+                for f in (
+                    line.strip().partition(" > ")[0] for line in out.splitlines() if " > " in line
+                )
+                if self.project.override_for(f)
+            }
+        )
         if not reached:
             return GateResult(ok=True)
-        return GateResult(ok=False, output=(
-            "the default config's discovery reaches files an override owns, so"
-            " suite runs would observe them without the override's command/env:"
-            f" {', '.join(reached[:5])}. Exclude them from the default vitest"
-            " config (test.exclude) or scope its include globs."
-        ))
+        return GateResult(
+            ok=False,
+            output=(
+                "the default config's discovery reaches files an override owns, so"
+                " suite runs would observe them without the override's command/env:"
+                f" {', '.join(reached[:5])}. Exclude them from the default vitest"
+                " config (test.exclude) or scope its include globs."
+            ),
+        )
 
     def _collect_invocations(self) -> list[tuple[str, dict[str, str] | None]]:
         """An override with no `collect_command` gets no batch — `vitest list` knows
@@ -229,7 +257,8 @@ class VitestAdapter(Adapter):
         missing `collect_command` against each of them as before."""
         return [(self._collect_cmd(), self._suite_env(None))] + [
             (ov.collect_command, self._suite_env(ov))
-            for ov in self.project.overrides if ov.collect_command
+            for ov in self.project.overrides
+            if ov.collect_command
         ]
 
     def _collect_batch(
@@ -270,7 +299,9 @@ class VitestAdapter(Adapter):
             base = ov.collect_command if ov else self._collect_cmd()
             env = self._suite_env(ov)
             code, out, err = run_command(
-                f"{base} {shlex.quote(str(rel))}", self.root, extra_env=env,
+                f"{base} {shlex.quote(str(rel))}",
+                self.root,
+                extra_env=env,
                 label="collect",
             )
 
@@ -290,7 +321,6 @@ class VitestAdapter(Adapter):
                 # Zero tests from a file that exists is a tooling failure, not an
                 # empty file — record it rather than silently collecting nothing.
                 result.failed_files[str(rel)] = (
-                    f"no tests parsed from `{base}` (exit {code}): "
-                    + (err or out).strip()[:600]
+                    f"no tests parsed from `{base}` (exit {code}): " + (err or out).strip()[:600]
                 )
         return result
