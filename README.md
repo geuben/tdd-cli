@@ -424,6 +424,27 @@ To limit how old a cached entry may be, pass `--reuse-max-age <seconds>`:
 
 Entries older than the given threshold are ignored and re-probed fresh.
 
+### Parallel baseline probing (R9.5f)
+
+By default `run start` probes one project at a time. On a repo with many independent projects the
+wall-clock cost is the *sum* of all suite runtimes. Pass `--baseline-jobs N` to probe up to N
+projects concurrently:
+
+    tdd run start --plan tasks/plan.md --baseline-jobs 4
+
+Each probe is independent — one adapter instance per project — so concurrency does not affect
+which projects are probed, the refusal checks, or the baseline rows written. A `baseline_captured`
+heartbeat is still emitted per project as each probe completes.
+
+The default is `--baseline-jobs 1` (serial). Raise it deliberately:
+
+- **I/O-bound suites** (network, DB, file-heavy) benefit most; CPU-bound suites less so.
+- **Suites contending for global resources** (xctest simulators, fixed ports) should stay at 1,
+  or declare a `lease` name — leased suites serialize automatically even inside the pool.
+
+If any probe fails, `run start` returns a failure attributed to that project and no run row is
+created, so the worktree is immediately retryable.
+
 ### When a sweep reaches an un-baselined project (R9.5d)
 
 If an edit during a run touches a file owned by an artifact that was outside the predicted
