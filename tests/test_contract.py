@@ -227,3 +227,33 @@ cycles:
 """
     contract2 = parse(body_without, "tasks/p.md")
     assert contract2.ancillary_files == []
+
+
+def test_non_list_ancillary_files_raises_contract_error():
+    from tddcli.contract import ContractError, parse
+
+    body_str = """---
+cycles:
+  - n: 1
+    project: backend
+    test: "tests/test_x.py::test_one"
+ancillary_files: "docs/INVARIANTS.md"
+---
+
+# Plan
+"""
+    with pytest.raises(ContractError, match="ancillary_files must be a list of strings"):
+        parse(body_str, "tasks/p.md")
+
+    body_nonstr = """---
+cycles:
+  - n: 1
+    project: backend
+    test: "tests/test_x.py::test_one"
+ancillary_files: [1, 2]
+---
+
+# Plan
+"""
+    with pytest.raises(ContractError, match="ancillary_files must be a list of strings"):
+        parse(body_nonstr, "tasks/p.md")
