@@ -193,3 +193,37 @@ def test_parse_cycle_accepts_meta_mapping():
     }
     cycle = parse_cycle(raw, None)
     assert cycle.meta == {"covers": ["B1", "B2"], "owner": "alice"}
+
+
+def test_ancillary_files_parse_onto_plan_contract():
+    from tddcli.contract import parse
+
+    body_with = """---
+cycles:
+  - n: 1
+    project: backend
+    test: "tests/test_x.py::test_one"
+ancillary_files:
+  - frontend/src/api/registerClient.ts
+  - docs/INVARIANTS.md
+---
+
+# Plan
+"""
+    contract = parse(body_with, "tasks/p.md")
+    assert contract.ancillary_files == [
+        "frontend/src/api/registerClient.ts",
+        "docs/INVARIANTS.md",
+    ]
+
+    body_without = """---
+cycles:
+  - n: 1
+    project: backend
+    test: "tests/test_x.py::test_one"
+---
+
+# Plan
+"""
+    contract2 = parse(body_without, "tasks/p.md")
+    assert contract2.ancillary_files == []
