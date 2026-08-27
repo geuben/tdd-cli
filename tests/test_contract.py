@@ -137,3 +137,59 @@ cycles:
 def test_cycle_without_project_hard_fails():
     with pytest.raises(ContractError, match="no project declared"):
         parse('---\ncycles:\n  - n: 1\n    test: "a::x"\n---\n', "tasks/p.md")
+
+
+def test_meta_survives_storage_round_trip():
+    from tddcli.contract import STANDARD, DeclaredCycle, cycles_from_json, cycles_to_json
+
+    cycle = DeclaredCycle(
+        ordinal=1,
+        kind=STANDARD,
+        projects=["backend"],
+        tests=["tests/test_x.py::test_one"],
+        meta={"covers": ["B1", "B2"], "owner": "alice"},
+    )
+    restored = cycles_from_json(cycles_to_json([cycle]))
+    assert len(restored) == 1
+    assert restored[0].meta == {"covers": ["B1", "B2"], "owner": "alice"}
+
+
+def test_unknown_per_cycle_keys_are_silently_ignored():
+    from tddcli.contract import parse_cycle
+
+    raw = {
+        "n": 1,
+        "project": "backend",
+        "test": "tests/test_x.py::test_one",
+        "future_key": "some-value",
+        "another_unknown": 42,
+    }
+    # Must not raise — unknown keys are tolerated (leniency pin)
+    cycle = parse_cycle(raw, None)
+    assert cycle.ordinal == 1
+
+
+def test_non_mapping_meta_raises_contract_error():
+    from tddcli.contract import ContractError, parse_cycle
+
+    raw = {
+        "n": 1,
+        "project": "backend",
+        "test": "tests/test_x.py::test_one",
+        "meta": "not-a-mapping",
+    }
+    with pytest.raises(ContractError, match="meta must be a mapping"):
+        parse_cycle(raw, None)
+
+
+def test_parse_cycle_accepts_meta_mapping():
+    from tddcli.contract import parse_cycle
+
+    raw = {
+        "n": 1,
+        "project": "backend",
+        "test": "tests/test_x.py::test_one",
+        "meta": {"covers": ["B1", "B2"], "owner": "alice"},
+    }
+    cycle = parse_cycle(raw, None)
+    assert cycle.meta == {"covers": ["B1", "B2"], "owner": "alice"}
