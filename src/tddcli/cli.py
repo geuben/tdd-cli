@@ -39,6 +39,9 @@ from .envelope import Envelope, NextAction, Verb, failure, heartbeat
 from .ledger import Ledger, LedgerVersionError, ledger_path, now
 from .machine import CLOSED, SKIPPED, Engine
 
+BASELINE_MAX_FAILURE_RATIO_DEFAULT = 0.5
+BASELINE_MIN_COLLECTED = 10
+
 BLOCKER_KINDS = {
     "regression",
     "target_unfixable",
@@ -708,6 +711,26 @@ def cmd_run_start(args) -> Envelope:
                     project=name,
                     collected=len(collection.tests),
                 )
+
+        implausible = [
+            {
+                "project": name,
+                "failing": len(v.failed),
+                "collected": len(c.tests),
+                "ratio": len(v.failed) / len(c.tests),
+                "threshold": BASELINE_MAX_FAILURE_RATIO_DEFAULT,
+            }
+            for name, (v, c) in probes.items()
+            if len(c.tests) >= BASELINE_MIN_COLLECTED
+            and len(v.failed) / len(c.tests) > BASELINE_MAX_FAILURE_RATIO_DEFAULT
+        ]
+        if implausible:
+            return failure(
+                "baseline is implausible — more than half the suite is failing;"
+                " the environment may be broken. Fix the stack or pass --accept-baseline.",
+                reason="baseline_implausible",
+                projects=implausible,
+            )
 
         executor = identity.resolve(worktree, args.executor)
         run_id = ledger.insert(
