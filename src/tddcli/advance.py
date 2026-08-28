@@ -12,6 +12,7 @@ from . import adapters, gitutil, staging
 from . import config as config_mod
 from .adapters.base import FAILED, NOT_COLLECTED, NOT_FOUND, PASSED
 from .envelope import Envelope, NextAction, Verb
+from .ledger import now
 from .machine import (
     AWAITING_IMPL,
     AWAITING_PIN,
@@ -348,6 +349,38 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
 
     nxt = engine.close_cycle(cycle)
     if nxt is None:
+        blocking = engine.close_undeclared_gate(cycle)
+        if blocking:
+            engine.ledger.insert(
+                "blocker",
+                run_id=engine.run["id"],
+                cycle_id=cycle["id"],
+                kind="undeclared_file_uncommitted",
+                detail=json.dumps(blocking),
+                at=now(),
+            )
+            engine.ledger.update("run", engine.run["id"], outcome="blocked")
+            return Envelope(
+                run={
+                    "id": engine.run["id"],
+                    "plan": engine.contract_row["plan_path"],
+                    "cycle": cycle["ordinal"],
+                    "of": len(engine.declared),
+                    "phase": "BLOCKED",
+                    "executor": engine.run["executor_model"],
+                },
+                result={
+                    "kind": "undeclared_file_uncommitted",
+                    "paths": blocking,
+                    "commit": sha,
+                },
+                next_action=NextAction(
+                    Verb.BLOCKED,
+                    f"Run reached its last cycle but {len(blocking)} flagged file(s) are"
+                    f" uncommitted: {blocking}. Commit them, or"
+                    " `tdd resume --unblock --note ...` to discard.",
+                ),
+            )
         return Envelope(
             run={
                 "id": engine.run["id"],

@@ -366,6 +366,22 @@ class Engine:
             return None
         return self.open_cycle(nxt.ordinal)
 
+    def close_undeclared_gate(self, cycle_row) -> list[str]:
+        """Return flagged paths that should block run close (uncommitted at close time).
+
+        Cycle 1: returns all paths that appeared in any undeclared_file_touched event
+        for this run (crude — cycle 2 will restrict to dirty-only).
+        """
+        rows = self.ledger.all(
+            "SELECT detail FROM integrity_event"
+            " WHERE run_id = ? AND kind = 'undeclared_file_touched'",
+            (self.run["id"],),
+        )
+        flagged: set[str] = set()
+        for row in rows:
+            flagged.update(json.loads(row["detail"]))
+        return sorted(flagged)
+
     def record_commit(self, cycle_row, phase: str, sha: str, message: str, files: list[str]):
         self.ledger.insert(
             "commit_record",
