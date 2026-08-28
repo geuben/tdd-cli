@@ -7,6 +7,7 @@ from conftest import run_cli, write_plan
 from tddcli import config as config_mod
 from tddcli.adapters.gradle_adapter import GradleAdapter
 from tddcli.adapters.vitest_adapter import VitestAdapter
+from tddcli.adapters.xctest_adapter import XCTestAdapter
 
 _VITEST_TOML = """
 [project.frontend]
@@ -21,6 +22,14 @@ root         = "app"
 adapter      = "gradle"
 test_paths   = ["src/test/"]
 test_command = "./gradlew test"
+"""
+
+_XCTEST_TOML = """
+[project.ios]
+root         = "ios"
+adapter      = "xctest"
+test_paths   = ["AppTests/"]
+test_command = "xcodebuild test -scheme AppTests"
 """
 
 
@@ -41,11 +50,25 @@ cycles:
 """
 
 
+def xctest_adapter_for(tmp_path: Path) -> XCTestAdapter:
+    (tmp_path / "tdd.toml").write_text(_XCTEST_TOML)
+    (tmp_path / "ios" / "AppTests").mkdir(parents=True)
+    cfg = config_mod.load(tmp_path)
+    return XCTestAdapter(cfg.project("ios"), tmp_path)
+
+
 def gradle_adapter_for(tmp_path: Path) -> GradleAdapter:
     (tmp_path / "tdd.toml").write_text(_GRADLE_TOML)
     (tmp_path / "app" / "src" / "test").mkdir(parents=True)
     cfg = config_mod.load(tmp_path)
     return GradleAdapter(cfg.project("app"), tmp_path)
+
+
+def test_xctest_target_without_three_parts_is_flagged(tmp_path):
+    adapter = xctest_adapter_for(tmp_path)
+    msg = adapter.lint_target_id("AppTests.RecTests.testStopsRecording")
+    assert msg
+    assert "Bundle/Class" in msg
 
 
 def test_gradle_target_without_slash_is_flagged(tmp_path):
