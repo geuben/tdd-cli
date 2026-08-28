@@ -96,6 +96,8 @@ def friction_log(ledger: Ledger, run) -> str:
                 evidence = sens["evidence_line"]
                 if evidence:
                     a(f"  - observed: `{evidence}`")
+                elif evidence == "":
+                    a("  - observed: <no assertion line captured>")
                 else:
                     snippet = sens["observed_failure"].strip().splitlines()
                     a(f"  - observed: `{snippet[0][:160] if snippet else ''}`")
