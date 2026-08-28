@@ -724,7 +724,7 @@ def cmd_run_start(args) -> Envelope:
             if len(c.tests) >= BASELINE_MIN_COLLECTED
             and len(v.failed) / len(c.tests) > BASELINE_MAX_FAILURE_RATIO_DEFAULT
         ]
-        if implausible:
+        if implausible and not args.accept_baseline:
             return failure(
                 "baseline is implausible — more than half the suite is failing;"
                 " the environment may be broken. Fix the stack or pass --accept-baseline.",
@@ -1294,6 +1294,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--reuse-baselines", action="store_true", help="cache and reuse baseline probe results keyed by content hash")
     s.add_argument("--reuse-max-age", type=float, default=None, help="max age in seconds for a cached baseline entry")
     s.add_argument("--baseline-jobs", type=int, default=1, help="number of parallel baseline probes (default: 1, serial)")
+    s.add_argument("--accept-baseline", action="store_true", help="override the implausibility gate and record the baseline anyway")
     s.set_defaults(fn=cmd_run_start)
 
     s = sub.add_parser("status")
