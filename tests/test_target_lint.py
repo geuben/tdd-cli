@@ -3,10 +3,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from conftest import run_cli, write_plan
 from tddcli import config as config_mod
 from tddcli.adapters.vitest_adapter import VitestAdapter
-
-from conftest import run_cli, write_plan
 
 _VITEST_TOML = """
 [project.frontend]
