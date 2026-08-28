@@ -51,3 +51,13 @@ def test_accept_baseline_overrides_the_refusal(repo):
 
     assert out["ok"] is True, out
     assert out["next_action"]["verb"] == "write_test"
+
+
+def test_a_small_all_red_suite_is_not_refused(repo):
+    _make_mostly_red_repo(repo, n=3)
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+
+    assert out["ok"] is True, out
+    assert out["result"].get("reason") != "baseline_implausible"
