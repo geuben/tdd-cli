@@ -782,6 +782,28 @@ def cmd_run_start(args) -> Envelope:
                 captured_at=now(),
             )
 
+        for name, (verdict, _collection) in probes.items():
+            if not verdict.failed:
+                continue
+            failing = set(verdict.failed)
+            prev = ledger.previous_baseline(str(worktree), name, run_id) or set()
+            new_ids = failing - prev
+            inherited = failing & prev
+            resolved = prev - failing
+            ledger.event(
+                run_id,
+                None,
+                "baseline_standing_delta",
+                json.dumps(
+                    {
+                        "project": name,
+                        "new": sorted(new_ids),
+                        "inherited": sorted(inherited),
+                        "resolved": sorted(resolved),
+                    }
+                ),
+            )
+
         engine = Engine(ledger, cfg, worktree, run)
         engine.check_artifacts(None)
         first = engine.declared[0] if engine.declared else None
