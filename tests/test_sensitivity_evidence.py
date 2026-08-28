@@ -56,6 +56,13 @@ def _drive_sensitivity(repo):
     return checked
 
 
+def _close_cycle_and_render(repo, out_path):
+    """Advance through AWAITING_REFACTOR and CLOSE_SWEEP, then render the log."""
+    run_cli(repo, "advance")  # -> AWAITING_REFACTOR
+    run_cli(repo, "advance")  # -> close sweep / next cycle
+    run_cli(repo, "log", "render", "--out", str(out_path))
+
+
 def test_sensitivity_check_records_the_evidence_line(repo):
     _start(repo)
     _drive_sensitivity(repo)
@@ -63,3 +70,26 @@ def test_sensitivity_check_records_the_evidence_line(repo):
     row = led.one("SELECT evidence_line FROM sensitivity_check ORDER BY id DESC LIMIT 1")
     assert row is not None
     assert row["evidence_line"].startswith("assert")
+
+
+def test_friction_log_observed_line_is_the_evidence_line(repo, tmp_path):
+    _start(repo)
+    _drive_sensitivity(repo)
+    led = Ledger(gitutil.repo_identity(repo))
+    check_row = led.one("SELECT id FROM sensitivity_check ORDER BY id DESC LIMIT 1")
+    led.update(
+        "sensitivity_check",
+        check_row["id"],
+        observed_failure=(
+            "[gw0] darwin -- Python 3.12.8 /tmp/x\n\n    def test_add_two_numbers():\n"
+            "E       AssertionError: reversed mismatch"
+        ),
+        evidence_line="AssertionError: reversed mismatch",
+    )
+    out = tmp_path / "log.md"
+    run_cli(repo, "advance")  # -> AWAITING_REFACTOR
+    run_cli(repo, "advance")  # -> close sweep
+    run_cli(repo, "log", "render", "--out", str(out))
+    rendered = out.read_text()
+    assert "observed: `AssertionError: reversed mismatch`" in rendered
+    assert "[gw0]" not in rendered
