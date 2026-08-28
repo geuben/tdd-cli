@@ -492,6 +492,73 @@ kind `no_baseline_for_project` rather than mislabelling them as regressions. Rec
 failures as pre-existing) and records a `baseline_amended` event. The next advance proceeds
 with the project properly baselined.
 
+### Baseline sanity gate (R9.5g)
+
+`run start` refuses a baseline whose failure ratio is implausibly high — a signal that the
+environment, not the code, is broken. A project is flagged when it collected at least 10 tests
+(`BASELINE_MIN_COLLECTED`) and more than 50% of them failed (`BASELINE_MAX_FAILURE_RATIO_DEFAULT`):
+
+    error: baseline_implausible — backend: 1005/1010 failing (ratio 0.995)
+
+The gate targets stack-down blowouts (all 1000 tests failing because a service is unreachable),
+not small pre-existing failure sets (baseline subtraction handles those). A project collecting
+fewer than 10 tests is exempt — a 2-of-3 red baseline is ordinary pre-existing-failure territory,
+not a broken stack.
+
+Pass `--accept-baseline` to override the refusal and proceed anyway:
+
+    tdd run start --plan tasks/plan.md --accept-baseline
+
+An accepted implausible baseline records a `baseline_accepted` integrity event (visible in
+`tdd metrics` and the friction log) so the override is never silent. The gate runs on every
+baseline, including reused ones.
+
+To raise the threshold for a project whose legitimate baseline is inherently noisy, set
+`baseline_max_failure_ratio` in `tdd.toml`:
+
+```toml
+[project.legacy]
+root = "legacy"
+adapter = "pytest"
+baseline_max_failure_ratio = 0.8    # allow up to 80% failing at baseline
+```
+
+The value must be in `(0, 1]`. Without it, the repo-wide default of 0.5 applies.
+
+### Standing-failure delta
+
+When a non-empty baseline is captured, `run start` emits a `baseline_standing_delta` integrity
+event partitioning the current standing failures into:
+
+- **new** — absent from the previous run's baseline for this project (growing problem)
+- **inherited** — also present in the previous baseline (stable background noise)
+- **resolved** — in the previous baseline but absent now (fixed between runs)
+
+The event is visible in `tdd metrics` under `integrity_events`. A first run with no prior
+baseline reports every failure as `new`. A fully-green baseline (zero failing tests) emits
+nothing. Use this to spot a permanently-red set that baseline subtraction would otherwise hide.
+
+### Environment-dependent suites
+
+Declare a `health_command` on a project to probe reachability before `run start` captures its
+baseline:
+
+```toml
+[project.backend]
+root = "backend"
+adapter = "pytest"
+health_command = "curl -fsS http://localhost:8080/healthz"
+```
+
+If the command exits non-zero, `run start` refuses immediately with `reason:
+"services_unreachable"` — before claiming the worktree, before probing, before writing anything
+to the ledger. The error names the project and its exit code so the agent can surface the exact
+diagnosis rather than recording a ~1000-failure baseline and continuing.
+
+There is no override flag for `services_unreachable`: a down stack yields no believable baseline.
+The resolution is to fix the stack or drop the project from this run. Presence of `health_command`
+is the marker that a project requires live services; no separate boolean is needed.
+
 ## Running a long baseline
 
 `run start` probes the reachable project set (R9.5c) before a run exists, and on a real project

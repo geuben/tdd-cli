@@ -415,6 +415,8 @@ streams of events use it:
 |---|---|---|
 | `baseline_captured` | after each project's baseline (§8.2) | `project`, `test_count`, `elapsed_s`, `run_s`, `collect_s` |
 | `baseline_reused` | when `--reuse-baselines` hits a cache entry (§8.2, R9.5e) | `project`, `test_count`, `tree_hash` (first 8 chars) |
+| `baseline_accepted` | when `--accept-baseline` overrides the implausibility gate (R9.5g) | array of `{project, failing, collected, ratio, threshold}` |
+| `baseline_standing_delta` | after a non-empty baseline is recorded (R9.5h) | `{project, new: [...], inherited: [...], resolved: [...]}` |
 | `command_timing` | per subprocess, only under `TDD_TIMING=1` | `label`, `command`, `cwd`, `duration_ms`, `exit_code` |
 
 `run_s` and `collect_s` are reported separately because their cost models are unrelated — a suite
@@ -577,6 +579,26 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   (R9.5b), which treats a reused baseline row as an ordinary row.
 - **R9.6** Baseline failures are subtracted from `other_failures` in every subsequent invocation.
 - **R9.7** A baseline failure that starts passing is recorded, not ignored.
+- **R9.5g** `run start` refuses a baseline whose failure ratio exceeds the implausibility threshold
+  (`BASELINE_MAX_FAILURE_RATIO_DEFAULT = 0.5`) for any project that collected at least
+  `BASELINE_MIN_COLLECTED = 10` tests. The refusal returns `reason: "baseline_implausible"` with
+  a `projects` array carrying `{project, failing, collected, ratio, threshold}` per flagged
+  project. The check runs before the run row is written, so a refusal leaves nothing behind. It
+  runs on all baselines, including reused ones. Pass `--accept-baseline` to override; an accepted
+  implausible baseline records a `baseline_accepted` integrity event. A per-project override
+  `baseline_max_failure_ratio` (float in `(0, 1]` in `tdd.toml`) replaces the default for that
+  project.
+- **R9.5h** After a baseline is recorded, `run start` emits a `baseline_standing_delta` integrity
+  event for each project with a non-empty failing set. The event detail is a JSON object with
+  keys `project`, `new` (test ids present now but absent from the previous run's baseline for this
+  worktree), `inherited` (present in both), and `resolved` (present before, absent now). A project
+  with no prior baseline reports all failures as `new`. A green baseline (empty failing set) emits
+  nothing.
+- **R9.5i** A project may declare `health_command` in `tdd.toml`. If present, `run start` runs
+  it in the project root before claiming the worktree. A non-zero exit refuses with
+  `reason: "services_unreachable"` and a `projects` array carrying `{project, exit_code, output}`
+  per failing project. There is no override: a down stack yields no believable baseline. The
+  health probe runs before the claim so a down stack never touches the ledger.
 
 ### 9.3 Contract cycles
 - **R9.8** A cycle may declare multiple target tests, spanning multiple projects, **only** if the

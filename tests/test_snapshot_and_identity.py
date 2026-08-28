@@ -149,3 +149,47 @@ def test_baseline_cache_round_trips_by_content_key(tmp_path, monkeypatch):
 
     assert ledger.cached_baseline("svc", "treeB", "cfgA") is None
     assert ledger.cached_baseline("svc", "treeA", "cfgB") is None
+
+
+def test_previous_baseline_returns_prior_runs_failing_set(tmp_path, monkeypatch):
+    from tddcli.ledger import now
+
+    monkeypatch.setenv("TDD_LEDGER_HOME", str(tmp_path))
+    ledger = Ledger(tmp_path / "repo")
+
+    W = "/some/worktree"
+    contract_id = ledger.insert(
+        "plan_contract",
+        plan_path="tasks/plan.md",
+        git_blob_sha=None,
+        git_commit=None,
+        status="declared",
+        declared_cycles="[]",
+        annotation_keys="[]",
+        ancillary_files="[]",
+        registered_at=now(),
+    )
+    prior_run_id = ledger.insert(
+        "run",
+        plan_contract_id=contract_id,
+        executor_model="test-model",
+        executor_source="human",
+        worktree_path=W,
+        started_at=now(),
+        ended_at=now(),
+        preexisting_dirty="[]",
+    )
+    ledger.insert(
+        "baseline",
+        run_id=prior_run_id,
+        project="backend",
+        failing=json.dumps(["backend::t::a", "backend::t::b"]),
+        captured_at=now(),
+        source="probed",
+    )
+
+    result = ledger.previous_baseline(W, "backend", before_run_id=prior_run_id + 100)
+    assert result == {"backend::t::a", "backend::t::b"}
+
+    result_none = ledger.previous_baseline(W, "backend", before_run_id=prior_run_id)
+    assert result_none is None
