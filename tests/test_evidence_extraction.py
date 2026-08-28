@@ -14,6 +14,7 @@ from unittest.mock import patch
 import tddcli.adapters.base as adapters_base
 from tddcli import adapters
 from tddcli import config as config_mod
+from tddcli.adapters.gradle_adapter import GradleAdapter
 from tddcli.adapters.vitest_adapter import VitestAdapter
 from tddcli.adapters.xctest_adapter import XCTestAdapter
 
@@ -24,6 +25,27 @@ _XCTEST_TOML = (
     'test_paths   = ["AppTests/"]\n'
     'test_command = "xcodebuild test -project App.xcodeproj -scheme AppTests"\n'
 )
+
+
+_GRADLE_TOML = (
+    "[project.android-app]\n"
+    'root         = "android-app"\n'
+    'adapter      = "gradle"\n'
+    'test_paths   = ["src/test/"]\n'
+    'test_command = "./gradlew testDebugUnitTest"\n'
+)
+
+
+def _gradle_adapter(tmp_path):
+    (tmp_path / "tdd.toml").write_text(_GRADLE_TOML)
+    (tmp_path / "android-app" / "src" / "test").mkdir(parents=True)
+    return GradleAdapter(config_mod.load(tmp_path).project("android-app"), tmp_path)
+
+
+def _gradle_write_results(adapter, xml, task="testDebugUnitTest"):
+    out = adapter.root / "build" / "test-results" / task / "TEST-com.example.CalcTest.xml"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(xml)
 
 
 def _vitest_adapter(tmp_path):
@@ -147,3 +169,28 @@ def test_vitest_evidence_is_the_first_failure_message_line(tmp_path):
     with patch.object(type(adapter), "_run_suite", return_value=(1, json.dumps(report), "")):
         verdict = adapter.run(target)
     assert verdict.target_evidence == "AssertionError: expected 2 to be 3 // Object.is equality"
+
+
+def test_gradle_evidence_is_the_first_failure_message_line(tmp_path):
+    adapter = _gradle_adapter(tmp_path)
+    target = "android-app::com.example.CalcTest/add"
+    junit_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<testsuite name="com.example.CalcTest" tests="1" failures="1">\n'
+        '  <testcase name="add" classname="com.example.CalcTest" time="0.010">\n'
+        '    <failure message="expected:&lt;1000&gt; but was:&lt;500&gt;"'
+        ' type="org.opentest4j.AssertionFailedError">'
+        "org.opentest4j.AssertionFailedError: expected:&lt;1000&gt; but was:&lt;500&gt;\n"
+        "\tat com.example.CalcTest.add(CalcTest.kt:10)\n"
+        "</failure>\n"
+        "  </testcase>\n"
+        "</testsuite>\n"
+    )
+
+    def side_effect(cmd, env=None):
+        _gradle_write_results(adapter, junit_xml)
+        return (1, "", "")
+
+    with patch.object(type(adapter), "_run_suite", side_effect=side_effect):
+        verdict = adapter.run(target)
+    assert verdict.target_evidence == "expected:<1000> but was:<500>"
