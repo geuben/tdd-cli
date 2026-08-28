@@ -102,6 +102,8 @@ class Project:
     #: Wall-clock timeout in seconds for this project's suite invocations.
     #: Overrides the 1800 s default. Doctor warns when a known baseline exceeds it.
     timeout: int | None = None
+    #: Override the default implausibility ratio threshold (0, 1] for this project.
+    baseline_max_failure_ratio: float | None = None
 
     def override_for(self, rel_path: str) -> Override | None:
         """First declared override whose pattern matches (path relative to the
@@ -345,6 +347,13 @@ def load(worktree: Path) -> Config:
         timeout = body.get("timeout")
         if timeout is not None and not isinstance(timeout, int):
             raise ConfigError(f"project {name!r}: timeout must be an integer")
+        baseline_max_failure_ratio = body.get("baseline_max_failure_ratio")
+        if baseline_max_failure_ratio is not None:
+            if not isinstance(baseline_max_failure_ratio, (int, float)) or not (0 < baseline_max_failure_ratio <= 1):
+                raise ConfigError(
+                    f"project {name!r}: baseline_max_failure_ratio must be a number in (0, 1]"
+                )
+            baseline_max_failure_ratio = float(baseline_max_failure_ratio)
         projects[name] = Project(
             name=name,
             root=body["root"].rstrip("/"),
@@ -359,6 +368,7 @@ def load(worktree: Path) -> Config:
             overrides=_load_overrides(name, body.get("override", [])),
             lease=body.get("lease"),
             timeout=timeout,
+            baseline_max_failure_ratio=baseline_max_failure_ratio,
         )
 
     artifacts: dict[str, Artifact] = {}

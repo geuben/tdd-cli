@@ -712,18 +712,24 @@ def cmd_run_start(args) -> Envelope:
                     collected=len(collection.tests),
                 )
 
-        implausible = [
-            {
-                "project": name,
-                "failing": len(v.failed),
-                "collected": len(c.tests),
-                "ratio": len(v.failed) / len(c.tests),
-                "threshold": BASELINE_MAX_FAILURE_RATIO_DEFAULT,
-            }
-            for name, (v, c) in probes.items()
-            if len(c.tests) >= BASELINE_MIN_COLLECTED
-            and len(v.failed) / len(c.tests) > BASELINE_MAX_FAILURE_RATIO_DEFAULT
-        ]
+        implausible = []
+        for name, (v, c) in probes.items():
+            project = probe_projects.get(name)
+            threshold = (
+                project.baseline_max_failure_ratio
+                if project and project.baseline_max_failure_ratio is not None
+                else BASELINE_MAX_FAILURE_RATIO_DEFAULT
+            )
+            if len(c.tests) >= BASELINE_MIN_COLLECTED and len(v.failed) / len(c.tests) > threshold:
+                implausible.append(
+                    {
+                        "project": name,
+                        "failing": len(v.failed),
+                        "collected": len(c.tests),
+                        "ratio": len(v.failed) / len(c.tests),
+                        "threshold": threshold,
+                    }
+                )
         if implausible and not args.accept_baseline:
             return failure(
                 "baseline is implausible — more than half the suite is failing;"
