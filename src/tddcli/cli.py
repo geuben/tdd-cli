@@ -39,6 +39,9 @@ from .envelope import Envelope, NextAction, Verb, failure, heartbeat
 from .ledger import Ledger, LedgerVersionError, ledger_path, now
 from .machine import CLOSED, SKIPPED, Engine
 
+BASELINE_MAX_FAILURE_RATIO_DEFAULT = 0.5
+BASELINE_MIN_COLLECTED = 10
+
 BLOCKER_KINDS = {
     "regression",
     "target_unfixable",
@@ -635,6 +638,23 @@ def cmd_run_start(args) -> Envelope:
     else:
         probe_projects = cfg.projects
 
+    unreachable = []
+    for name, project in probe_projects.items():
+        if not project.health_command:
+            continue
+        rc, out, err = adapters.base.run_command(
+            project.health_command, worktree / project.root, label="health"
+        )
+        if rc != 0:
+            unreachable.append({"project": name, "exit_code": rc, "output": (out + err)[-4000:]})
+    if unreachable:
+        names = ", ".join(u["project"] for u in unreachable)
+        return failure(
+            f"services unreachable for {names} — fix the stack or drop them from this run",
+            reason="services_unreachable",
+            projects=unreachable,
+        )
+
     # Claim the worktree before probing: two `run start` calls against
     # one worktree must not both pass the baseline window. `Ledger.claim`'s `UNIQUE`
     # insert is the lock — do not read-then-write, which is the race this
@@ -709,6 +729,32 @@ def cmd_run_start(args) -> Envelope:
                     collected=len(collection.tests),
                 )
 
+        implausible = []
+        for name, (v, c) in probes.items():
+            project = probe_projects.get(name)
+            threshold = (
+                project.baseline_max_failure_ratio
+                if project and project.baseline_max_failure_ratio is not None
+                else BASELINE_MAX_FAILURE_RATIO_DEFAULT
+            )
+            if len(c.tests) >= BASELINE_MIN_COLLECTED and len(v.failed) / len(c.tests) > threshold:
+                implausible.append(
+                    {
+                        "project": name,
+                        "failing": len(v.failed),
+                        "collected": len(c.tests),
+                        "ratio": len(v.failed) / len(c.tests),
+                        "threshold": threshold,
+                    }
+                )
+        if implausible and not args.accept_baseline:
+            return failure(
+                "baseline is implausible — more than half the suite is failing;"
+                " the environment may be broken. Fix the stack or pass --accept-baseline.",
+                reason="baseline_implausible",
+                projects=implausible,
+            )
+
         executor = identity.resolve(worktree, args.executor)
         run_id = ledger.insert(
             "run",
@@ -730,6 +776,8 @@ def cmd_run_start(args) -> Envelope:
             ledger.event(run_id, None, "baseline_scoped", json.dumps(skipped))
         if reused:
             ledger.event(run_id, None, "baseline_reused", json.dumps(sorted(reused)))
+        if implausible:
+            ledger.event(run_id, None, "baseline_accepted", json.dumps(implausible))
 
         # Baselines and the collection snapshot, per project (R9.5, R8.9) — from the
         # probe above, so the suite is not run twice.
@@ -749,6 +797,28 @@ def cmd_run_start(args) -> Envelope:
                 tests=json.dumps(sorted(collection.tests)),
                 failed_files=json.dumps(collection.failed_files),
                 captured_at=now(),
+            )
+
+        for name, (verdict, _collection) in probes.items():
+            if not verdict.failed:
+                continue
+            failing = set(verdict.failed)
+            prev = ledger.previous_baseline(str(worktree), name, run_id) or set()
+            new_ids = failing - prev
+            inherited = failing & prev
+            resolved = prev - failing
+            ledger.event(
+                run_id,
+                None,
+                "baseline_standing_delta",
+                json.dumps(
+                    {
+                        "project": name,
+                        "new": sorted(new_ids),
+                        "inherited": sorted(inherited),
+                        "resolved": sorted(resolved),
+                    }
+                ),
             )
 
         engine = Engine(ledger, cfg, worktree, run)
@@ -1271,6 +1341,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--reuse-baselines", action="store_true", help="cache and reuse baseline probe results keyed by content hash")
     s.add_argument("--reuse-max-age", type=float, default=None, help="max age in seconds for a cached baseline entry")
     s.add_argument("--baseline-jobs", type=int, default=1, help="number of parallel baseline probes (default: 1, serial)")
+    s.add_argument("--accept-baseline", action="store_true", help="override the implausibility gate and record the baseline anyway")
     s.set_defaults(fn=cmd_run_start)
 
     s = sub.add_parser("status")

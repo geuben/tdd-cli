@@ -369,6 +369,19 @@ class Ledger:
         rows = self.all("SELECT project, failing FROM baseline WHERE run_id = ?", (run_id,))
         return {r["project"]: set(json.loads(r["failing"])) for r in rows}
 
+    def previous_baseline(
+        self, worktree: str, project: str, before_run_id: int
+    ) -> set[str] | None:
+        row = self.one(
+            "SELECT b.failing FROM baseline b JOIN run r ON b.run_id = r.id"
+            " WHERE r.worktree_path = ? AND b.project = ? AND r.id < ?"
+            " ORDER BY r.id DESC LIMIT 1",
+            (worktree, project, before_run_id),
+        )
+        if row is None:
+            return None
+        return set(json.loads(row["failing"]))
+
     def collection(self, run_id: int) -> dict[str, set[str]]:
         rows = self.all(
             "SELECT project, tests FROM collection_snapshot WHERE run_id = ?", (run_id,)
