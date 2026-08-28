@@ -16,7 +16,6 @@ from tddcli import adapters
 from tddcli import config as config_mod
 from tddcli.adapters.xctest_adapter import XCTestAdapter
 
-
 _XCTEST_TOML = (
     "[project.native-ios]\n"
     'root         = "native-ios"\n'
