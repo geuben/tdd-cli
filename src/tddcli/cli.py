@@ -641,6 +641,16 @@ def cmd_run_start(args) -> Envelope:
 
     # R9.5c — scope baseline capture to plan-reachable projects unless opted out.
     declared_cycles = contract_mod.cycles_from_json(contract_row["declared_cycles"])
+
+    if declared_cycles:
+        lint_findings = target_lint_mod.lint_cycles(declared_cycles, cfg, worktree)
+        if lint_findings:
+            return failure(
+                "declared targets failed lint",
+                reason="target_lint",
+                findings=lint_findings,
+            )
+
     if declared_cycles and not args.baseline_all:
         declared_names = [p for c in declared_cycles for p in c.projects]
         reachable_names = cfg.reachable_projects(declared_names)
