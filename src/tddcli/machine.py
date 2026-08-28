@@ -380,7 +380,8 @@ class Engine:
         flagged: set[str] = set()
         for row in rows:
             flagged.update(json.loads(row["detail"]))
-        return sorted(flagged)
+        dirty = gitutil.dirty_paths(self.worktree)
+        return sorted(p for p in flagged if p in dirty)
 
     def record_commit(self, cycle_row, phase: str, sha: str, message: str, files: list[str]):
         self.ledger.insert(
