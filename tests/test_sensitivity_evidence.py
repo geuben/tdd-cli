@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from conftest import git, run_cli, write_plan
 from tddcli import gitutil
 from tddcli.ledger import Ledger
