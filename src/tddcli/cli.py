@@ -1114,16 +1114,18 @@ def cmd_sensitivity(args) -> Envelope:
     projects = json.loads(cycle["projects"])
 
     if args.step == "check":
-        outcomes, _, _, failure_text = engine.run_projects(
+        outcomes, _, verdicts, failure_text = engine.run_projects(
             projects, targets, cycle, "SENSITIVITY", False
         )
         # A mutation that breaks collection also proves the test depends on the code.
         bites = bool(outcomes) and all(o in (FAILED, NOT_COLLECTED) for o in outcomes.values())
+        evidence = next((v.target_evidence for v in verdicts if v.target_evidence), "")
         ledger.update(
             "sensitivity_check",
             open_check["id"],
             mutation_diff=gitutil.diff_text(worktree)[:20000],
             observed_failure=failure_text[:4000],
+            evidence_line=evidence,
         )
         if not bites:
             return Envelope(
