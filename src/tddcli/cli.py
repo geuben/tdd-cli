@@ -33,6 +33,7 @@ from . import (
 from . import (
     contract as contract_mod,
 )
+from . import target_lint as target_lint_mod
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
 from .envelope import Envelope, NextAction, Verb, failure, heartbeat
@@ -459,6 +460,15 @@ def cmd_plan_register(args) -> Envelope:
             " (fidelity metrics will be unavailable).",
             plan=rel,
         )
+
+    if parsed.cycles:
+        lint_findings = target_lint_mod.lint_cycles(parsed.cycles, cfg, worktree)
+        if lint_findings:
+            return failure(
+                "declared targets failed lint",
+                reason="target_lint",
+                findings=lint_findings,
+            )
 
     existing = ledger.one(
         "SELECT * FROM plan_contract WHERE plan_path = ? AND git_blob_sha IS ?",
