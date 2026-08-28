@@ -14,6 +14,9 @@ from unittest.mock import patch
 import tddcli.adapters.base as adapters_base
 from tddcli import adapters
 from tddcli import config as config_mod
+import stat
+
+from tddcli.adapters.exec_adapter import ExecAdapter
 from tddcli.adapters.gradle_adapter import GradleAdapter
 from tddcli.adapters.vitest_adapter import VitestAdapter
 from tddcli.adapters.xctest_adapter import XCTestAdapter
@@ -34,6 +37,22 @@ _GRADLE_TOML = (
     'test_paths   = ["src/test/"]\n'
     'test_command = "./gradlew testDebugUnitTest"\n'
 )
+
+
+def _exec_adapter(tmp_path):
+    (tmp_path / "tdd.toml").write_text(
+        "[project.gates]\n"
+        'root       = "gates"\n'
+        'adapter    = "exec"\n'
+        'test_paths = ["scripts/check-*.sh"]\n'
+    )
+    (tmp_path / "gates" / "scripts").mkdir(parents=True)
+    return ExecAdapter(config_mod.load(tmp_path).project("gates"), tmp_path)
+
+
+def _write_script(path: Path, body: str) -> None:
+    path.write_text(f"#!/bin/sh\n{body}\n")
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
 
 
 def _gradle_adapter(tmp_path):
@@ -194,3 +213,15 @@ def test_gradle_evidence_is_the_first_failure_message_line(tmp_path):
     with patch.object(type(adapter), "_run_suite", side_effect=side_effect):
         verdict = adapter.run(target)
     assert verdict.target_evidence == "expected:<1000> but was:<500>"
+
+
+def test_exec_evidence_is_the_last_nonempty_output_line(tmp_path):
+    adapter = _exec_adapter(tmp_path)
+    script = tmp_path / "gates" / "scripts" / "check-deploy.sh"
+    _write_script(
+        script,
+        'echo "INFO: starting deployment"\necho "INFO: checking service"\necho "FAIL: expected exit 0, got 1"; exit 1',
+    )
+    target = "gates::scripts/check-deploy.sh"
+    verdict = adapter.run(target)
+    assert verdict.target_evidence == "FAIL: expected exit 0, got 1"
