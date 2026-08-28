@@ -85,6 +85,30 @@ def test_vitest_target_without_describe_separator_is_flagged(tmp_path):
     assert " > " in msg
 
 
+def test_register_refuses_a_root_duplicated_pytest_target(repo):
+    (repo / "tdd.toml").write_text(
+        "[project.proj]\n"
+        'root       = "backend"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        "lint       = []\n"
+        "typecheck  = []\n"
+    )
+    import subprocess
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "swap project name"], check=True)
+    plan = write_plan(
+        repo,
+        "---\ncycles:\n  - n: 1\n    project: proj\n    test: \"backend/tests/test_add.py::test_add\"\n    files: []\n---\n",
+    )
+    out = run_cli(repo, "plan", "register", plan)
+    assert out["ok"] is False
+    assert out["result"]["reason"] == "target_lint"
+    findings = out["result"]["findings"]
+    assert len(findings) == 1
+    assert findings[0]["suggestion"] == "tests/test_add.py::test_add"
+
+
 def test_register_refuses_a_pytest_target_without_separator(repo):
     plan = write_plan(repo, _PLAN_NO_SEP)
     out = run_cli(repo, "plan", "register", plan)
