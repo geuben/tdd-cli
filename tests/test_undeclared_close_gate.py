@@ -78,3 +78,29 @@ def test_a_committed_flagged_file_does_not_block(repo):
     assert final["next_action"]["terminal"] is True
 
 
+def test_a_vanished_flagged_file_is_reported_not_blocked(repo):
+    """A flagged file deleted before close emits undeclared_file_dropped but does not block."""
+    plan = write_plan(repo, SINGLE_CYCLE_PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    assert run_cli(repo, "run", "start", "--plan", plan)["ok"]
+
+    (repo / "notes.md").write_text("scratch notes\n")
+
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    raise NotImplementedError\n"
+    )
+    run_cli(repo, "advance")  # → AWAITING_IMPL; notes.md fires undeclared_file_touched
+
+    # Delete notes.md before the remaining advances — it vanished without being committed.
+    (repo / "notes.md").unlink()
+
+    (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    run_cli(repo, "advance")  # → AWAITING_REFACTOR
+    final = run_cli(repo, "advance")  # → complete (vanished, not dirty)
+
+    assert final["next_action"]["verb"] == "complete"
+    assert final["next_action"]["terminal"] is True
+
+    events = run_cli(repo, "metrics")["result"]["runs"][0]["integrity_events"]
+    assert events.get("undeclared_file_dropped", 0) >= 1
