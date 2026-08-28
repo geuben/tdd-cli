@@ -72,6 +72,26 @@ def test_sensitivity_check_records_the_evidence_line(repo):
     assert row["evidence_line"].startswith("assert")
 
 
+def test_empty_evidence_renders_the_sentinel(repo, tmp_path):
+    _start(repo)
+    _drive_sensitivity(repo)
+    led = Ledger(gitutil.repo_identity(repo))
+    check_row = led.one("SELECT id FROM sensitivity_check ORDER BY id DESC LIMIT 1")
+    led.update(
+        "sensitivity_check",
+        check_row["id"],
+        observed_failure="[gw0] darwin -- Python 3.12.8 /tmp/x\nnoise line",
+        evidence_line="",
+    )
+    out = tmp_path / "log.md"
+    run_cli(repo, "advance")  # -> AWAITING_REFACTOR
+    run_cli(repo, "advance")  # -> close sweep
+    run_cli(repo, "log", "render", "--out", str(out))
+    rendered = out.read_text()
+    assert "<no assertion line captured>" in rendered
+    assert "[gw0]" not in rendered
+
+
 def test_friction_log_observed_line_is_the_evidence_line(repo, tmp_path):
     _start(repo)
     _drive_sensitivity(repo)
