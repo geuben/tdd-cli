@@ -381,6 +381,12 @@ class Engine:
         for row in rows:
             flagged.update(json.loads(row["detail"]))
         dirty = gitutil.dirty_paths(self.worktree)
+        tracked = gitutil.tracked_at_head(self.worktree, list(flagged))
+        dropped = sorted(p for p in flagged if p not in dirty and p not in tracked)
+        if dropped:
+            self.ledger.event(
+                self.run["id"], None, "undeclared_file_dropped", json.dumps(dropped)
+            )
         return sorted(p for p in flagged if p in dirty)
 
     def record_commit(self, cycle_row, phase: str, sha: str, message: str, files: list[str]):
