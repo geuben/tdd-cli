@@ -26,6 +26,30 @@ def _pytest_adapter(tmp_path):
     return adapters.build(config_mod.load(tmp_path).project("backend"), tmp_path)
 
 
+def test_pytest_evidence_is_empty_when_no_assertion_line_exists(tmp_path, monkeypatch):
+    adapter = _pytest_adapter(tmp_path)
+    longrepr = (
+        "tests/test_calc.py:10: RecursionError\n"
+        "RecursionError: maximum recursion depth exceeded\n"
+    )
+
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
+        marker = "--json-report-file="
+        path = command.split(marker, 1)[1].split(" --", 1)[0]
+        Path(path.strip("'\"")).write_text(json.dumps({
+            "tests": [{
+                "nodeid": "tests/test_calc.py::test_recurse",
+                "outcome": "failed",
+                "call": {"longrepr": longrepr},
+            }],
+        }))
+        return 1, "", ""
+
+    monkeypatch.setattr(adapters_base, "run_command", fake)
+    verdict = adapter.run("backend::tests/test_calc.py::test_recurse")
+    assert verdict.target_evidence == ""
+
+
 def test_pytest_evidence_is_the_assertion_line_not_the_xdist_header(tmp_path, monkeypatch):
     adapter = _pytest_adapter(tmp_path)
     longrepr = (
