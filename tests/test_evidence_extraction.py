@@ -8,14 +8,13 @@ check's observed: line is auditable even under xdist headers or console noise.
 from __future__ import annotations
 
 import json
+import stat
 from pathlib import Path
 from unittest.mock import patch
 
 import tddcli.adapters.base as adapters_base
 from tddcli import adapters
 from tddcli import config as config_mod
-import stat
-
 from tddcli.adapters.exec_adapter import ExecAdapter
 from tddcli.adapters.gradle_adapter import GradleAdapter
 from tddcli.adapters.vitest_adapter import VitestAdapter
