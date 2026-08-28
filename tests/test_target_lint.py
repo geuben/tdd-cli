@@ -85,6 +85,41 @@ def test_vitest_target_without_describe_separator_is_flagged(tmp_path):
     assert " > " in msg
 
 
+def test_run_start_refuses_lint_findings_from_config_drift(repo):
+    (repo / "tdd.toml").write_text(
+        "[project.proj]\n"
+        'root       = "."\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["backend/tests/"]\n'
+        "lint       = []\n"
+        "typecheck  = []\n"
+    )
+    import subprocess
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "root=."], check=True)
+    plan = write_plan(
+        repo,
+        '---\ncycles:\n  - n: 1\n    project: proj\n    test: "backend/tests/test_smoke.py::test_smoke"\n    files: []\n---\n',
+    )
+    reg = run_cli(repo, "plan", "register", plan)
+    assert reg["ok"], reg
+
+    (repo / "tdd.toml").write_text(
+        "[project.proj]\n"
+        'root       = "backend"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        "lint       = []\n"
+        "typecheck  = []\n"
+    )
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "drift root"], check=True)
+
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"] is False
+    assert out["result"]["reason"] == "target_lint"
+
+
 def test_register_refuses_a_root_duplicated_vitest_target(tmp_path, ledger_home):
     (tmp_path / "tdd.toml").write_text(
         "[project.proj]\n"
