@@ -4,7 +4,11 @@ and probe live-service reachability before capture.
 
 from __future__ import annotations
 
+import json
+
 from conftest import git, run_cli, write_plan
+from tddcli import gitutil
+from tddcli.ledger import Ledger, now
 
 PLAN = """---
 cycles:
@@ -108,3 +112,62 @@ def test_a_healthy_baseline_is_recorded_untouched(repo):
     metrics = run_cli(repo, "metrics")
     events = metrics["result"]["runs"][0]["integrity_events"]
     assert events.get("baseline_accepted", 0) == 0
+
+
+def test_non_empty_baseline_emits_standing_delta(repo, ledger_home):
+    # Seed a prior ended run with one failing test for this repo's worktree.
+    ledger = Ledger(gitutil.repo_identity(repo))
+    worktree_path = str(repo)
+    seeded_failing_id = "backend::tests/test_infra.py::test_fail_0"
+
+    contract_id = ledger.insert(
+        "plan_contract",
+        plan_path="tasks/plan.md",
+        git_blob_sha=None,
+        git_commit=None,
+        status="declared",
+        declared_cycles="[]",
+        annotation_keys="[]",
+        ancillary_files="[]",
+        registered_at=now(),
+    )
+    prior_run_id = ledger.insert(
+        "run",
+        plan_contract_id=contract_id,
+        executor_model="test-model",
+        executor_source="human",
+        worktree_path=worktree_path,
+        started_at=now(),
+        ended_at=now(),
+        preexisting_dirty="[]",
+    )
+    ledger.insert(
+        "baseline",
+        run_id=prior_run_id,
+        project="backend",
+        failing=json.dumps([seeded_failing_id]),
+        captured_at=now(),
+        source="probed",
+    )
+
+    # Small suite (< MIN=10) with one inherited fail and one new fail.
+    (repo / "backend" / "tests" / "test_smoke.py").unlink()
+    (repo / "backend" / "tests" / "test_infra.py").write_text(
+        "def test_fail_0():\n    assert False\n"  # inherited
+        "\ndef test_fail_1():\n    assert False\n"  # new
+        "\ndef test_pass():\n    assert True\n"
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "suite: small mixed")
+
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+
+    rows = ledger.all(
+        "SELECT detail FROM integrity_event WHERE kind = 'baseline_standing_delta'"
+    )
+    assert len(rows) == 1
+    delta = json.loads(rows[0]["detail"])
+    assert len(delta["new"]) == 1
+    assert len(delta["inherited"]) == 1
