@@ -85,6 +85,28 @@ def test_vitest_target_without_describe_separator_is_flagged(tmp_path):
     assert " > " in msg
 
 
+def test_register_accepts_a_genuinely_nested_root_path(repo):
+    (repo / "tdd.toml").write_text(
+        "[project.proj]\n"
+        'root       = "backend"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        "lint       = []\n"
+        "typecheck  = []\n"
+    )
+    (repo / "backend" / "backend" / "tests").mkdir(parents=True)
+    (repo / "backend" / "backend" / "tests" / "test_add.py").write_text("def test_add(): pass\n")
+    import subprocess
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "nested root"], check=True)
+    plan = write_plan(
+        repo,
+        "---\ncycles:\n  - n: 1\n    project: proj\n    test: \"backend/tests/test_add.py::test_add\"\n    files: []\n---\n",
+    )
+    out = run_cli(repo, "plan", "register", plan)
+    assert out["ok"] is True
+
+
 def test_register_refuses_a_root_duplicated_pytest_target(repo):
     (repo / "tdd.toml").write_text(
         "[project.proj]\n"
