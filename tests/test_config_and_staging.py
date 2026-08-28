@@ -282,3 +282,25 @@ def test_declared_ancillary_file_is_bucketed_and_staged(cfg):
     assert c.ancillary == ["tasks/plan.md"]
     assert c.outside == []
     assert "tasks/plan.md" in staging.paths_for_phase(staging.GREEN, c)
+
+
+def test_health_command_parses_onto_project(tmp_path):
+    (tmp_path / "tdd.toml").write_text(
+        '[project.backend]\n'
+        'root         = "backend"\n'
+        'adapter      = "pytest"\n'
+        'test_paths   = ["tests/"]\n'
+        'health_command = "true"\n'
+    )
+    cfg = config_mod.load(tmp_path)
+    assert cfg.projects["backend"].health_command == "true"
+
+    (tmp_path / "tdd.toml").write_text(
+        '[project.backend]\n'
+        'root           = "backend"\n'
+        'adapter        = "pytest"\n'
+        'test_paths     = ["tests/"]\n'
+        'health_command = 5\n'
+    )
+    with pytest.raises(config_mod.ConfigError):
+        config_mod.load(tmp_path)
