@@ -41,3 +41,13 @@ def test_a_mostly_red_baseline_is_refused(repo):
     assert "backend" in projects, out
     assert projects["backend"]["failing"] == 12
     assert projects["backend"]["collected"] == 12
+
+
+def test_accept_baseline_overrides_the_refusal(repo):
+    _make_mostly_red_repo(repo, n=12)
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan, "--accept-baseline")
+
+    assert out["ok"] is True, out
+    assert out["next_action"]["verb"] == "write_test"
