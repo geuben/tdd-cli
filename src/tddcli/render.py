@@ -95,7 +95,8 @@ def friction_log(ledger: Ledger, run) -> str:
             if sens["observed_failure"]:
                 evidence = sens["evidence_line"]
                 if evidence:
-                    a(f"  - observed: `{evidence}`")
+                    capped = ("…" + evidence[-160:]) if len(evidence) > 160 else evidence
+                    a(f"  - observed: `{capped}`")
                 elif evidence == "":
                     a("  - observed: <no assertion line captured>")
                 else:
