@@ -6,6 +6,58 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-28
+
+### Added
+
+- **`--reuse-baselines` caches baseline probes by content hash.** `run start`
+  can skip re-probing a project whose tree is unchanged: a probe result is
+  cached keyed by `(project, tree_hash, config_sha)` — where `tree_hash` folds in
+  every upstream producer root — and an identical rerun emits `baseline_reused`
+  instead of `baseline_captured`, reusing the cached failing set and collection
+  snapshot rather than re-running the suite. Provenance is recorded on the
+  baseline row (`source`), and `--reuse-max-age` re-probes any entry older than
+  the given age. Off by default; the cache stays empty unless the flag is passed
+  (#45, #59).
+
+- **`--baseline-jobs` parallelizes baseline probing.** `run start` probes each
+  project's baseline under a bounded `ThreadPoolExecutor` when `--baseline-jobs`
+  is greater than 1 (default 1, must be >= 1). The `baseline_captured` heartbeat
+  survives the pool, and a worker probe that raises becomes an attributed failure
+  that aborts cleanly and frees the worktree rather than wedging it (#46, #62).
+
+- **Plan-level `ancillary_files`.** A top-level front-matter key declaring
+  cross-project or companion paths a plan touches (README, generated fixtures,
+  sibling-project files). Declared ancillary paths are bucketed into their own
+  staging bucket, committed with the cycle, and fire no `undeclared_file_touched`
+  event. Validated as a list of strings at registration and persisted to the
+  ledger via a v5→v6 migration (#70, #80).
+
+- **Run-close gate on undeclared touched paths.** `run close` now blocks when a
+  path previously flagged as `undeclared_file_touched` is still dirty in the
+  worktree, so undeclared changes cannot slip through at the end of a run. A
+  flagged path that was since committed does not block; one that has vanished is
+  reported via a new `undeclared_file_dropped` event rather than blocking (#69,
+  #81).
+
+- **Reserved per-cycle `meta:` passthrough.** A cycle may carry an authored
+  `meta:` mapping in the plan front-matter; it round-trips through storage
+  unchanged and is available for plan-time metadata. A non-mapping `meta:`
+  hard-fails registration with a `ContractError` (#58, #65).
+
+### Fixed
+
+- `undeclared_file_touched` is deduplicated within a cycle, so a path touched
+  across multiple phases no longer floods the cycle with repeated events (#55,
+  #61).
+- vitest test ids are normalised on the describe/test separator before matching,
+  so a formatting-only difference between a declared target and the observed
+  verdict is no longer reported as a spurious `declared_test_mismatch` (#57,
+  #63).
+- The `stale_artifact` event is suppressed when the tool auto-regenerates the
+  artifact and commits it, so a successful regeneration no longer also emits a
+  staleness warning (#64).
+
 ## [0.7.0] - 2026-08-23
 
 ### Fixed
