@@ -638,6 +638,23 @@ def cmd_run_start(args) -> Envelope:
     else:
         probe_projects = cfg.projects
 
+    unreachable = []
+    for name, project in probe_projects.items():
+        if not project.health_command:
+            continue
+        rc, out, err = adapters.base.run_command(
+            project.health_command, worktree / project.root, label="health"
+        )
+        if rc != 0:
+            unreachable.append({"project": name, "exit_code": rc, "output": (out + err)[-4000:]})
+    if unreachable:
+        names = ", ".join(u["project"] for u in unreachable)
+        return failure(
+            f"services unreachable for {names} — fix the stack or drop them from this run",
+            reason="services_unreachable",
+            projects=unreachable,
+        )
+
     # Claim the worktree before probing: two `run start` calls against
     # one worktree must not both pass the baseline window. `Ledger.claim`'s `UNIQUE`
     # insert is the lock — do not read-then-write, which is the race this
