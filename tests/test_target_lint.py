@@ -5,6 +5,7 @@ from pathlib import Path
 
 from conftest import run_cli, write_plan
 from tddcli import config as config_mod
+from tddcli.adapters.gradle_adapter import GradleAdapter
 from tddcli.adapters.vitest_adapter import VitestAdapter
 
 _VITEST_TOML = """
@@ -12,6 +13,14 @@ _VITEST_TOML = """
 root       = "frontend"
 adapter    = "vitest"
 test_paths = ["**/*.test.ts"]
+"""
+
+_GRADLE_TOML = """
+[project.app]
+root         = "app"
+adapter      = "gradle"
+test_paths   = ["src/test/"]
+test_command = "./gradlew test"
 """
 
 
@@ -30,6 +39,20 @@ cycles:
     files: []
 ---
 """
+
+
+def gradle_adapter_for(tmp_path: Path) -> GradleAdapter:
+    (tmp_path / "tdd.toml").write_text(_GRADLE_TOML)
+    (tmp_path / "app" / "src" / "test").mkdir(parents=True)
+    cfg = config_mod.load(tmp_path)
+    return GradleAdapter(cfg.project("app"), tmp_path)
+
+
+def test_gradle_target_without_slash_is_flagged(tmp_path):
+    adapter = gradle_adapter_for(tmp_path)
+    msg = adapter.lint_target_id("com.foo.BarTest.testBaz")
+    assert msg
+    assert "/" in msg
 
 
 def test_vitest_target_without_describe_separator_is_flagged(tmp_path):
