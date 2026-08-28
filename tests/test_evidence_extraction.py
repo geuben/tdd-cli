@@ -14,6 +14,7 @@ from unittest.mock import patch
 import tddcli.adapters.base as adapters_base
 from tddcli import adapters
 from tddcli import config as config_mod
+from tddcli.adapters.vitest_adapter import VitestAdapter
 from tddcli.adapters.xctest_adapter import XCTestAdapter
 
 _XCTEST_TOML = (
@@ -23,6 +24,17 @@ _XCTEST_TOML = (
     'test_paths   = ["AppTests/"]\n'
     'test_command = "xcodebuild test -project App.xcodeproj -scheme AppTests"\n'
 )
+
+
+def _vitest_adapter(tmp_path):
+    (tmp_path / "tdd.toml").write_text(
+        "[project.frontend]\n"
+        'root       = "frontend"\n'
+        'adapter    = "vitest"\n'
+        'test_paths = ["**/*.test.ts"]\n'
+    )
+    (tmp_path / "frontend").mkdir()
+    return VitestAdapter(config_mod.load(tmp_path).project("frontend"), tmp_path)
 
 
 def _xctest_adapter(tmp_path):
@@ -113,3 +125,25 @@ def test_xctest_evidence_is_the_error_line_not_console_noise(tmp_path):
         verdict = adapter.run(target)
     assert "XCTAssertEqual failed" in verdict.target_evidence
     assert "Socket SO_ERROR" not in verdict.target_evidence
+
+
+def test_vitest_evidence_is_the_first_failure_message_line(tmp_path):
+    adapter = _vitest_adapter(tmp_path)
+    suite_path = str(tmp_path / "frontend" / "calc.test.ts")
+    target = "frontend::calc.test.ts > calc add returns the sum"
+    report = {
+        "testResults": [{
+            "name": suite_path,
+            "status": "failed",
+            "assertionResults": [{
+                "fullName": "calc add returns the sum",
+                "status": "failed",
+                "failureMessages": [
+                    "AssertionError: expected 2 to be 3 // Object.is equality\n    at Object.<anonymous> (calc.test.ts:5:14)\n"
+                ],
+            }],
+        }],
+    }
+    with patch.object(type(adapter), "_run_suite", return_value=(1, json.dumps(report), "")):
+        verdict = adapter.run(target)
+    assert verdict.target_evidence == "AssertionError: expected 2 to be 3 // Object.is equality"
