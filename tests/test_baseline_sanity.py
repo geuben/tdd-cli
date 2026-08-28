@@ -61,3 +61,16 @@ def test_a_small_all_red_suite_is_not_refused(repo):
 
     assert out["ok"] is True, out
     assert out["result"].get("reason") != "baseline_implausible"
+
+
+def test_project_ratio_config_raises_the_threshold(repo):
+    _make_mostly_red_repo(repo, n=12)
+    toml = (repo / "tdd.toml").read_text()
+    (repo / "tdd.toml").write_text(toml + "baseline_max_failure_ratio = 1.0\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "config: raise ratio threshold")
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+
+    assert out["ok"] is True, out
