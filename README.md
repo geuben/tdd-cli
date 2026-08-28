@@ -231,6 +231,23 @@ and is staged into the GREEN/REFACTOR phase commit alongside the cycle's own fil
 not on the list still fires `undeclared_file_touched` exactly as today. This is a
 plan-level list only; per-cycle overrides are a planned follow-up.
 
+### Run-close gate for undeclared file touches
+
+When the last declared cycle closes, the tool gathers every path that appeared in any
+`undeclared_file_touched` event across the run and checks the worktree:
+
+- **Still dirty/untracked** → a typed blocker `undeclared_file_uncommitted` is inserted,
+  the run outcome is set to `blocked`, and `next_action.verb` is `"blocked"`. Resolution:
+  commit the files, then `tdd resume --unblock --note "committed notes.md"`, or discard
+  and record a justification with `tdd resume --unblock --note "discarding scratch file"`.
+- **Committed during the run** → clean; the run completes normally.
+- **Vanished without being committed** → an `undeclared_file_dropped` integrity event is
+  emitted (visible in `tdd metrics` and the friction log) and the run completes. The event
+  makes a silent drop visible without blocking, since the file is already gone.
+
+The gate composes with `ancillary_files`: declared paths never fire `undeclared_file_touched`,
+so they are never seen by the gate.
+
 **Per-cycle keys:** `n` (ordinal), `project`/`projects`, `test`/`tests`, `title`, `files`,
 `stub_expected`, `modifies_tests`, `commit_red`, `commit_green`, `commit_refactor`,
 `commit_pin`, `pin_cycle`, `contract_cycle`, `refactor_cycle`, and `meta`.
@@ -515,10 +532,11 @@ The CLI cannot compel an agent — only the harness can.
 artifact; a passed-on-arrival cycle cannot close without a verified sensitivity check;
 `advance` refuses an unchanged tree unless `--retry`.
 
-**Recorded, never blocked:** non-stub writes during RED, undeclared file touches, scope
-divergence, extra attempts. Prevention rules with edge cases produce false denials, and a
-blocked agent improvises around them — putting it right back in the reporting path the
-tool exists to keep it out of.
+**Recorded, never blocked mid-run:** non-stub writes during RED, undeclared file touches,
+scope divergence, extra attempts. Prevention rules with edge cases produce false denials,
+and a blocked agent improvises around them — putting it right back in the reporting path
+the tool exists to keep it out of. Undeclared file touches are an exception at run close:
+see the run-close gate above.
 
 **Delegated to hooks:** a Stop hook that queries `tdd status` and refuses to let an agent
 stop while a run is live; a Bash hook redirecting bare `pytest`/`vitest` through `tdd advance`.
