@@ -72,6 +72,25 @@ def test_sensitivity_check_records_the_evidence_line(repo):
     assert row["evidence_line"].startswith("assert")
 
 
+def test_null_evidence_falls_back_to_first_observed_line(repo, tmp_path):
+    _start(repo)
+    _drive_sensitivity(repo)
+    led = Ledger(gitutil.repo_identity(repo))
+    check_row = led.one("SELECT id FROM sensitivity_check ORDER BY id DESC LIMIT 1")
+    led.update(
+        "sensitivity_check",
+        check_row["id"],
+        observed_failure="legacy first line\nsecond line",
+        evidence_line=None,
+    )
+    out = tmp_path / "log.md"
+    run_cli(repo, "advance")  # -> AWAITING_REFACTOR
+    run_cli(repo, "advance")  # -> close sweep
+    run_cli(repo, "log", "render", "--out", str(out))
+    rendered = out.read_text()
+    assert "observed: `legacy first line`" in rendered
+
+
 def test_empty_evidence_renders_the_sentinel(repo, tmp_path):
     _start(repo)
     _drive_sensitivity(repo)
