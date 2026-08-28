@@ -85,3 +85,26 @@ def test_accepted_implausible_baseline_records_an_event(repo):
 
     events = out["result"]["runs"][0]["integrity_events"]
     assert events.get("baseline_accepted", 0) >= 1
+
+
+def _make_healthy_large_repo(repo, *, passing: int = 20, failing: int = 2):
+    """Replace test_smoke.py with a large mostly-passing suite."""
+    (repo / "backend" / "tests" / "test_smoke.py").unlink()
+    lines = "\n".join(f"def test_pass_{i}():\n    assert True\n" for i in range(passing))
+    lines += "\n" + "\n".join(f"def test_fail_{i}():\n    assert False\n" for i in range(failing))
+    (repo / "backend" / "tests" / "test_suite.py").write_text(lines + "\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "suite: healthy large baseline")
+
+
+def test_a_healthy_baseline_is_recorded_untouched(repo):
+    _make_healthy_large_repo(repo, passing=20, failing=2)
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+
+    assert out["ok"] is True, out
+    assert out["result"].get("reason") != "baseline_implausible"
+    metrics = run_cli(repo, "metrics")
+    events = metrics["result"]["runs"][0]["integrity_events"]
+    assert events.get("baseline_accepted", 0) == 0
