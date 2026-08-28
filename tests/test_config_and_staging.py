@@ -272,3 +272,13 @@ def test_commit_message_prefers_the_plan(cfg):
 def test_upstream_producer_roots_includes_self_and_upstream_producers(cfg):
     assert cfg.upstream_producer_roots("frontend") == ["backend", "frontend"]
     assert cfg.upstream_producer_roots("backend") == ["backend"]
+
+
+def test_declared_ancillary_file_is_bucketed_and_staged(cfg):
+    c = staging.classify(
+        cfg, {"backend/app/x.py", "tasks/plan.md"}, ["backend"],
+        declared(), set(), ancillary={"tasks/plan.md"},
+    )
+    assert c.ancillary == ["tasks/plan.md"]
+    assert c.outside == []
+    assert "tasks/plan.md" in staging.paths_for_phase(staging.GREEN, c)

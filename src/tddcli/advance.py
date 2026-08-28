@@ -84,7 +84,8 @@ def _sanctioned_stubs(engine: Engine, cycle, implementation: list[str]) -> list[
 def _stage_and_commit(engine: Engine, cycle, phase: str, declared) -> tuple[str | None, list[str], object]:
     changed = engine.authored_changes(cycle)
     classification = staging.classify(
-        engine.config, changed, json.loads(cycle["projects"]), declared, engine.excluded
+        engine.config, changed, json.loads(cycle["projects"]), declared, engine.excluded,
+        ancillary=set(engine.ancillary_files),
     )
     if phase == staging.RED:
         adopted = _sanctioned_stubs(engine, cycle, classification.implementation)

@@ -212,8 +212,24 @@ cycles:
       - "backend::tests/test_openapi.py::test_upload_body_schema"
       - "frontend::services/__tests__/upload.test.ts > matches contract"
 annotation_keys: ["literal_detail_handlers_kept"]
+ancillary_files:
+  - frontend/src/api/registerClient.ts   # type-break from regenerated client
+  - docs/INVARIANTS.md                   # companion doc read at runtime by cycle 7's test
 ---
 ```
+
+**Top-level keys:**
+
+`annotation_keys` — a list of judgement-annotation keys the plan requires; the run close
+gate checks that every key is present before the plan can be marked complete.
+
+`ancillary_files` — a plan-level list of repo-root-relative paths the plan is known to
+touch outside any registered project root (cross-project ripples, companion documents).
+Paths are hash-frozen with the plan blob like all other front-matter. A changed path that
+matches the list is classified as *declared* — no `undeclared_file_touched` event fires —
+and is staged into the GREEN/REFACTOR phase commit alongside the cycle's own files. A path
+not on the list still fires `undeclared_file_touched` exactly as today. This is a
+plan-level list only; per-cycle overrides are a planned follow-up.
 
 **Per-cycle keys:** `n` (ordinal), `project`/`projects`, `test`/`tests`, `title`, `files`,
 `stub_expected`, `modifies_tests`, `commit_red`, `commit_green`, `commit_refactor`,

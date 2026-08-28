@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 class LedgerVersionError(RuntimeError):
@@ -35,6 +35,8 @@ MIGRATIONS: dict[int, str] = {
     3: "",
     # v4 -> v5 added source column to baseline; ALTER TABLE covers old ledgers.
     4: "ALTER TABLE baseline ADD COLUMN source TEXT NOT NULL DEFAULT 'probed';",
+    # v5 -> v6 added ancillary_files column to plan_contract; ALTER TABLE covers old ledgers.
+    5: "ALTER TABLE plan_contract ADD COLUMN ancillary_files TEXT NOT NULL DEFAULT '[]';",
 }
 
 SCHEMA = """
@@ -67,6 +69,7 @@ CREATE TABLE IF NOT EXISTS plan_contract (
     status TEXT NOT NULL,               -- declared | undeclared
     declared_cycles TEXT NOT NULL,      -- json
     annotation_keys TEXT NOT NULL,      -- json
+    ancillary_files TEXT NOT NULL DEFAULT '[]',  -- json
     registered_at TEXT NOT NULL
 );
 

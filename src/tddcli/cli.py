@@ -472,6 +472,7 @@ def cmd_plan_register(args) -> Envelope:
             status=parsed.status,
             declared_cycles=contract_mod.cycles_to_json(parsed.cycles),
             annotation_keys=json.dumps(parsed.annotation_keys),
+            ancillary_files=json.dumps(parsed.ancillary_files),
             registered_at=now(),
         )
     )
