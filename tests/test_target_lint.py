@@ -85,6 +85,31 @@ def test_vitest_target_without_describe_separator_is_flagged(tmp_path):
     assert " > " in msg
 
 
+def test_register_refuses_a_root_duplicated_vitest_target(tmp_path, ledger_home):
+    (tmp_path / "tdd.toml").write_text(
+        "[project.proj]\n"
+        'root       = "scripts"\n'
+        'adapter    = "vitest"\n'
+        'test_paths = ["**/*.test.js"]\n'
+        "lint       = []\n"
+        "typecheck  = []\n"
+    )
+    (tmp_path / "scripts").mkdir()
+    import subprocess
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "t@t.com"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "T"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"], check=True)
+    plan = write_plan(
+        tmp_path,
+        '---\ncycles:\n  - n: 1\n    project: proj\n    test: "scripts/__tests__/x.test.js > does a thing"\n    files: []\n---\n',
+    )
+    out = run_cli(tmp_path, "plan", "register", plan)
+    assert out["ok"] is False
+    assert out["result"]["reason"] == "target_lint"
+
+
 def test_register_accepts_a_genuinely_nested_root_path(repo):
     (repo / "tdd.toml").write_text(
         "[project.proj]\n"
