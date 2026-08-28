@@ -74,3 +74,14 @@ def test_project_ratio_config_raises_the_threshold(repo):
     out = run_cli(repo, "run", "start", "--plan", plan)
 
     assert out["ok"] is True, out
+
+
+def test_accepted_implausible_baseline_records_an_event(repo):
+    _make_mostly_red_repo(repo, n=12)
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan, "--accept-baseline")
+    out = run_cli(repo, "metrics")
+
+    events = out["result"]["runs"][0]["integrity_events"]
+    assert events.get("baseline_accepted", 0) >= 1
