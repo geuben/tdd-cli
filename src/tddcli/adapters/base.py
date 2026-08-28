@@ -25,6 +25,7 @@ class Verdict:
     target: str | None = None
     target_outcome: str = NOT_FOUND
     target_failure: str = ""
+    target_evidence: str = ""
     passed: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
     duration_ms: int = 0
