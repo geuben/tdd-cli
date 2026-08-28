@@ -173,6 +173,20 @@ def test_non_empty_baseline_emits_standing_delta(repo, ledger_home):
     assert len(delta["inherited"]) == 1
 
 
+def test_reachable_services_proceed_normally(repo):
+    toml = (repo / "tdd.toml").read_text()
+    (repo / "tdd.toml").write_text(toml + 'health_command = "true"\n')
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "config: passing health_command")
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+
+    assert out["ok"] is True, out
+    assert out["next_action"]["verb"] == "write_test"
+    assert out["result"].get("reason") != "services_unreachable"
+
+
 def test_unreachable_services_refuse_before_probing(repo):
     toml = (repo / "tdd.toml").read_text()
     (repo / "tdd.toml").write_text(toml + 'health_command = "false"\n')
