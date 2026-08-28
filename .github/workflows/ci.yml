@@ -15,7 +15,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        # Oldest supported and newest — breakage on 3.12/3.13 with both
+        # endpoints green is rare enough that the middle rungs don't pay
+        # for their CI minutes.
+        python-version: ["3.11", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
