@@ -72,6 +72,29 @@ def test_sensitivity_check_records_the_evidence_line(repo):
     assert row["evidence_line"].startswith("assert")
 
 
+def test_long_evidence_is_capped_keeping_the_tail(repo, tmp_path):
+    _start(repo)
+    _drive_sensitivity(repo)
+    led = Ledger(gitutil.repo_identity(repo))
+    check_row = led.one("SELECT id FROM sensitivity_check ORDER BY id DESC LIMIT 1")
+    tail = 'is not equal to ("stopped") -[AppTests.RecTests testStopsRecording]'
+    long_line = "A" * 250 + tail
+    led.update(
+        "sensitivity_check",
+        check_row["id"],
+        observed_failure="something",
+        evidence_line=long_line,
+    )
+    out = tmp_path / "log.md"
+    run_cli(repo, "advance")  # -> AWAITING_REFACTOR
+    run_cli(repo, "advance")  # -> close sweep
+    run_cli(repo, "log", "render", "--out", str(out))
+    rendered = out.read_text()
+    assert tail in rendered
+    assert "…" in rendered
+    assert "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" not in rendered
+
+
 def test_null_evidence_falls_back_to_first_observed_line(repo, tmp_path):
     _start(repo)
     _drive_sensitivity(repo)
