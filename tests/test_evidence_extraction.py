@@ -10,9 +10,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import tddcli.adapters.base as adapters_base
 from tddcli import adapters
 from tddcli import config as config_mod
-import tddcli.adapters.base as adapters_base
 
 
 def _pytest_adapter(tmp_path):
