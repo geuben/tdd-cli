@@ -104,6 +104,8 @@ class Project:
     timeout: int | None = None
     #: Override the default implausibility ratio threshold (0, 1] for this project.
     baseline_max_failure_ratio: float | None = None
+    #: Shell command run before probing to verify live services are reachable.
+    health_command: str | None = None
 
     def override_for(self, rel_path: str) -> Override | None:
         """First declared override whose pattern matches (path relative to the
@@ -354,6 +356,9 @@ def load(worktree: Path) -> Config:
                     f"project {name!r}: baseline_max_failure_ratio must be a number in (0, 1]"
                 )
             baseline_max_failure_ratio = float(baseline_max_failure_ratio)
+        health_command = body.get("health_command")
+        if health_command is not None and not isinstance(health_command, str):
+            raise ConfigError(f"project {name!r}: health_command must be a string")
         projects[name] = Project(
             name=name,
             root=body["root"].rstrip("/"),
@@ -369,6 +374,7 @@ def load(worktree: Path) -> Config:
             lease=body.get("lease"),
             timeout=timeout,
             baseline_max_failure_ratio=baseline_max_failure_ratio,
+            health_command=health_command,
         )
 
     artifacts: dict[str, Artifact] = {}
