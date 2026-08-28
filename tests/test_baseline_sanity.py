@@ -173,6 +173,22 @@ def test_non_empty_baseline_emits_standing_delta(repo, ledger_home):
     assert len(delta["inherited"]) == 1
 
 
+def test_unreachable_services_refuse_before_probing(repo):
+    toml = (repo / "tdd.toml").read_text()
+    (repo / "tdd.toml").write_text(toml + 'health_command = "false"\n')
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "config: failing health_command")
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+
+    assert out["ok"] is False, out
+    assert out["result"]["reason"] == "services_unreachable", out
+    projects = {p["project"]: p for p in out["result"]["projects"]}
+    assert "backend" in projects, out
+    assert projects["backend"]["exit_code"] != 0
+
+
 def test_first_run_reports_all_standing_failures_new(repo, ledger_home):
     # No prior run seeded — everything should be reported as new.
     ledger = Ledger(gitutil.repo_identity(repo))
