@@ -173,6 +173,14 @@ Reserved per-run keys: `plan_quality_score` (per plan phase, with rationale), `c
 - **R5.5** `plan_quality_score` is subjective and self-reported. It is retained because it is a
   direct signal on the planning process, and reported as an agent opinion, never as an observation.
 
+### Note
+Free-text executor narrative, cycle- or run-scoped, unverified by design. Written with
+`tdd note "<text>"` at any point during or after the run. When the run has an open cycle,
+the note is stamped with the cycle and its current phase; after the run ends, the note is
+run-level (cycle/phase NULL). Notes render in the friction log as blockquotes, visually
+distinct from telemetry. They are claims the executor makes at the moment the reason exists;
+an auditor compares them against reality.
+
 ### IntegrityEvent
 Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mismatch`,
 `off_protocol_invocation`, `stale_artifact`, `plan_blob_changed`, `executor_unknown`.
@@ -483,6 +491,7 @@ one has no move left but to re-run doctor and read the same output again.
 | `tdd advance` | run the relevant suite(s), record an Invocation, compute the transition, emit `next_action`. **The only command that changes phase.** |
 | `tdd cycle skip --reason <text>` | mark the current cycle `SKIPPED` with a mandatory reason; open the next. Sanctioned path for cycles the plan got wrong |
 | `tdd annotate --key <k> --value <v>` | attach agent judgement to the current cycle |
+| `tdd note "<text>"` | attach a free-text narrative note to the current cycle or (post-run) to the run |
 | `tdd blocker --kind <k> --detail <text>` | record a typed blocker; set run `outcome = blocked`, releasing the stop hook (H1) |
 | `tdd resume` | reconstruct position from the ledger and emit `next_action` |
 | `tdd resume --unblock --note <text>` | **human only.** Reopen a blocked run, recording a `human_intervention` event with the note |
@@ -824,7 +833,7 @@ depend on any of them being installed.
 ### 13.1 Storage
 - **R13.1** SQLite, single file, append-only for invocations and events.
 - **R13.2** Schema versioned and migrated. The schema is the long-lived asset; the transport is not.
-  Current schema version: **7** (v7 adds `sensitivity_check.evidence_line TEXT` for per-adapter assertion-line evidence; earlier milestones: v3 adds `advance_claim`, v4–v6 are intermediate columns).
+  Current schema version: **8** (v8 adds the `note` table for executor-narrative rows; v7 adds `sensitivity_check.evidence_line TEXT` for per-adapter assertion-line evidence; earlier milestones: v3 adds `advance_claim`, v4–v6 are intermediate columns).
 
 ### 13.2 Location
 - **R13.3** **One ledger per repository**, in a per-user data directory keyed by the repository's

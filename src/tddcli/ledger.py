@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 class LedgerVersionError(RuntimeError):
@@ -39,6 +39,8 @@ MIGRATIONS: dict[int, str] = {
     5: "ALTER TABLE plan_contract ADD COLUMN ancillary_files TEXT NOT NULL DEFAULT '[]';",
     # v6 -> v7 added evidence_line column to sensitivity_check; ALTER TABLE covers old ledgers.
     6: "ALTER TABLE sensitivity_check ADD COLUMN evidence_line TEXT;",
+    # v7 -> v8 added the note table; CREATE TABLE IF NOT EXISTS covers it.
+    7: "",
 }
 
 SCHEMA = """
@@ -169,6 +171,15 @@ CREATE TABLE IF NOT EXISTS annotation (
     cycle_id INTEGER REFERENCES cycle(id),
     key TEXT NOT NULL,
     value TEXT NOT NULL,
+    at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS note (
+    id INTEGER PRIMARY KEY,
+    run_id INTEGER NOT NULL REFERENCES run(id),
+    cycle_id INTEGER REFERENCES cycle(id),
+    phase TEXT,
+    text TEXT NOT NULL,
     at TEXT NOT NULL
 );
 

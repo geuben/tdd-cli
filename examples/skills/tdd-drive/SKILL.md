@@ -74,9 +74,16 @@ end of the run.
 - The cycle absorbed undeclared scope, or surfaced follow-up work:
   `--key unplanned_change` / `--key new_work_raised`.
 
+To capture *why* something happened — a plan assumption that proved wrong, the reason an
+integrity event fired — use `tdd note "<text>"` at the moment you know. A note written
+during an open cycle is stamped with that cycle and phase and appears in the friction log
+as a blockquote alongside the cycle's telemetry. After the run ends, `tdd note` attaches
+at run level and renders in a dedicated **Executor narrative** section. Notes are unverified
+by design; write them as claims, not measurements.
+
 Narrative that spans cycles or happened after the run (CI failures, patterns) goes as
-markdown appended below the rendered friction log after `tdd log render` — never into a
-cycle annotation it doesn't belong to.
+`tdd note` after the run ends, or as markdown appended below the rendered friction log
+after `tdd log render` — never into a cycle annotation it doesn't belong to.
 
 ## When a suite run changes nothing
 

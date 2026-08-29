@@ -291,6 +291,13 @@ rendered, never written. Judgement enters in exactly two ways:
   `commit_shape_deviation`, `test_setup_smell`, `unplanned_change`, `new_work_raised`.
   `plan_defect` is the one that matters most: it records where the plan and the codebase
   disagreed, which is precisely what the next plan needs to know.
+- **Per cycle or run, through `tdd note "<text>"`** — free-text narrative captured at the
+  moment the reason exists. Cycle notes are scoped to the open cycle and phase; run-level
+  notes are written after the run ends and attach to the run. Both render in the friction
+  log as visually distinct blockquotes (claims, not measurements). Use notes to record
+  *why* something happened — a plan assumption that was wrong, an integrity event that the
+  telemetry already captures but cannot explain. Notes are unverified by design; an auditor
+  compares claims against reality.
 - **Per run, as prose appended below the rendered document.** Legitimate and expected —
   post-run narrative (CI failures, patterns noticed) has no cycle to attach to. But it
   is unverified: an auditor should trust the projected sections and read appended
@@ -413,6 +420,7 @@ and is never reclassified as a pin.
 | `tdd cycle skip --reason` | sanctioned path for a cycle the plan got wrong |
 | `tdd sensitivity begin\|check\|end` | prove a passing test can fail; verify restore |
 | `tdd annotate --key --value` | attach judgement to the current cycle |
+| `tdd note "<text>"` | attach a free-text narrative note to the current cycle or run |
 | `tdd blocker --kind --detail` | typed blocker; releases the stop hook |
 | `tdd resume [--unblock --note]` | reconstruct position; human intervention |
 | `tdd log render [--out]` | project the ledger into a friction log |

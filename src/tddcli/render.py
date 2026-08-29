@@ -122,6 +122,24 @@ def friction_log(ledger: Ledger, run) -> str:
         )
         for ann in annotations:
             a(f"- **{ann['key']}:** {ann['value']}")
+        notes = ledger.all(
+            "SELECT * FROM note WHERE cycle_id = ? ORDER BY id", (cycle["id"],)
+        )
+        for n in notes:
+            a(f"> **note** _(during {n['phase']})_: {n['text']}")
+        a("")
+
+    run_notes = ledger.all(
+        "SELECT * FROM note WHERE run_id = ? AND cycle_id IS NULL ORDER BY id",
+        (run["id"],),
+    )
+    if run_notes:
+        a("## Executor narrative")
+        a("")
+        a("_Claims from the executor, unverified by design._")
+        a("")
+        for n in run_notes:
+            a(f"> {n['text']}")
         a("")
 
     blockers = ledger.all("SELECT * FROM blocker WHERE run_id = ?", (run["id"],))

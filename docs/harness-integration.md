@@ -97,10 +97,18 @@ cycle, so batching them at the end records them against the wrong one:
 - `friction_note` — tooling or environment cost attempts that the code did not.
 - `unplanned_change` / `new_work_raised` — scope the cycle absorbed or deferred.
 
+For executor narrative that captures *why* something happened — a plan assumption that
+proved wrong, a path the telemetry records but cannot explain — use `tdd note "<text>"`.
+A note written while the open cycle is in a specific phase is stamped with that phase and
+rendered as a blockquote inside its cycle section. Notes written after the run ends attach
+at run level and appear in an **Executor narrative** section of the friction log. Both are
+unverified by design; an auditor reads them as the executor's claims, not as measurements.
+
 Run-level narrative (post-run CI failures, patterns spanning cycles) has no cycle to
-attach to: append it as markdown below the rendered friction log after `tdd log render`.
-Rendered sections are projections from the ledger; appended prose is unverified opinion,
-and auditors should read the two accordingly.
+attach to: either use `tdd note` after the run ends, or append prose below the rendered
+friction log after `tdd log render`. Rendered sections and note blockquotes are projections
+from the ledger; prose appended after rendering is unverified opinion outside the ledger,
+and auditors should read the three layers accordingly.
 
 ## Executor identity and subagents
 

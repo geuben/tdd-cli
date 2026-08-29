@@ -22,13 +22,35 @@ from .machine import (
     Engine,
 )
 
+NUDGE_KINDS = {"red_first_violation", "undeclared_file_touched", "implementation_during_red"}
+
+
+def _note_nudge(engine: Engine, cycle) -> str:
+    if cycle is None:
+        return ""
+    events = engine.ledger.all(
+        "SELECT kind FROM integrity_event WHERE cycle_id = ? AND kind IN ({})".format(
+            ",".join("?" * len(NUDGE_KINDS))
+        ),
+        (cycle["id"], *NUDGE_KINDS),
+    )
+    if not events:
+        return ""
+    existing_note = engine.ledger.one(
+        "SELECT id FROM note WHERE cycle_id = ?", (cycle["id"],)
+    )
+    if existing_note is not None:
+        return ""
+    return ' An integrity event was recorded on this cycle — consider `tdd note "<why>"` while the reason is fresh.'
+
 
 def _reply(engine: Engine, cycle, verb: Verb, detail: str, **result) -> Envelope:
     fresh = engine.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle["id"],)) if cycle else None
+    nudge = _note_nudge(engine, fresh or cycle)
     return Envelope(
         run=engine.run_state(fresh or cycle),
         result=result,
-        next_action=NextAction(verb, detail),
+        next_action=NextAction(verb, detail + nudge),
     )
 
 
@@ -444,7 +466,10 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
             },
             result={"commit": sha, "regenerated": regenerated or None},
             next_action=NextAction(
-                Verb.COMPLETE, "All declared cycles are complete. Run `tdd log render`."
+                Verb.COMPLETE,
+                "All declared cycles are complete."
+                " Before rendering, record a closing narrative with `tdd note \"<hardest cycle and why, plan inaccuracies, deviations>\"`."
+                " Then run `tdd log render`.",
             ),
         )
     verb, opening = engine.opening_action(nxt)

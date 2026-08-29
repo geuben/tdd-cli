@@ -961,7 +961,12 @@ def cmd_cycle_skip(args) -> Envelope:
         ledger.update("run", run["id"], ended_at=now(), outcome="complete")
         return Envelope(
             run={"id": run["id"], "cycle": cycle["ordinal"], "phase": SKIPPED},
-            next_action=NextAction(Verb.COMPLETE, "Final cycle skipped; run complete."),
+            next_action=NextAction(
+                Verb.COMPLETE,
+                "Final cycle skipped; run complete."
+                " Before rendering, record a closing narrative with `tdd note \"<hardest cycle and why, plan inaccuracies, deviations>\"`."
+                " Then run `tdd log render`.",
+            ),
         )
     nxt = engine.open_cycle(nxt_declared.ordinal)
     verb, opening = engine.opening_action(nxt)
@@ -987,6 +992,35 @@ def cmd_annotate(args) -> Envelope:
         run={"id": run["id"], "cycle": cycle["ordinal"] if cycle else None},
         result={"key": args.key},
         next_action=NextAction(Verb.REFACTOR_OR_ADVANCE, "Annotation recorded. `tdd advance`."),
+    )
+
+
+def cmd_note(args) -> Envelope:
+    worktree, cfg, ledger, run = _context(require_run=False)
+    if run is None:
+        run = ledger.one(
+            "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1",
+            (str(worktree),),
+        )
+    if run is None:
+        return failure("no runs recorded for this worktree; `tdd run start --plan <path>`")
+    cycle = ledger.open_cycle(run["id"])
+    ledger.insert(
+        "note",
+        run_id=run["id"],
+        cycle_id=cycle["id"] if cycle else None,
+        phase=cycle["phase"] if cycle else None,
+        text=args.text,
+        at=now(),
+    )
+    if cycle is not None:
+        next_action = NextAction(Verb.REFACTOR_OR_ADVANCE, "Note recorded. Resume the phase in progress.")
+    else:
+        next_action = NextAction(Verb.COMPLETE, "Note recorded. Run `tdd log render`.")
+    return Envelope(
+        run={"id": run["id"], "cycle": cycle["ordinal"] if cycle else None},
+        result={"noted": True},
+        next_action=next_action,
     )
 
 
@@ -1393,6 +1427,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--key", required=True)
     s.add_argument("--value", required=True)
     s.set_defaults(fn=cmd_annotate)
+
+    s = sub.add_parser("note", help="attach a narrative note to the current cycle or run")
+    s.add_argument("text")
+    s.set_defaults(fn=cmd_note)
 
     s = sub.add_parser("blocker")
     s.add_argument("--kind", required=True)
