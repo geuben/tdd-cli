@@ -36,6 +36,11 @@ def _note_nudge(engine: Engine, cycle) -> str:
     )
     if not events:
         return ""
+    existing_note = engine.ledger.one(
+        "SELECT id FROM note WHERE cycle_id = ?", (cycle["id"],)
+    )
+    if existing_note is not None:
+        return ""
     return ' An integrity event was recorded on this cycle — consider `tdd note "<why>"` while the reason is fresh.'
 
 
