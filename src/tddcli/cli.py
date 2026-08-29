@@ -303,6 +303,12 @@ def cmd_doctor(args) -> Envelope:
         "ledger outside worktree", not str(ledger.path).startswith(str(worktree)), str(ledger.path)
     )
 
+    ex = identity.resolve(worktree)
+    ex_detail = f"{ex.source}: {ex.model}"
+    if ex.source == "unknown":
+        ex_detail += f" — {ex.reason}"
+    check("executor identity", True, ex_detail)
+
     projects: dict[str, dict] = {}
     for name, project in cfg.projects.items():
         before = len(checks)
