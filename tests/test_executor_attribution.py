@@ -39,3 +39,15 @@ def test_reason_names_the_missing_session_env(tmp_path, monkeypatch):
     e = identity.resolve(None)
     assert e.model == "unknown"
     assert "CLAUDE_CODE_SESSION_ID" in e.reason
+
+
+def test_reason_names_the_missing_transcript(tmp_path, monkeypatch):
+    empty_root = tmp_path / "projects"
+    empty_root.mkdir()
+    monkeypatch.setattr(identity, "TRANSCRIPT_ROOT", empty_root)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-gone")
+    monkeypatch.delenv("TDD_EXECUTOR_MODEL", raising=False)
+
+    e = identity.resolve(None)
+    assert e.model == "unknown"
+    assert e.reason and "sess-gone" in e.reason
