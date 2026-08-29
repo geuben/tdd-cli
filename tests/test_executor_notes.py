@@ -111,3 +111,26 @@ def test_cycle_notes_render_as_blockquotes_in_their_cycle(repo, tmp_path):
     assert result["ok"], result
     content = out_path.read_text()
     assert "> **note** _(during AWAITING_TEST)_: the plan's route name was stale" in content
+
+
+def test_run_level_notes_render_in_the_executor_narrative_section(repo, tmp_path):
+    started = _start(repo)
+    run_id = started["run"]["id"]
+
+    led = Ledger(gitutil.repo_identity(repo))
+    led.insert(
+        "note",
+        run_id=run_id,
+        cycle_id=None,
+        phase=None,
+        text="hardest part was the fixture",
+        at=led.one("SELECT datetime('now')")[0],
+    )
+
+    out_path = tmp_path / "friction.md"
+    result = run_cli(repo, "log", "render", "--out", str(out_path))
+    assert result["ok"], result
+    content = out_path.read_text()
+    assert "## Executor narrative" in content
+    assert "_Claims from the executor, unverified by design._" in content
+    assert "> hardest part was the fixture" in content
