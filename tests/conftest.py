@@ -20,6 +20,15 @@ def _isolated_lease_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("TDD_LEASE_DIR", str(tmp_path / "worker-leases"))
 
 
+@pytest.fixture(autouse=True)
+def _pinned_executor_identity(monkeypatch):
+    """A developer's shell resolves identity from its live Claude session; CI
+    resolves nothing and every run logs executor_unknown. Pin a declared
+    identity so both behave the same; the attribution tests delenv this to
+    exercise the unknown paths."""
+    monkeypatch.setenv("TDD_EXECUTOR_MODEL", "pytest-executor")
+
+
 @pytest.fixture
 def ledger_home(tmp_path, monkeypatch):
     home = tmp_path / "ledger-home"
