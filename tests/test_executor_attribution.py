@@ -113,3 +113,21 @@ def test_run_start_envelope_carries_executor_warning(repo, tmp_path, monkeypatch
 
     warning = out["result"].get("executor_warning")
     assert warning and "CLAUDE_CODE_SESSION_ID" in warning
+
+
+def test_doctor_reports_executor_identity(repo, tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("TDD_EXECUTOR_MODEL", raising=False)
+    monkeypatch.setattr(identity, "TRANSCRIPT_ROOT", tmp_path / "empty-transcripts")
+
+    out = run_cli(repo, "doctor")
+    assert out["result"]["healthy"] is True
+
+    check = next(
+        (c for c in out["result"]["checks"] if c["check"] == "executor identity"),
+        None,
+    )
+    assert check is not None, "executor identity check not found"
+    assert check["ok"] is True
+    assert "unknown" in check["detail"]
+    assert "CLAUDE_CODE_SESSION_ID" in check["detail"]
