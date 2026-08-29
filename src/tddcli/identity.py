@@ -86,6 +86,7 @@ def resolve(project_path: Path | None = None, human_label: str | None = None) ->
             model = _model_from_transcript(transcript)
             if model:
                 return Executor(model=model, session=session, source="transcript")
+            reason = f"no model records in transcript {transcript}"
 
     if human_label:
         return Executor(model=human_label, session=session, source="human")
