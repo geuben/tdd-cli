@@ -76,6 +76,20 @@ def test_disambiguate_picks_the_normalisation_match(tmp_path):
     assert advance._disambiguate(candidates, declared, adapter) == candidates[0]
 
 
+def test_unique_same_file_candidate_is_adopted_and_evaluated(repo):
+    plan = write_plan(repo, PLAN_SINGLE_CANDIDATE)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADDING)
+    (repo / "backend" / "app" / "calc.py").write_text(CALC_STUB)
+    (repo / "backend" / "tests" / "test_other.py").write_text("def test_other_thing():\n    assert True\n")
+
+    out = run_cli(repo, "advance")
+    assert out["next_action"]["verb"] == "write_implementation", out
+    assert out["run"]["phase"] == "AWAITING_IMPL"
+
+
 def test_adopted_passing_test_demands_sensitivity_in_one_advance(repo):
     plan = write_plan(repo, PLAN_SINGLE_CANDIDATE)
     run_cli(repo, "plan", "register", plan)
