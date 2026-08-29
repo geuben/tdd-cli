@@ -778,6 +778,8 @@ def cmd_run_start(args) -> Envelope:
             ledger.event(run_id, None, "baseline_reused", json.dumps(sorted(reused)))
         if implausible:
             ledger.event(run_id, None, "baseline_accepted", json.dumps(implausible))
+        if executor.source == "unknown":
+            ledger.event(run_id, None, "executor_unknown", executor.reason or "")
 
         # Baselines and the collection snapshot, per project (R9.5, R8.9) — from the
         # probe above, so the suite is not run twice.
