@@ -61,7 +61,6 @@ def test_note_attaches_to_the_open_cycle_with_its_phase(repo):
 
 
 def test_v7_ledger_is_upgraded_in_place_to_v8(ledger_home, tmp_path):
-    db_path = ledger_home / "somerepo.sqlite3"
     led = Ledger(tmp_path / "somerepo")
     led.db.execute("UPDATE meta SET value='7' WHERE key='schema_version'")
     led.db.execute("DROP TABLE note")
