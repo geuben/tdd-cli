@@ -47,6 +47,17 @@ class VitestAdapter(Adapter):
     def stub_hint(self) -> str:
         return '`throw new Error("not implemented")` in every body'
 
+    def lint_target_id(self, native: str) -> str | None:
+        if " > " not in native:
+            return (
+                f"vitest target ids must contain ' > ' between the file and test name "
+                f"(got {native!r}); expected shape: <file> > <describe titles> <test title>"
+            )
+        return None
+
+    def target_path(self, native: str) -> str | None:
+        return native.split(" > ", 1)[0]
+
     def normalise_id(self, test_id: str) -> str:
         """Canonicalise the describe/test separator for target matching.
 
@@ -141,8 +152,13 @@ class VitestAdapter(Adapter):
                         self.normalise_id(self._id_for(suite.get("name", ""), t["fullName"]))
                         == ntarget
                     ):
+                        messages = t.get("failureMessages", [])
                         verdict.target_failure = "\n".join(
-                            clip_failure(m, 600) for m in t.get("failureMessages", [])[:3]
+                            clip_failure(m, 600) for m in messages[:3]
+                        )
+                        first_msg = messages[0] if messages else ""
+                        verdict.target_evidence = next(
+                            (ln for ln in first_msg.splitlines() if ln.strip()), ""
                         )
             return verdict
 

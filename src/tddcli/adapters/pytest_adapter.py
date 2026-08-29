@@ -12,6 +12,7 @@ Two defects in the prior system are corrected here (R10.2):
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import tempfile
 from pathlib import Path
@@ -47,6 +48,14 @@ class PytestAdapter(Adapter):
 
     def stub_hint(self) -> str:
         return "`raise NotImplementedError` in every body"
+
+    def lint_target_id(self, native: str) -> str | None:
+        if "::" not in native:
+            return f"pytest target ids must contain '::' (got {native!r}); expected shape: path/to/test_file.py::test_name"
+        return None
+
+    def target_path(self, native: str) -> str | None:
+        return native.split("::", 1)[0]
 
     def _runner_prefix(self) -> str:
         """The project root is checked before the worktree root: a workspace keeps
@@ -140,7 +149,9 @@ class PytestAdapter(Adapter):
         if hit is not None:
             verdict.target_outcome = PASSED if hit["outcome"] == "passed" else FAILED
             call = hit.get("call") or hit.get("setup") or {}
-            verdict.target_failure = clip_failure(str(call.get("longrepr", "")))
+            longrepr = str(call.get("longrepr", ""))
+            verdict.target_failure = clip_failure(longrepr)
+            verdict.target_evidence = self._evidence_line(longrepr)
         else:
             target_file = native.split("::", 1)[0]
             if any(c == target_file or c.startswith(target_file) for c in uncollectable):
@@ -151,6 +162,14 @@ class PytestAdapter(Adapter):
             else:
                 verdict.target_outcome = NOT_FOUND
         return verdict
+
+    @staticmethod
+    def _evidence_line(longrepr: str) -> str:
+        for line in longrepr.splitlines():
+            m = re.match(r"^E\s+(.*)", line)
+            if m:
+                return m.group(1)
+        return ""
 
     @staticmethod
     def _collector_error(collectors: list[dict], target_file: str) -> str:

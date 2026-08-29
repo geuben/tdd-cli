@@ -473,8 +473,8 @@ one has no move left but to re-run doctor and read the same output again.
 ### 8.2 Registration
 | Command | Behaviour |
 |---|---|
-| `tdd plan register <path>` | parse front-matter, resolve plan blob at HEAD, store contract |
-| `tdd run start --plan <path\|id>` | create run; capture executor identity from environment; capture per-project baselines; verify artifact freshness; open cycle 1 |
+| `tdd plan register <path>` | parse front-matter, resolve plan blob at HEAD, lint declared targets (grammar + root-prefix rules), store contract. Refuses with `reason: "target_lint"` and a `findings` list when any target can't match a collected id — e.g. pytest target missing `::`, vitest missing ` > `, gradle/xctest wrong separator, or target path that duplicates the project's `root`. Recovery: fix the spelling (the finding often carries a `suggestion`), or for a genuinely nested root path, create the directory first (the filesystem-existence check then exempts it). |
+| `tdd run start --plan <path\|id>` | re-lints the stored contract's declared targets against the *current* `tdd.toml` (catching root/adapter drift since registration) before claiming the worktree — refuses with `reason: "target_lint"` if findings appear; then creates run, captures executor identity from environment, captures per-project baselines, verifies artifact freshness, opens cycle 1 |
 
 ### 8.3 The loop
 | Command | Behaviour |
@@ -491,10 +491,18 @@ one has no move left but to re-run doctor and read the same output again.
 - **R8.8** `human_intervention` events are the input to interventions-per-run, the primary
   autonomy metric.
 - **R8.9** In `AWAITING_TEST`, `advance` resolves the target by diffing `collect()` against cycle
-  open. If exactly one new test appeared and it fails, it is adopted as the target and
-  `declared_test_mismatch` is recorded against the contract. If several appeared, that is the
-  one-behaviour-per-cycle violation: it is recorded, and `next_action` requires the agent to name
-  the intended target rather than guessing.
+  open. When the declared target is `not_found`, the adoption flow runs:
+  - **Single new test:** adopted as the target; `declared_test_mismatch` is recorded. The verdict
+    from the run that already happened is evaluated immediately in the same `advance` call — no
+    extra suite run. If the adopted test failed, the RED commit is made and the cycle moves to
+    `AWAITING_IMPL`; if it passed, sensitivity is demanded.
+  - **Multiple new tests — unambiguous:** if exactly one candidate normalise-matches the declared id
+    (R10.5), or exactly one lives in the declared target's file, it is adopted and evaluated as
+    above; `declared_test_mismatch` is recorded with the full candidate list.
+  - **Multiple new tests — ambiguous:** recorded as `multiple_new_tests`; `next_action` requires
+    the agent to name the intended target with `tdd target <id>` rather than guessing.
+  The run that produced `not_found` already executed the new test; its verdict is retrieved from
+  the in-hand `Verdict` objects without an extra suite run.
 
 ### 8.4 Sensitivity checks
 
@@ -503,7 +511,7 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
 | Command | Behaviour |
 |---|---|
 | `tdd sensitivity begin` | record `git diff` and the untracked-file set as the reference state |
-| `tdd sensitivity check` | run the suite with the agent's mutation in place; require the target to now fail; record the mutation diff and the observed failure |
+| `tdd sensitivity check` | run the suite with the agent's mutation in place; require the target to now fail; record the mutation diff and the observed failure; each adapter extracts a one-line `target_evidence` (the assertion line, not runner noise), stored in `sensitivity_check.evidence_line` (schema v7) and rendered as the `observed:` snippet in the friction log |
 | `tdd sensitivity end` | `git checkout --` the mutated tracked paths, then assert the resulting `git diff` is byte-identical to the reference; emit `restore_mismatch` on any difference |
 
 - **R8.4** A cycle that passed on arrival cannot reach `CLOSED` without a completed sensitivity
@@ -816,7 +824,7 @@ depend on any of them being installed.
 ### 13.1 Storage
 - **R13.1** SQLite, single file, append-only for invocations and events.
 - **R13.2** Schema versioned and migrated. The schema is the long-lived asset; the transport is not.
-  Current schema version: **3** (v3 adds the `advance_claim` table, R9.23).
+  Current schema version: **7** (v7 adds `sensitivity_check.evidence_line TEXT` for per-adapter assertion-line evidence; earlier milestones: v3 adds `advance_claim`, v4–v6 are intermediate columns).
 
 ### 13.2 Location
 - **R13.3** **One ledger per repository**, in a per-user data directory keyed by the repository's

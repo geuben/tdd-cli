@@ -93,8 +93,15 @@ def friction_log(ledger: Ledger, run) -> str:
         if sens:
             a("- **Sensitivity check:** verified, restore byte-identical")
             if sens["observed_failure"]:
-                snippet = sens["observed_failure"].strip().splitlines()
-                a(f"  - observed: `{snippet[0][:160] if snippet else ''}`")
+                evidence = sens["evidence_line"]
+                if evidence:
+                    capped = ("…" + evidence[-160:]) if len(evidence) > 160 else evidence
+                    a(f"  - observed: `{capped}`")
+                elif evidence == "":
+                    a("  - observed: <no assertion line captured>")
+                else:
+                    snippet = sens["observed_failure"].strip().splitlines()
+                    a(f"  - observed: `{snippet[0][:160] if snippet else ''}`")
 
         commits = ledger.all(
             "SELECT * FROM commit_record WHERE cycle_id = ? ORDER BY id", (cycle["id"],)
