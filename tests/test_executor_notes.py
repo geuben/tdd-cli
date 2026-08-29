@@ -89,3 +89,25 @@ def test_note_after_run_end_is_run_level_on_the_latest_run(repo):
     assert len(rows) == 1
     row = rows[0]
     assert row["cycle_id"] is None
+
+
+def test_cycle_notes_render_as_blockquotes_in_their_cycle(repo, tmp_path):
+    started = _start(repo)
+    run_id = started["run"]["id"]
+
+    led = Ledger(gitutil.repo_identity(repo))
+    cycle = led.open_cycle(run_id)
+    led.insert(
+        "note",
+        run_id=run_id,
+        cycle_id=cycle["id"],
+        phase="AWAITING_TEST",
+        text="the plan's route name was stale",
+        at=led.one("SELECT datetime('now')")[0],
+    )
+
+    out_path = tmp_path / "friction.md"
+    result = run_cli(repo, "log", "render", "--out", str(out_path))
+    assert result["ok"], result
+    content = out_path.read_text()
+    assert "> **note** _(during AWAITING_TEST)_: the plan's route name was stale" in content
