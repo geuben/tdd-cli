@@ -90,6 +90,30 @@ def test_unique_same_file_candidate_is_adopted_and_evaluated(repo):
     assert out["run"]["phase"] == "AWAITING_IMPL"
 
 
+def test_ambiguous_new_tests_still_ask_the_agent(repo):
+    plan = write_plan(repo, PLAN_SINGLE_CANDIDATE)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+
+    two_tests = """\
+from app.calc import add
+
+
+def test_adding_two():
+    assert add(2, 3) == 5
+
+
+def test_adding_three():
+    assert add(1, 2) == 3
+"""
+    (repo / "backend" / "tests" / "test_add.py").write_text(two_tests)
+    (repo / "backend" / "app" / "calc.py").write_text(CALC_STUB)
+
+    out = run_cli(repo, "advance")
+    assert out["next_action"]["verb"] == "name_target_test", out
+    assert len(out["result"]["candidates"]) == 2
+
+
 def test_adopted_passing_test_demands_sensitivity_in_one_advance(repo):
     plan = write_plan(repo, PLAN_SINGLE_CANDIDATE)
     run_cli(repo, "plan", "register", plan)
