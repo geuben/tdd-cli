@@ -991,7 +991,14 @@ def cmd_annotate(args) -> Envelope:
 
 
 def cmd_note(args) -> Envelope:
-    worktree, cfg, ledger, run = _context()
+    worktree, cfg, ledger, run = _context(require_run=False)
+    if run is None:
+        run = ledger.one(
+            "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1",
+            (str(worktree),),
+        )
+    if run is None:
+        return failure("no runs recorded for this worktree; `tdd run start --plan <path>`")
     cycle = ledger.open_cycle(run["id"])
     ledger.insert(
         "note",
@@ -1001,10 +1008,14 @@ def cmd_note(args) -> Envelope:
         text=args.text,
         at=now(),
     )
+    if cycle is not None:
+        next_action = NextAction(Verb.REFACTOR_OR_ADVANCE, "Note recorded. Resume the phase in progress.")
+    else:
+        next_action = NextAction(Verb.COMPLETE, "Note recorded. Run `tdd log render`.")
     return Envelope(
         run={"id": run["id"], "cycle": cycle["ordinal"] if cycle else None},
         result={"noted": True},
-        next_action=NextAction(Verb.REFACTOR_OR_ADVANCE, "Note recorded. Resume the phase in progress."),
+        next_action=next_action,
     )
 
 
