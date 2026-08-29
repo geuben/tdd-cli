@@ -104,16 +104,27 @@ and auditors should read the two accordingly.
 
 ## Executor identity and subagents
 
-`tdd run start` records which model is executing by reading the harness session id
-(`CLAUDE_CODE_SESSION_ID`) and resolving the model from that session's transcript.
-This is trustworthy only when the executor is a **top-level session** — its own
-terminal, worktree, or cloud session.
+`tdd run start` records which model is executing. Resolution order (first match wins):
+
+1. **`TDD_EXECUTOR_MODEL`** — set this env var when the launching harness knows the answer
+   (e.g. a CI pipeline or a subagent harness). Recorded with `source: declared`. Takes
+   precedence over transcript detection.
+2. **Transcript** — reads `CLAUDE_CODE_SESSION_ID` and resolves the model from
+   `~/.claude/projects/<slug>/<session-id>.jsonl`. Recorded with `source: transcript`.
+   Trustworthy only for top-level sessions (see below).
+3. **`--executor`** — human-supplied label at `run start`. Recorded with `source: human`.
+4. **`unknown`** — `Executor.reason` records why: env var not set; no transcript for the
+   session; transcript contains no model records. An `executor_unknown` integrity event is
+   emitted and `result.executor_warning` is set in the `run start` envelope.
+
+`tdd doctor` always reports an informational `executor identity` check (`ok: true`) showing
+the resolved `<source>: <model>`, plus the reason when the source is `unknown`.
 
 An in-process subagent (Claude Code's Agent/Task tool) inherits the parent's session
 id and has no transcript of its own in the location the resolver reads, so a run
-started by a subagent is attributed to the **parent's** model. The run itself is
-unaffected — but if you are comparing models across runs, dispatch executors as
-separate top-level sessions, not as subagents, or the comparison is silently wrong.
+started by a subagent would be attributed to the **parent's** model. Set
+`TDD_EXECUTOR_MODEL` in the subagent's environment to declare the correct model
+explicitly — the declared path was added precisely to fix this case.
 
 ## Concurrent-command refusals
 
