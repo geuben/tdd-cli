@@ -26,7 +26,8 @@ TRANSCRIPT_ROOT = Path.home() / ".claude" / "projects"
 class Executor:
     model: str
     session: str | None
-    source: str          # transcript | human | unknown
+    source: str          # transcript | human | declared | unknown
+    reason: str | None = None
 
 
 def _slug(path: Path) -> str:
@@ -83,5 +84,13 @@ def resolve(project_path: Path | None = None, human_label: str | None = None) ->
 
     if human_label:
         return Executor(model=human_label, session=session, source="human")
+
+    if not session:
+        return Executor(
+            model="unknown",
+            session=session,
+            source="unknown",
+            reason="CLAUDE_CODE_SESSION_ID is not set",
+        )
 
     return Executor(model="unknown", session=session, source="unknown")
