@@ -29,3 +29,13 @@ def test_declared_override_beats_transcript(tmp_path, monkeypatch):
     e = identity.resolve(tmp_path / "proj")
     assert e.source == "declared"
     assert e.model == "harness-model"
+
+
+def test_reason_names_the_missing_session_env(tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("TDD_EXECUTOR_MODEL", raising=False)
+    monkeypatch.setattr(identity, "TRANSCRIPT_ROOT", tmp_path / "nowhere")
+
+    e = identity.resolve(None)
+    assert e.model == "unknown"
+    assert "CLAUDE_CODE_SESSION_ID" in e.reason
