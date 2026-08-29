@@ -2,7 +2,22 @@ from __future__ import annotations
 
 import json
 
+from conftest import run_cli, write_plan
 from tddcli import identity
+from tddcli.ledger import Ledger
+
+MINIMAL_PLAN = """\
+---
+cycles:
+  - n: 1
+    project: backend
+    title: "placeholder"
+    test: "tests/test_smoke.py::test_smoke"
+    commit_red: "test: placeholder"
+    commit_green: "feat: placeholder"
+---
+# Minimal plan for executor attribution tests
+"""
 
 
 def test_env_override_resolves_as_declared(tmp_path, monkeypatch):
@@ -66,3 +81,21 @@ def test_reason_names_the_model_less_transcript(tmp_path, monkeypatch):
     e = identity.resolve(None)
     assert e.model == "unknown"
     assert e.reason and "no model" in e.reason.lower()
+
+
+def test_run_start_records_executor_unknown_event(repo, tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("TDD_EXECUTOR_MODEL", raising=False)
+    monkeypatch.setattr(identity, "TRANSCRIPT_ROOT", tmp_path / "empty-transcripts")
+
+    plan = write_plan(repo, MINIMAL_PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+
+    ledger = Ledger(repo)
+    rows = ledger.all(
+        "SELECT detail FROM integrity_event WHERE kind = 'executor_unknown'"
+    )
+    assert len(rows) == 1
+    assert "CLAUDE_CODE_SESSION_ID" in rows[0]["detail"]
