@@ -72,3 +72,20 @@ def test_v7_ledger_is_upgraded_in_place_to_v8(ledger_home, tmp_path):
     assert rows == []
     version = led2.one("SELECT value FROM meta WHERE key='schema_version'")
     assert version["value"] == "8"
+
+
+def test_note_after_run_end_is_run_level_on_the_latest_run(repo):
+    started = _start(repo)
+    run_id = started["run"]["id"]
+
+    skipped = run_cli(repo, "cycle", "skip", "--reason", "probe")
+    assert skipped["next_action"]["terminal"] is True
+
+    out = run_cli(repo, "note", "closing narrative")
+    assert out["ok"], out
+
+    led = Ledger(gitutil.repo_identity(repo))
+    rows = led.all("SELECT * FROM note WHERE run_id = ?", (run_id,))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["cycle_id"] is None
