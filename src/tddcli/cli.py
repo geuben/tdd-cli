@@ -33,6 +33,7 @@ from . import (
 from . import (
     contract as contract_mod,
 )
+from . import target_lint as target_lint_mod
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
 from .envelope import Envelope, NextAction, Verb, failure, heartbeat
@@ -460,6 +461,15 @@ def cmd_plan_register(args) -> Envelope:
             plan=rel,
         )
 
+    if parsed.cycles:
+        lint_findings = target_lint_mod.lint_cycles(parsed.cycles, cfg, worktree)
+        if lint_findings:
+            return failure(
+                "declared targets failed lint",
+                reason="target_lint",
+                findings=lint_findings,
+            )
+
     existing = ledger.one(
         "SELECT * FROM plan_contract WHERE plan_path = ? AND git_blob_sha IS ?",
         (rel, parsed.blob_sha),
@@ -631,6 +641,16 @@ def cmd_run_start(args) -> Envelope:
 
     # R9.5c — scope baseline capture to plan-reachable projects unless opted out.
     declared_cycles = contract_mod.cycles_from_json(contract_row["declared_cycles"])
+
+    if declared_cycles:
+        lint_findings = target_lint_mod.lint_cycles(declared_cycles, cfg, worktree)
+        if lint_findings:
+            return failure(
+                "declared targets failed lint",
+                reason="target_lint",
+                findings=lint_findings,
+            )
+
     if declared_cycles and not args.baseline_all:
         declared_names = [p for c in declared_cycles for p in c.projects]
         reachable_names = cfg.reachable_projects(declared_names)
@@ -1114,16 +1134,18 @@ def cmd_sensitivity(args) -> Envelope:
     projects = json.loads(cycle["projects"])
 
     if args.step == "check":
-        outcomes, _, _, failure_text = engine.run_projects(
+        outcomes, _, verdicts, failure_text = engine.run_projects(
             projects, targets, cycle, "SENSITIVITY", False
         )
         # A mutation that breaks collection also proves the test depends on the code.
         bites = bool(outcomes) and all(o in (FAILED, NOT_COLLECTED) for o in outcomes.values())
+        evidence = next((v.target_evidence for v in verdicts if v.target_evidence), "")
         ledger.update(
             "sensitivity_check",
             open_check["id"],
             mutation_diff=gitutil.diff_text(worktree)[:20000],
             observed_failure=failure_text[:4000],
+            evidence_line=evidence,
         )
         if not bites:
             return Envelope(

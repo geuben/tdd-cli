@@ -459,8 +459,8 @@ one has no move left but to re-run doctor and read the same output again.
 ### 8.2 Registration
 | Command | Behaviour |
 |---|---|
-| `tdd plan register <path>` | parse front-matter, resolve plan blob at HEAD, store contract |
-| `tdd run start --plan <path\|id>` | create run; capture executor identity from environment; capture per-project baselines; verify artifact freshness; open cycle 1 |
+| `tdd plan register <path>` | parse front-matter, resolve plan blob at HEAD, lint declared targets (grammar + root-prefix rules), store contract. Refuses with `reason: "target_lint"` and a `findings` list when any target can't match a collected id — e.g. pytest target missing `::`, vitest missing ` > `, gradle/xctest wrong separator, or target path that duplicates the project's `root`. Recovery: fix the spelling (the finding often carries a `suggestion`), or for a genuinely nested root path, create the directory first (the filesystem-existence check then exempts it). |
+| `tdd run start --plan <path\|id>` | re-lints the stored contract's declared targets against the *current* `tdd.toml` (catching root/adapter drift since registration) before claiming the worktree — refuses with `reason: "target_lint"` if findings appear; then creates run, captures executor identity from environment, captures per-project baselines, verifies artifact freshness, opens cycle 1 |
 
 ### 8.3 The loop
 | Command | Behaviour |
@@ -497,7 +497,7 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
 | Command | Behaviour |
 |---|---|
 | `tdd sensitivity begin` | record `git diff` and the untracked-file set as the reference state |
-| `tdd sensitivity check` | run the suite with the agent's mutation in place; require the target to now fail; record the mutation diff and the observed failure |
+| `tdd sensitivity check` | run the suite with the agent's mutation in place; require the target to now fail; record the mutation diff and the observed failure; each adapter extracts a one-line `target_evidence` (the assertion line, not runner noise), stored in `sensitivity_check.evidence_line` (schema v7) and rendered as the `observed:` snippet in the friction log |
 | `tdd sensitivity end` | `git checkout --` the mutated tracked paths, then assert the resulting `git diff` is byte-identical to the reference; emit `restore_mismatch` on any difference |
 
 - **R8.4** A cycle that passed on arrival cannot reach `CLOSED` without a completed sensitivity
@@ -810,7 +810,7 @@ depend on any of them being installed.
 ### 13.1 Storage
 - **R13.1** SQLite, single file, append-only for invocations and events.
 - **R13.2** Schema versioned and migrated. The schema is the long-lived asset; the transport is not.
-  Current schema version: **3** (v3 adds the `advance_claim` table, R9.23).
+  Current schema version: **7** (v7 adds `sensitivity_check.evidence_line TEXT` for per-adapter assertion-line evidence; earlier milestones: v3 adds `advance_claim`, v4–v6 are intermediate columns).
 
 ### 13.2 Location
 - **R13.3** **One ledger per repository**, in a per-user data directory keyed by the repository's

@@ -25,6 +25,7 @@ class Verdict:
     target: str | None = None
     target_outcome: str = NOT_FOUND
     target_failure: str = ""
+    target_evidence: str = ""
     passed: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
     duration_ms: int = 0
@@ -213,6 +214,14 @@ class Adapter:
         if not merged:
             return None
         return {k: os.path.expandvars(v) for k, v in merged.items()}
+
+    def lint_target_id(self, native: str) -> str | None:
+        """Return a problem message when `native` can never match a collected id, else None."""
+        return None
+
+    def target_path(self, native: str) -> str | None:
+        """Return the file-path portion of `native`, or None for non-path-bearing ids."""
+        return None
 
     def stub_hint(self) -> str:
         """The language idiom for a stub body, quoted into the create_stub directive."""

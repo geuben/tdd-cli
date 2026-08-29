@@ -1,0 +1,157 @@
+"""Sensitivity evidence line: ledger storage and friction-log rendering (issue #68)."""
+
+from __future__ import annotations
+
+from conftest import git, run_cli, write_plan
+from tddcli import gitutil
+from tddcli.ledger import Ledger
+
+PLAN = """---
+cycles:
+  - n: 1
+    project: backend
+    title: "adding two numbers"
+    test: "tests/test_add.py::test_add_two_numbers"
+    commit_red: "test: add"
+    commit_green: "feat: add()"
+---
+
+# Plan
+"""
+
+TEST_ADD = """from app.calc import add
+
+
+def test_add_two_numbers():
+    assert add(2, 3) == 5
+"""
+
+CALC_WORKING = "def add(a, b):\n    return a + b\n"
+CALC_MUTATED = "def add(a, b):\n    return 0\n"
+
+
+def _start(repo):
+    (repo / "backend" / "app" / "calc.py").write_text(CALC_WORKING)
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "add calc.py and test")
+    plan = write_plan(repo, PLAN)
+    reg = run_cli(repo, "plan", "register", plan)
+    assert reg["ok"], reg
+    started = run_cli(repo, "run", "start", "--plan", plan)
+    assert started["ok"], started
+    return started
+
+
+def _drive_sensitivity(repo):
+    """Advance → SENSITIVITY_REQUIRED, then run sensitivity begin/check/end."""
+    out = run_cli(repo, "advance")
+    assert out["run"]["phase"] == "SENSITIVITY_REQUIRED", out
+    run_cli(repo, "sensitivity", "begin")
+    (repo / "backend" / "app" / "calc.py").write_text(CALC_MUTATED)
+    checked = run_cli(repo, "sensitivity", "check")
+    assert checked["ok"], checked
+    ended = run_cli(repo, "sensitivity", "end")
+    assert ended["result"]["restored_ok"] is True
+    return checked
+
+
+def _close_cycle_and_render(repo, out_path):
+    """Advance through AWAITING_REFACTOR and CLOSE_SWEEP, then render the log."""
+    run_cli(repo, "advance")  # -> AWAITING_REFACTOR
+    run_cli(repo, "advance")  # -> close sweep / next cycle
+    run_cli(repo, "log", "render", "--out", str(out_path))
+
+
+def test_sensitivity_check_records_the_evidence_line(repo):
+    _start(repo)
+    _drive_sensitivity(repo)
+    led = Ledger(gitutil.repo_identity(repo))
+    row = led.one("SELECT evidence_line FROM sensitivity_check ORDER BY id DESC LIMIT 1")
+    assert row is not None
+    assert row["evidence_line"].startswith("assert")
+
+
+def test_long_evidence_is_capped_keeping_the_tail(repo, tmp_path):
+    _start(repo)
+    _drive_sensitivity(repo)
+    led = Ledger(gitutil.repo_identity(repo))
+    check_row = led.one("SELECT id FROM sensitivity_check ORDER BY id DESC LIMIT 1")
+    tail = 'is not equal to ("stopped") -[AppTests.RecTests testStopsRecording]'
+    long_line = "A" * 250 + tail
+    led.update(
+        "sensitivity_check",
+        check_row["id"],
+        observed_failure="something",
+        evidence_line=long_line,
+    )
+    out = tmp_path / "log.md"
+    run_cli(repo, "advance")  # -> AWAITING_REFACTOR
+    run_cli(repo, "advance")  # -> close sweep
+    run_cli(repo, "log", "render", "--out", str(out))
+    rendered = out.read_text()
+    assert tail in rendered
+    assert "…" in rendered
+    assert "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" not in rendered
+
+
+def test_null_evidence_falls_back_to_first_observed_line(repo, tmp_path):
+    _start(repo)
+    _drive_sensitivity(repo)
+    led = Ledger(gitutil.repo_identity(repo))
+    check_row = led.one("SELECT id FROM sensitivity_check ORDER BY id DESC LIMIT 1")
+    led.update(
+        "sensitivity_check",
+        check_row["id"],
+        observed_failure="legacy first line\nsecond line",
+        evidence_line=None,
+    )
+    out = tmp_path / "log.md"
+    run_cli(repo, "advance")  # -> AWAITING_REFACTOR
+    run_cli(repo, "advance")  # -> close sweep
+    run_cli(repo, "log", "render", "--out", str(out))
+    rendered = out.read_text()
+    assert "observed: `legacy first line`" in rendered
+
+
+def test_empty_evidence_renders_the_sentinel(repo, tmp_path):
+    _start(repo)
+    _drive_sensitivity(repo)
+    led = Ledger(gitutil.repo_identity(repo))
+    check_row = led.one("SELECT id FROM sensitivity_check ORDER BY id DESC LIMIT 1")
+    led.update(
+        "sensitivity_check",
+        check_row["id"],
+        observed_failure="[gw0] darwin -- Python 3.12.8 /tmp/x\nnoise line",
+        evidence_line="",
+    )
+    out = tmp_path / "log.md"
+    run_cli(repo, "advance")  # -> AWAITING_REFACTOR
+    run_cli(repo, "advance")  # -> close sweep
+    run_cli(repo, "log", "render", "--out", str(out))
+    rendered = out.read_text()
+    assert "<no assertion line captured>" in rendered
+    assert "[gw0]" not in rendered
+
+
+def test_friction_log_observed_line_is_the_evidence_line(repo, tmp_path):
+    _start(repo)
+    _drive_sensitivity(repo)
+    led = Ledger(gitutil.repo_identity(repo))
+    check_row = led.one("SELECT id FROM sensitivity_check ORDER BY id DESC LIMIT 1")
+    led.update(
+        "sensitivity_check",
+        check_row["id"],
+        observed_failure=(
+            "[gw0] darwin -- Python 3.12.8 /tmp/x\n\n    def test_add_two_numbers():\n"
+            "E       AssertionError: reversed mismatch"
+        ),
+        evidence_line="AssertionError: reversed mismatch",
+    )
+    out = tmp_path / "log.md"
+    run_cli(repo, "advance")  # -> AWAITING_REFACTOR
+    run_cli(repo, "advance")  # -> close sweep
+    run_cli(repo, "log", "render", "--out", str(out))
+    rendered = out.read_text()
+    assert "observed: `AssertionError: reversed mismatch`" in rendered
+    assert "[gw0]" not in rendered

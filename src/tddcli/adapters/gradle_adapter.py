@@ -114,6 +114,14 @@ class GradleAdapter(Adapter):
             " assertion failure"
         )
 
+    def lint_target_id(self, native: str) -> str | None:
+        if "/" not in native:
+            return (
+                f"gradle target ids must contain '/' between class and method "
+                f"(got {native!r}); expected shape: com.example.ClassName/testMethodName"
+            )
+        return None
+
     # ------------------------------------------------------------------
     # Core command
     # ------------------------------------------------------------------
@@ -321,7 +329,11 @@ class GradleAdapter(Adapter):
             verdict.target_outcome = PASSED
         elif target in failed:
             verdict.target_outcome = FAILED
-            verdict.target_failure = failures.get(target, "test failed")
+            failure_text = failures.get(target, "test failed")
+            verdict.target_failure = failure_text
+            verdict.target_evidence = next(
+                (ln for ln in failure_text.splitlines() if ln.strip()), ""
+            )
         # else NOT_FOUND (default): the suite ran but never produced this id
 
         return verdict
