@@ -489,7 +489,7 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
 | Command | Behaviour |
 |---|---|
 | `tdd sensitivity begin` | record `git diff` and the untracked-file set as the reference state |
-| `tdd sensitivity check` | run the suite with the agent's mutation in place; require the target to now fail; record the mutation diff and the observed failure |
+| `tdd sensitivity check` | run the suite with the agent's mutation in place; require the target to now fail; record the mutation diff and the observed failure; each adapter extracts a one-line `target_evidence` (the assertion line, not runner noise), stored in `sensitivity_check.evidence_line` (schema v7) and rendered as the `observed:` snippet in the friction log |
 | `tdd sensitivity end` | `git checkout --` the mutated tracked paths, then assert the resulting `git diff` is byte-identical to the reference; emit `restore_mismatch` on any difference |
 
 - **R8.4** A cycle that passed on arrival cannot reach `CLOSED` without a completed sensitivity
@@ -802,7 +802,7 @@ depend on any of them being installed.
 ### 13.1 Storage
 - **R13.1** SQLite, single file, append-only for invocations and events.
 - **R13.2** Schema versioned and migrated. The schema is the long-lived asset; the transport is not.
-  Current schema version: **3** (v3 adds the `advance_claim` table, R9.23).
+  Current schema version: **7** (v7 adds `sensitivity_check.evidence_line TEXT` for per-adapter assertion-line evidence; earlier milestones: v3 adds `advance_claim`, v4–v6 are intermediate columns).
 
 ### 13.2 Location
 - **R13.3** **One ledger per repository**, in a per-user data directory keyed by the repository's
