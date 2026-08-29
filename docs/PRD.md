@@ -477,10 +477,18 @@ one has no move left but to re-run doctor and read the same output again.
 - **R8.8** `human_intervention` events are the input to interventions-per-run, the primary
   autonomy metric.
 - **R8.9** In `AWAITING_TEST`, `advance` resolves the target by diffing `collect()` against cycle
-  open. If exactly one new test appeared and it fails, it is adopted as the target and
-  `declared_test_mismatch` is recorded against the contract. If several appeared, that is the
-  one-behaviour-per-cycle violation: it is recorded, and `next_action` requires the agent to name
-  the intended target rather than guessing.
+  open. When the declared target is `not_found`, the adoption flow runs:
+  - **Single new test:** adopted as the target; `declared_test_mismatch` is recorded. The verdict
+    from the run that already happened is evaluated immediately in the same `advance` call — no
+    extra suite run. If the adopted test failed, the RED commit is made and the cycle moves to
+    `AWAITING_IMPL`; if it passed, sensitivity is demanded.
+  - **Multiple new tests — unambiguous:** if exactly one candidate normalise-matches the declared id
+    (R10.5), or exactly one lives in the declared target's file, it is adopted and evaluated as
+    above; `declared_test_mismatch` is recorded with the full candidate list.
+  - **Multiple new tests — ambiguous:** recorded as `multiple_new_tests`; `next_action` requires
+    the agent to name the intended target with `tdd target <id>` rather than guessing.
+  The run that produced `not_found` already executed the new test; its verdict is retrieved from
+  the in-hand `Verdict` objects without an extra suite run.
 
 ### 8.4 Sensitivity checks
 
