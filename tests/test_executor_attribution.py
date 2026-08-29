@@ -51,3 +51,18 @@ def test_reason_names_the_missing_transcript(tmp_path, monkeypatch):
     e = identity.resolve(None)
     assert e.model == "unknown"
     assert e.reason and "sess-gone" in e.reason
+
+
+def test_reason_names_the_model_less_transcript(tmp_path, monkeypatch):
+    root = tmp_path / "projects"
+    (root / "slug").mkdir(parents=True)
+    (root / "slug" / "sess-empty.jsonl").write_text(
+        json.dumps({"type": "user", "content": "hello"}) + "\n"
+    )
+    monkeypatch.setattr(identity, "TRANSCRIPT_ROOT", root)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-empty")
+    monkeypatch.delenv("TDD_EXECUTOR_MODEL", raising=False)
+
+    e = identity.resolve(None)
+    assert e.model == "unknown"
+    assert e.reason and "no model" in e.reason.lower()
