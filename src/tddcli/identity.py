@@ -75,9 +75,14 @@ def resolve(project_path: Path | None = None, human_label: str | None = None) ->
     if declared:
         return Executor(model=declared, session=session, source="declared")
 
-    if session:
+    reason: str | None = None
+    if not session:
+        reason = "CLAUDE_CODE_SESSION_ID is not set"
+    else:
         transcript = _find_transcript(session, project_path)
-        if transcript is not None:
+        if transcript is None:
+            reason = f"no transcript for session {session} under {TRANSCRIPT_ROOT}"
+        else:
             model = _model_from_transcript(transcript)
             if model:
                 return Executor(model=model, session=session, source="transcript")
@@ -85,12 +90,4 @@ def resolve(project_path: Path | None = None, human_label: str | None = None) ->
     if human_label:
         return Executor(model=human_label, session=session, source="human")
 
-    if not session:
-        return Executor(
-            model="unknown",
-            session=session,
-            source="unknown",
-            reason="CLAUDE_CODE_SESSION_ID is not set",
-        )
-
-    return Executor(model="unknown", session=session, source="unknown")
+    return Executor(model="unknown", session=session, source="unknown", reason=reason)
