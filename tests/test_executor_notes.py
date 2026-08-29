@@ -134,3 +134,13 @@ def test_run_level_notes_render_in_the_executor_narrative_section(repo, tmp_path
     assert "## Executor narrative" in content
     assert "_Claims from the executor, unverified by design._" in content
     assert "> hardest part was the fixture" in content
+
+
+def test_no_narrative_section_without_run_level_notes(repo, tmp_path):
+    _start(repo)
+
+    out_path = tmp_path / "friction.md"
+    result = run_cli(repo, "log", "render", "--out", str(out_path))
+    assert result["ok"], result
+    content = out_path.read_text()
+    assert "Executor narrative" not in content
