@@ -159,3 +159,23 @@ def test_integrity_event_envelope_nudges_for_a_note(repo):
     out = run_cli(repo, "advance")
     assert out["run"]["phase"] == "SENSITIVITY_REQUIRED", out
     assert "tdd note" in out["next_action"]["detail"]
+
+
+def test_nudge_stops_once_the_cycle_has_a_note(repo):
+    (repo / "backend" / "app" / "calc.py").write_text(CALC_WORKING)
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "add calc.py and test")
+    plan = write_plan(repo, PLAN)
+    reg = run_cli(repo, "plan", "register", plan)
+    assert reg["ok"], reg
+    run_cli(repo, "run", "start", "--plan", plan)
+
+    out = run_cli(repo, "advance")
+    assert out["run"]["phase"] == "SENSITIVITY_REQUIRED", out
+
+    run_cli(repo, "note", "the plan predicted this pass")
+
+    out2 = run_cli(repo, "advance")
+    assert out2["run"]["phase"] == "SENSITIVITY_REQUIRED", out2
+    assert "tdd note" not in out2["next_action"]["detail"]
