@@ -22,7 +22,6 @@ from .machine import (
     Engine,
 )
 
-
 NUDGE_KINDS = {"red_first_violation", "undeclared_file_touched", "implementation_during_red"}
 
 
