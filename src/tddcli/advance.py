@@ -117,6 +117,18 @@ def _stage_and_commit(engine: Engine, cycle, phase: str, declared) -> tuple[str 
     return sha, staged, classification
 
 
+def _disambiguate(candidates: list[str], declared: str, adapter) -> str | None:
+    norm_declared = adapter.normalise_id(declared)
+    matches = [c for c in candidates if adapter.normalise_id(c) == norm_declared]
+    if len(matches) == 1:
+        return matches[0]
+    declared_file = declared.split("::", 1)[-1].split("::")[0].split(" > ")[0]
+    same_file = [c for c in candidates if c.split("::", 1)[-1].split("::")[0].split(" > ")[0] == declared_file]
+    if len(same_file) == 1:
+        return same_file[0]
+    return None
+
+
 def _outcome_from_verdicts(verdicts, test_id: str) -> str | None:
     for v in verdicts:
         if test_id in v.failed:
