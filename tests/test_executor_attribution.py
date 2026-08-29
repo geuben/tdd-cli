@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from tddcli import identity
-
-
 import json
+
+from tddcli import identity
 
 
 def test_env_override_resolves_as_declared(tmp_path, monkeypatch):
