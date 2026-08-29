@@ -961,7 +961,12 @@ def cmd_cycle_skip(args) -> Envelope:
         ledger.update("run", run["id"], ended_at=now(), outcome="complete")
         return Envelope(
             run={"id": run["id"], "cycle": cycle["ordinal"], "phase": SKIPPED},
-            next_action=NextAction(Verb.COMPLETE, "Final cycle skipped; run complete."),
+            next_action=NextAction(
+                Verb.COMPLETE,
+                "Final cycle skipped; run complete."
+                " Before rendering, record a closing narrative with `tdd note \"<hardest cycle and why, plan inaccuracies, deviations>\"`."
+                " Then run `tdd log render`.",
+            ),
         )
     nxt = engine.open_cycle(nxt_declared.ordinal)
     verb, opening = engine.opening_action(nxt)
