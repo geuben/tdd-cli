@@ -144,3 +144,18 @@ def test_no_narrative_section_without_run_level_notes(repo, tmp_path):
     assert result["ok"], result
     content = out_path.read_text()
     assert "Executor narrative" not in content
+
+
+def test_integrity_event_envelope_nudges_for_a_note(repo):
+    (repo / "backend" / "app" / "calc.py").write_text(CALC_WORKING)
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "add calc.py and test")
+    plan = write_plan(repo, PLAN)
+    reg = run_cli(repo, "plan", "register", plan)
+    assert reg["ok"], reg
+    run_cli(repo, "run", "start", "--plan", plan)
+
+    out = run_cli(repo, "advance")
+    assert out["run"]["phase"] == "SENSITIVITY_REQUIRED", out
+    assert "tdd note" in out["next_action"]["detail"]
