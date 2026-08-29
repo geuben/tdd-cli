@@ -122,6 +122,11 @@ def friction_log(ledger: Ledger, run) -> str:
         )
         for ann in annotations:
             a(f"- **{ann['key']}:** {ann['value']}")
+        notes = ledger.all(
+            "SELECT * FROM note WHERE cycle_id = ? ORDER BY id", (cycle["id"],)
+        )
+        for n in notes:
+            a(f"> **note** _(during {n['phase']})_: {n['text']}")
         a("")
 
     blockers = ledger.all("SELECT * FROM blocker WHERE run_id = ?", (run["id"],))
