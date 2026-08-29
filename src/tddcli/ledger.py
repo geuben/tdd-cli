@@ -172,6 +172,15 @@ CREATE TABLE IF NOT EXISTS annotation (
     at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS note (
+    id INTEGER PRIMARY KEY,
+    run_id INTEGER NOT NULL REFERENCES run(id),
+    cycle_id INTEGER REFERENCES cycle(id),
+    phase TEXT,
+    text TEXT NOT NULL,
+    at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS integrity_event (
     id INTEGER PRIMARY KEY,
     run_id INTEGER NOT NULL REFERENCES run(id),

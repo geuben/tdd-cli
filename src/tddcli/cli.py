@@ -990,6 +990,24 @@ def cmd_annotate(args) -> Envelope:
     )
 
 
+def cmd_note(args) -> Envelope:
+    worktree, cfg, ledger, run = _context()
+    cycle = ledger.open_cycle(run["id"])
+    ledger.insert(
+        "note",
+        run_id=run["id"],
+        cycle_id=cycle["id"] if cycle else None,
+        phase=cycle["phase"] if cycle else None,
+        text=args.text,
+        at=now(),
+    )
+    return Envelope(
+        run={"id": run["id"], "cycle": cycle["ordinal"] if cycle else None},
+        result={"noted": True},
+        next_action=NextAction(Verb.REFACTOR_OR_ADVANCE, "Note recorded. Resume the phase in progress."),
+    )
+
+
 def cmd_blocker(args) -> Envelope:
     worktree, cfg, ledger, run = _context()
     if args.kind not in BLOCKER_KINDS:
@@ -1393,6 +1411,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--key", required=True)
     s.add_argument("--value", required=True)
     s.set_defaults(fn=cmd_annotate)
+
+    s = sub.add_parser("note", help="attach a narrative note to the current cycle or run")
+    s.add_argument("text")
+    s.set_defaults(fn=cmd_note)
 
     s = sub.add_parser("blocker")
     s.add_argument("--kind", required=True)
