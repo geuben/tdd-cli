@@ -3,6 +3,9 @@ from __future__ import annotations
 from tddcli import identity
 
 
+import json
+
+
 def test_env_override_resolves_as_declared(tmp_path, monkeypatch):
     monkeypatch.setenv("TDD_EXECUTOR_MODEL", "harness-model")
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
@@ -11,3 +14,19 @@ def test_env_override_resolves_as_declared(tmp_path, monkeypatch):
     e = identity.resolve(None)
     assert e.model == "harness-model"
     assert e.source == "declared"
+
+
+def test_declared_override_beats_transcript(tmp_path, monkeypatch):
+    slug = str(tmp_path / "proj").replace("/", "-")
+    transcripts = tmp_path / "projects" / slug
+    transcripts.mkdir(parents=True)
+    (transcripts / "sess-99.jsonl").write_text(
+        json.dumps({"type": "assistant", "model": "claude-transcript-model"}) + "\n"
+    )
+    monkeypatch.setattr(identity, "TRANSCRIPT_ROOT", tmp_path / "projects")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-99")
+    monkeypatch.setenv("TDD_EXECUTOR_MODEL", "harness-model")
+
+    e = identity.resolve(tmp_path / "proj")
+    assert e.source == "declared"
+    assert e.model == "harness-model"
