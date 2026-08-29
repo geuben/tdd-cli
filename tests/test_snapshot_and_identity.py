@@ -81,6 +81,7 @@ def test_model_is_read_from_the_session_transcript(tmp_path, monkeypatch):
         identity, "TRANSCRIPT_ROOT", tmp_path / "home" / ".claude" / "projects"
     )
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-1")
+    monkeypatch.delenv("TDD_EXECUTOR_MODEL", raising=False)
 
     executor = identity.resolve(project)
     assert executor.model == "claude-sonnet-4-6"
@@ -90,6 +91,7 @@ def test_model_is_read_from_the_session_transcript(tmp_path, monkeypatch):
 def test_human_label_is_the_fallback_not_the_default(tmp_path, monkeypatch):
     monkeypatch.setattr(identity, "TRANSCRIPT_ROOT", tmp_path / "nowhere")
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("TDD_EXECUTOR_MODEL", raising=False)
 
     assert identity.resolve(None, "opus-by-hand").source == "human"
     assert identity.resolve(None).model == "unknown"
@@ -104,6 +106,7 @@ def test_last_model_wins_when_a_session_switches(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(identity, "TRANSCRIPT_ROOT", root)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "s")
+    monkeypatch.delenv("TDD_EXECUTOR_MODEL", raising=False)
     assert identity.resolve(None).model == "claude-sonnet-4-6"
 
 

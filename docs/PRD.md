@@ -109,16 +109,30 @@ Many runs may reference one contract. This is what makes A/B comparison across m
 
 The harness exposes a session identifier but **not** the model. Resolution order:
 
-1. `CLAUDE_CODE_SESSION_ID` from the environment → locate
+1. `TDD_EXECUTOR_MODEL` environment variable — set by the launching harness when it knows
+   the answer (e.g. a subagent harness that inherits its parent's `CLAUDE_CODE_SESSION_ID`
+   and would be mis-attributed). Recorded with `source: declared`. Wins over transcript.
+2. `CLAUDE_CODE_SESSION_ID` from the environment → locate
    `~/.claude/projects/<slug>/<session-id>.jsonl` → read the `model` field.
-2. Failing that, a `--executor` label supplied by a **human** at `run start`.
-3. Failing that, `unknown`, and the run is excluded from model-comparison metrics.
+   Recorded with `source: transcript`.
+3. Failing that, a `--executor` label supplied by a **human** at `run start`.
+   Recorded with `source: human`.
+4. Failing that, `unknown` (`source: unknown`), and the run is excluded from model-comparison
+   metrics. `Executor.reason` records why: `CLAUDE_CODE_SESSION_ID` not set; no transcript
+   found for the session; the transcript contains no model records.
+
+When resolution yields `unknown`, `run start` emits an `executor_unknown` integrity event
+(detail = the reason) and includes `executor_warning` in the success envelope so the gap is
+visible at the moment it can still be fixed.
+
+`tdd doctor` reports an informational `executor identity` check (always `ok: true`) showing
+`<source>: <model>`, plus the reason when the source is `unknown`.
 
 - **R5.1** The transcript lookup is isolated behind a single resolver so an undocumented format
   change breaks one function, not the tool.
-- **R5.2** Agents never supply executor identity by any path. Step 2 is a human affordance.
+- **R5.2** Agents never supply executor identity by any path. Step 3 is a human affordance.
 - **R5.3** Resolution requires the tool to run on the same host as the agent. Remote or CI
-  execution falls through to step 2.
+  execution can set `TDD_EXECUTOR_MODEL` to declare the answer explicitly.
 
 ### Cycle
 | Field | Notes |
@@ -161,7 +175,7 @@ Reserved per-run keys: `plan_quality_score` (per plan phase, with rationale), `c
 
 ### IntegrityEvent
 Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mismatch`,
-`off_protocol_invocation`, `stale_artifact`, `plan_blob_changed`.
+`off_protocol_invocation`, `stale_artifact`, `plan_blob_changed`, `executor_unknown`.
 
 ### Blocker
 Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `context_exhausted`,

@@ -304,6 +304,12 @@ def cmd_doctor(args) -> Envelope:
         "ledger outside worktree", not str(ledger.path).startswith(str(worktree)), str(ledger.path)
     )
 
+    ex = identity.resolve(worktree)
+    ex_detail = f"{ex.source}: {ex.model}"
+    if ex.source == "unknown":
+        ex_detail += f" — {ex.reason}"
+    check("executor identity", True, ex_detail)
+
     projects: dict[str, dict] = {}
     for name, project in cfg.projects.items():
         before = len(checks)
@@ -798,6 +804,8 @@ def cmd_run_start(args) -> Envelope:
             ledger.event(run_id, None, "baseline_reused", json.dumps(sorted(reused)))
         if implausible:
             ledger.event(run_id, None, "baseline_accepted", json.dumps(implausible))
+        if executor.source == "unknown":
+            ledger.event(run_id, None, "executor_unknown", executor.reason or "")
 
         # Baselines and the collection snapshot, per project (R9.5, R8.9) — from the
         # probe above, so the suite is not run twice.
@@ -850,12 +858,15 @@ def cmd_run_start(args) -> Envelope:
 
         verb, opening = engine.opening_action(cycle)
         detail = f"Run {run_id} started ({executor.model}, via {executor.source}). {opening}"
+        result: dict = {
+            "baselines": {n: len(v) for n, v in ledger.baselines(run_id).items()},
+            "executor_source": executor.source,
+        }
+        if executor.source == "unknown":
+            result["executor_warning"] = executor.reason or ""
         return Envelope(
             run=engine.run_state(cycle),
-            result={
-                "baselines": {n: len(v) for n, v in ledger.baselines(run_id).items()},
-                "executor_source": executor.source,
-            },
+            result=result,
             next_action=NextAction(verb, detail),
         )
     finally:
