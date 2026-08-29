@@ -1,4 +1,4 @@
-from conftest import git, run_cli, write_plan
+from conftest import run_cli, write_plan
 
 from tddcli import advance
 from tddcli.adapters.base import Verdict

@@ -136,7 +136,7 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
     targets = json.loads(cycle["target_tests"])
     phase = cycle["phase"]
 
-    outcomes, others, _, failure = engine.run_projects(
+    outcomes, others, verdicts, failure = engine.run_projects(
         projects, targets, cycle, phase, retried
     )
 
@@ -153,13 +153,18 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
                 "cycle", cycle["id"], target_tests=json.dumps(kept + candidates)
             )
             cycle = engine.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle["id"],))
-            return _reply(
-                engine, cycle, Verb.REFACTOR_OR_ADVANCE,
-                f"Adopted {candidates[0]} as the target (declared {missing[0]} was not"
-                " collected). Run `tdd advance` again to evaluate it.",
-                adopted=candidates,
-            )
-        if len(candidates) > 1:
+            adopted_outcome = _outcome_from_verdicts(verdicts, candidates[0])
+            if adopted_outcome is None:
+                return _reply(
+                    engine, cycle, Verb.REFACTOR_OR_ADVANCE,
+                    f"Adopted {candidates[0]} as the target (declared {missing[0]} was not"
+                    " collected). Run `tdd advance` again to evaluate it.",
+                    adopted=candidates,
+                )
+            targets = kept + candidates
+            outcomes = {candidates[0]: adopted_outcome}
+            others = [t for t in others if t != candidates[0]]
+        elif len(candidates) > 1:
             engine.ledger.event(
                 engine.run["id"], cycle["id"], "multiple_new_tests",
                 json.dumps(candidates),
@@ -170,12 +175,13 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
                 " intended target with `tdd target <id>`.",
                 candidates=candidates,
             )
-        return _reply(
-            engine, cycle, Verb.WRITE_TEST,
-            f"Target {missing[0]} was not collected and no new test was found."
-            " Write the failing test.",
-            missing=missing,
-        )
+        else:
+            return _reply(
+                engine, cycle, Verb.WRITE_TEST,
+                f"Target {missing[0]} was not collected and no new test was found."
+                " Write the failing test.",
+                missing=missing,
+            )
 
     not_collected = [t for t, o in outcomes.items() if o == NOT_COLLECTED]
     if not_collected:
