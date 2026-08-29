@@ -23,12 +23,30 @@ from .machine import (
 )
 
 
+NUDGE_KINDS = {"red_first_violation", "undeclared_file_touched", "implementation_during_red"}
+
+
+def _note_nudge(engine: Engine, cycle) -> str:
+    if cycle is None:
+        return ""
+    events = engine.ledger.all(
+        "SELECT kind FROM integrity_event WHERE cycle_id = ? AND kind IN ({})".format(
+            ",".join("?" * len(NUDGE_KINDS))
+        ),
+        (cycle["id"], *NUDGE_KINDS),
+    )
+    if not events:
+        return ""
+    return ' An integrity event was recorded on this cycle — consider `tdd note "<why>"` while the reason is fresh.'
+
+
 def _reply(engine: Engine, cycle, verb: Verb, detail: str, **result) -> Envelope:
     fresh = engine.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle["id"],)) if cycle else None
+    nudge = _note_nudge(engine, fresh or cycle)
     return Envelope(
         run=engine.run_state(fresh or cycle),
         result=result,
-        next_action=NextAction(verb, detail),
+        next_action=NextAction(verb, detail + nudge),
     )
 
 
