@@ -58,3 +58,18 @@ def test_note_attaches_to_the_open_cycle_with_its_phase(repo):
     assert row["cycle_id"] is not None
     assert row["phase"] == "AWAITING_TEST"
     assert row["text"] == "the fixture assumption was wrong"
+
+
+def test_v7_ledger_is_upgraded_in_place_to_v8(ledger_home, tmp_path):
+    db_path = ledger_home / "somerepo.sqlite3"
+    led = Ledger(tmp_path / "somerepo")
+    led.db.execute("UPDATE meta SET value='7' WHERE key='schema_version'")
+    led.db.execute("DROP TABLE note")
+    led.db.commit()
+    led.db.close()
+
+    led2 = Ledger(tmp_path / "somerepo")
+    rows = led2.all("SELECT * FROM note")
+    assert rows == []
+    version = led2.one("SELECT value FROM meta WHERE key='schema_version'")
+    assert version["value"] == "8"
