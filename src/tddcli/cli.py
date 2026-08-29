@@ -832,12 +832,15 @@ def cmd_run_start(args) -> Envelope:
 
         verb, opening = engine.opening_action(cycle)
         detail = f"Run {run_id} started ({executor.model}, via {executor.source}). {opening}"
+        result: dict = {
+            "baselines": {n: len(v) for n, v in ledger.baselines(run_id).items()},
+            "executor_source": executor.source,
+        }
+        if executor.source == "unknown":
+            result["executor_warning"] = executor.reason or ""
         return Envelope(
             run=engine.run_state(cycle),
-            result={
-                "baselines": {n: len(v) for n, v in ledger.baselines(run_id).items()},
-                "executor_source": executor.source,
-            },
+            result=result,
             next_action=NextAction(verb, detail),
         )
     finally:
