@@ -179,3 +179,24 @@ def test_nudge_stops_once_the_cycle_has_a_note(repo):
     out2 = run_cli(repo, "advance")
     assert out2["run"]["phase"] == "SENSITIVITY_REQUIRED", out2
     assert "tdd note" not in out2["next_action"]["detail"]
+
+
+def _drive_sensitivity(repo):
+    out = run_cli(repo, "advance")
+    assert out["run"]["phase"] == "SENSITIVITY_REQUIRED", out
+    run_cli(repo, "sensitivity", "begin")
+    (repo / "backend" / "app" / "calc.py").write_text(CALC_MUTATED)
+    checked = run_cli(repo, "sensitivity", "check")
+    assert checked["ok"], checked
+    ended = run_cli(repo, "sensitivity", "end")
+    assert ended["result"]["restored_ok"] is True
+    return checked
+
+
+def test_terminal_advance_invites_a_closing_note(repo):
+    _start(repo)
+    _drive_sensitivity(repo)
+    run_cli(repo, "advance")  # -> AWAITING_REFACTOR
+    out = run_cli(repo, "advance")  # -> terminal COMPLETE
+    assert out["next_action"]["terminal"] is True
+    assert "tdd note" in out["next_action"]["detail"]
