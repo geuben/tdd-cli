@@ -109,16 +109,30 @@ Many runs may reference one contract. This is what makes A/B comparison across m
 
 The harness exposes a session identifier but **not** the model. Resolution order:
 
-1. `CLAUDE_CODE_SESSION_ID` from the environment → locate
+1. `TDD_EXECUTOR_MODEL` environment variable — set by the launching harness when it knows
+   the answer (e.g. a subagent harness that inherits its parent's `CLAUDE_CODE_SESSION_ID`
+   and would be mis-attributed). Recorded with `source: declared`. Wins over transcript.
+2. `CLAUDE_CODE_SESSION_ID` from the environment → locate
    `~/.claude/projects/<slug>/<session-id>.jsonl` → read the `model` field.
-2. Failing that, a `--executor` label supplied by a **human** at `run start`.
-3. Failing that, `unknown`, and the run is excluded from model-comparison metrics.
+   Recorded with `source: transcript`.
+3. Failing that, a `--executor` label supplied by a **human** at `run start`.
+   Recorded with `source: human`.
+4. Failing that, `unknown` (`source: unknown`), and the run is excluded from model-comparison
+   metrics. `Executor.reason` records why: `CLAUDE_CODE_SESSION_ID` not set; no transcript
+   found for the session; the transcript contains no model records.
+
+When resolution yields `unknown`, `run start` emits an `executor_unknown` integrity event
+(detail = the reason) and includes `executor_warning` in the success envelope so the gap is
+visible at the moment it can still be fixed.
+
+`tdd doctor` reports an informational `executor identity` check (always `ok: true`) showing
+`<source>: <model>`, plus the reason when the source is `unknown`.
 
 - **R5.1** The transcript lookup is isolated behind a single resolver so an undocumented format
   change breaks one function, not the tool.
-- **R5.2** Agents never supply executor identity by any path. Step 2 is a human affordance.
+- **R5.2** Agents never supply executor identity by any path. Step 3 is a human affordance.
 - **R5.3** Resolution requires the tool to run on the same host as the agent. Remote or CI
-  execution falls through to step 2.
+  execution can set `TDD_EXECUTOR_MODEL` to declare the answer explicitly.
 
 ### Cycle
 | Field | Notes |
@@ -161,7 +175,7 @@ Reserved per-run keys: `plan_quality_score` (per plan phase, with rationale), `c
 
 ### IntegrityEvent
 Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mismatch`,
-`off_protocol_invocation`, `stale_artifact`, `plan_blob_changed`.
+`off_protocol_invocation`, `stale_artifact`, `plan_blob_changed`, `executor_unknown`.
 
 ### Blocker
 Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `context_exhausted`,
@@ -477,10 +491,18 @@ one has no move left but to re-run doctor and read the same output again.
 - **R8.8** `human_intervention` events are the input to interventions-per-run, the primary
   autonomy metric.
 - **R8.9** In `AWAITING_TEST`, `advance` resolves the target by diffing `collect()` against cycle
-  open. If exactly one new test appeared and it fails, it is adopted as the target and
-  `declared_test_mismatch` is recorded against the contract. If several appeared, that is the
-  one-behaviour-per-cycle violation: it is recorded, and `next_action` requires the agent to name
-  the intended target rather than guessing.
+  open. When the declared target is `not_found`, the adoption flow runs:
+  - **Single new test:** adopted as the target; `declared_test_mismatch` is recorded. The verdict
+    from the run that already happened is evaluated immediately in the same `advance` call — no
+    extra suite run. If the adopted test failed, the RED commit is made and the cycle moves to
+    `AWAITING_IMPL`; if it passed, sensitivity is demanded.
+  - **Multiple new tests — unambiguous:** if exactly one candidate normalise-matches the declared id
+    (R10.5), or exactly one lives in the declared target's file, it is adopted and evaluated as
+    above; `declared_test_mismatch` is recorded with the full candidate list.
+  - **Multiple new tests — ambiguous:** recorded as `multiple_new_tests`; `next_action` requires
+    the agent to name the intended target with `tdd target <id>` rather than guessing.
+  The run that produced `not_found` already executed the new test; its verdict is retrieved from
+  the in-hand `Verdict` objects without an extra suite run.
 
 ### 8.4 Sensitivity checks
 
@@ -489,7 +511,7 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
 | Command | Behaviour |
 |---|---|
 | `tdd sensitivity begin` | record `git diff` and the untracked-file set as the reference state |
-| `tdd sensitivity check` | run the suite with the agent's mutation in place; require the target to now fail; record the mutation diff and the observed failure |
+| `tdd sensitivity check` | run the suite with the agent's mutation in place; require the target to now fail; record the mutation diff and the observed failure; each adapter extracts a one-line `target_evidence` (the assertion line, not runner noise), stored in `sensitivity_check.evidence_line` (schema v7) and rendered as the `observed:` snippet in the friction log |
 | `tdd sensitivity end` | `git checkout --` the mutated tracked paths, then assert the resulting `git diff` is byte-identical to the reference; emit `restore_mismatch` on any difference |
 
 - **R8.4** A cycle that passed on arrival cannot reach `CLOSED` without a completed sensitivity
@@ -802,7 +824,7 @@ depend on any of them being installed.
 ### 13.1 Storage
 - **R13.1** SQLite, single file, append-only for invocations and events.
 - **R13.2** Schema versioned and migrated. The schema is the long-lived asset; the transport is not.
-  Current schema version: **3** (v3 adds the `advance_claim` table, R9.23).
+  Current schema version: **7** (v7 adds `sensitivity_check.evidence_line TEXT` for per-adapter assertion-line evidence; earlier milestones: v3 adds `advance_claim`, v4–v6 are intermediate columns).
 
 ### 13.2 Location
 - **R13.3** **One ledger per repository**, in a per-user data directory keyed by the repository's

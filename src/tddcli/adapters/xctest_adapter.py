@@ -272,7 +272,9 @@ class XCTestAdapter(Adapter):
             verdict.target_outcome = PASSED
         elif target in verdict.failed:
             verdict.target_outcome = FAILED
-            verdict.target_failure = self._failure_for(combined, self.strip(target))
+            window = self._failure_for(combined, self.strip(target))
+            verdict.target_failure = window
+            verdict.target_evidence = self._evidence_line(window)
         # else NOT_FOUND (default)
 
         return verdict
@@ -288,6 +290,13 @@ class XCTestAdapter(Adapter):
             for line in combined.splitlines()
             if ": error:" in line or "** BUILD FAILED **" in line
         )
+
+    @staticmethod
+    def _evidence_line(window: str) -> str:
+        for line in window.splitlines():
+            if ": error:" in line:
+                return line
+        return ""
 
     def _failure_for(self, combined: str, native_id: str) -> str:
         """Capture the assertion lines between 'started' and 'failed' for one test.

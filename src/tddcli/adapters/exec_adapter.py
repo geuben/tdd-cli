@@ -168,6 +168,9 @@ class ExecAdapter(Adapter):
                 if target == qualified:
                     verdict.target_outcome = FAILED
                     verdict.target_failure = clip_failure(combined)
+                    verdict.target_evidence = next(
+                        (ln for ln in reversed(combined.splitlines()) if ln.strip()), ""
+                    )
 
         verdict.duration_ms = int((time.monotonic() - started) * 1000)
         return verdict

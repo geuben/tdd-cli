@@ -26,7 +26,8 @@ TRANSCRIPT_ROOT = Path.home() / ".claude" / "projects"
 class Executor:
     model: str
     session: str | None
-    source: str          # transcript | human | unknown
+    source: str          # transcript | human | declared | unknown
+    reason: str | None = None
 
 
 def _slug(path: Path) -> str:
@@ -69,14 +70,25 @@ def _model_from_transcript(path: Path) -> str | None:
 
 def resolve(project_path: Path | None = None, human_label: str | None = None) -> Executor:
     session = os.environ.get("CLAUDE_CODE_SESSION_ID")
-    if session:
+
+    declared = os.environ.get("TDD_EXECUTOR_MODEL")
+    if declared:
+        return Executor(model=declared, session=session, source="declared")
+
+    reason: str | None = None
+    if not session:
+        reason = "CLAUDE_CODE_SESSION_ID is not set"
+    else:
         transcript = _find_transcript(session, project_path)
-        if transcript is not None:
+        if transcript is None:
+            reason = f"no transcript for session {session} under {TRANSCRIPT_ROOT}"
+        else:
             model = _model_from_transcript(transcript)
             if model:
                 return Executor(model=model, session=session, source="transcript")
+            reason = f"no model records in transcript {transcript}"
 
     if human_label:
         return Executor(model=human_label, session=session, source="human")
 
-    return Executor(model="unknown", session=session, source="unknown")
+    return Executor(model="unknown", session=session, source="unknown", reason=reason)

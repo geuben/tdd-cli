@@ -152,8 +152,13 @@ class VitestAdapter(Adapter):
                         self.normalise_id(self._id_for(suite.get("name", ""), t["fullName"]))
                         == ntarget
                     ):
+                        messages = t.get("failureMessages", [])
                         verdict.target_failure = "\n".join(
-                            clip_failure(m, 600) for m in t.get("failureMessages", [])[:3]
+                            clip_failure(m, 600) for m in messages[:3]
+                        )
+                        first_msg = messages[0] if messages else ""
+                        verdict.target_evidence = next(
+                            (ln for ln in first_msg.splitlines() if ln.strip()), ""
                         )
             return verdict
 

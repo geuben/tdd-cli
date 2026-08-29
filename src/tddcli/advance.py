@@ -117,6 +117,27 @@ def _stage_and_commit(engine: Engine, cycle, phase: str, declared) -> tuple[str 
     return sha, staged, classification
 
 
+def _disambiguate(candidates: list[str], declared: str, adapter) -> str | None:
+    norm_declared = adapter.normalise_id(declared)
+    matches = [c for c in candidates if adapter.normalise_id(c) == norm_declared]
+    if len(matches) == 1:
+        return matches[0]
+    declared_file = declared.split("::", 1)[-1].split("::")[0].split(" > ")[0]
+    same_file = [c for c in candidates if c.split("::", 1)[-1].split("::")[0].split(" > ")[0] == declared_file]
+    if len(same_file) == 1:
+        return same_file[0]
+    return None
+
+
+def _outcome_from_verdicts(verdicts, test_id: str) -> str | None:
+    for v in verdicts:
+        if test_id in v.failed:
+            return FAILED
+        if test_id in v.passed:
+            return PASSED
+    return None
+
+
 # -- handlers ------------------------------------------------------------
 
 
@@ -127,7 +148,7 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
     targets = json.loads(cycle["target_tests"])
     phase = cycle["phase"]
 
-    outcomes, others, _, failure = engine.run_projects(
+    outcomes, others, verdicts, failure = engine.run_projects(
         projects, targets, cycle, phase, retried
     )
 
@@ -144,29 +165,60 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
                 "cycle", cycle["id"], target_tests=json.dumps(kept + candidates)
             )
             cycle = engine.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle["id"],))
+            adopted_outcome = _outcome_from_verdicts(verdicts, candidates[0])
+            if adopted_outcome is None:
+                return _reply(
+                    engine, cycle, Verb.REFACTOR_OR_ADVANCE,
+                    f"Adopted {candidates[0]} as the target (declared {missing[0]} was not"
+                    " collected). Run `tdd advance` again to evaluate it.",
+                    adopted=candidates,
+                )
+            targets = kept + candidates
+            outcomes = {candidates[0]: adopted_outcome}
+            others = [t for t in others if t != candidates[0]]
+        elif len(candidates) > 1:
+            owner = missing[0].split("::", 1)[0]
+            adapter = adapters.build(engine.config.project(owner), engine.worktree)
+            resolved = _disambiguate(candidates, missing[0], adapter)
+            if resolved is not None:
+                engine.ledger.event(
+                    engine.run["id"], cycle["id"], "declared_test_mismatch",
+                    json.dumps({"declared": missing, "adopted": [resolved], "all_candidates": candidates}),
+                )
+                kept = [t for t in targets if t not in missing]
+                engine.ledger.update(
+                    "cycle", cycle["id"], target_tests=json.dumps(kept + [resolved])
+                )
+                cycle = engine.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle["id"],))
+                adopted_outcome = _outcome_from_verdicts(verdicts, resolved)
+                if adopted_outcome is None:
+                    return _reply(
+                        engine, cycle, Verb.REFACTOR_OR_ADVANCE,
+                        f"Adopted {resolved} as the target (declared {missing[0]} was not"
+                        " collected). Run `tdd advance` again to evaluate it.",
+                        adopted=[resolved],
+                    )
+                targets = kept + [resolved]
+                outcomes = {resolved: adopted_outcome}
+                others = [t for t in others if t != resolved]
+            else:
+                engine.ledger.event(
+                    engine.run["id"], cycle["id"], "multiple_new_tests",
+                    json.dumps(candidates),
+                )
+                return _reply(
+                    engine, cycle, Verb.NAME_TARGET_TEST,
+                    "Several new tests appeared; a cycle covers one behaviour. Name the"
+                    " intended target with `tdd target <id>`.",
+                    candidates=candidates,
+                )
+        else:
             return _reply(
-                engine, cycle, Verb.REFACTOR_OR_ADVANCE,
-                f"Adopted {candidates[0]} as the target (declared {missing[0]} was not"
-                " collected). Run `tdd advance` again to evaluate it.",
-                adopted=candidates,
+                engine, cycle, Verb.WRITE_TEST,
+                f"Target {missing[0]} was not collected and no new test was found."
+                " Write the failing test.",
+                missing=missing,
             )
-        if len(candidates) > 1:
-            engine.ledger.event(
-                engine.run["id"], cycle["id"], "multiple_new_tests",
-                json.dumps(candidates),
-            )
-            return _reply(
-                engine, cycle, Verb.NAME_TARGET_TEST,
-                "Several new tests appeared; a cycle covers one behaviour. Name the"
-                " intended target with `tdd target <id>`.",
-                candidates=candidates,
-            )
-        return _reply(
-            engine, cycle, Verb.WRITE_TEST,
-            f"Target {missing[0]} was not collected and no new test was found."
-            " Write the failing test.",
-            missing=missing,
-        )
 
     not_collected = [t for t, o in outcomes.items() if o == NOT_COLLECTED]
     if not_collected:
