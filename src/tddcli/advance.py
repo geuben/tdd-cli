@@ -466,7 +466,10 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
             },
             result={"commit": sha, "regenerated": regenerated or None},
             next_action=NextAction(
-                Verb.COMPLETE, "All declared cycles are complete. Run `tdd log render`."
+                Verb.COMPLETE,
+                "All declared cycles are complete."
+                " Before rendering, record a closing narrative with `tdd note \"<hardest cycle and why, plan inaccuracies, deviations>\"`."
+                " Then run `tdd log render`.",
             ),
         )
     verb, opening = engine.opening_action(nxt)
