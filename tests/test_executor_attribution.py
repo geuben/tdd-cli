@@ -99,3 +99,17 @@ def test_run_start_records_executor_unknown_event(repo, tmp_path, monkeypatch):
     )
     assert len(rows) == 1
     assert "CLAUDE_CODE_SESSION_ID" in rows[0]["detail"]
+
+
+def test_run_start_envelope_carries_executor_warning(repo, tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("TDD_EXECUTOR_MODEL", raising=False)
+    monkeypatch.setattr(identity, "TRANSCRIPT_ROOT", tmp_path / "empty-transcripts")
+
+    plan = write_plan(repo, MINIMAL_PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+
+    warning = out["result"].get("executor_warning")
+    assert warning and "CLAUDE_CODE_SESSION_ID" in warning
