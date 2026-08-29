@@ -1,6 +1,23 @@
+from pathlib import Path
+
 from conftest import run_cli, write_plan
-from tddcli import advance
+from tddcli import advance, config as config_mod
 from tddcli.adapters.base import Verdict
+from tddcli.adapters.vitest_adapter import VitestAdapter
+
+VITEST_TOML = """
+[project.frontend]
+root       = "frontend"
+adapter    = "vitest"
+test_paths = ["**/*.test.ts"]
+"""
+
+
+def _vitest_adapter(tmp_path: Path) -> VitestAdapter:
+    (tmp_path / "tdd.toml").write_text(VITEST_TOML)
+    (tmp_path / "frontend").mkdir()
+    cfg = config_mod.load(tmp_path)
+    return VitestAdapter(cfg.project("frontend"), tmp_path)
 
 PLAN_SINGLE_CANDIDATE = """---
 cycles:
@@ -46,6 +63,16 @@ def test_single_new_test_is_adopted_and_evaluated_in_one_advance(repo):
     out = run_cli(repo, "advance")
     assert out["next_action"]["verb"] == "write_implementation", out
     assert out["run"]["phase"] == "AWAITING_IMPL"
+
+
+def test_disambiguate_picks_the_normalisation_match(tmp_path):
+    adapter = _vitest_adapter(tmp_path)
+    candidates = [
+        "frontend::a.test.ts > helper formats a value",
+        "frontend::b.test.ts > other case",
+    ]
+    declared = "frontend::a.test.ts > helper > formats a value"
+    assert advance._disambiguate(candidates, declared, adapter) == candidates[0]
 
 
 def test_adopted_passing_test_demands_sensitivity_in_one_advance(repo):
