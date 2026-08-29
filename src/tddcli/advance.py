@@ -177,16 +177,41 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
             outcomes = {candidates[0]: adopted_outcome}
             others = [t for t in others if t != candidates[0]]
         elif len(candidates) > 1:
-            engine.ledger.event(
-                engine.run["id"], cycle["id"], "multiple_new_tests",
-                json.dumps(candidates),
-            )
-            return _reply(
-                engine, cycle, Verb.NAME_TARGET_TEST,
-                "Several new tests appeared; a cycle covers one behaviour. Name the"
-                " intended target with `tdd target <id>`.",
-                candidates=candidates,
-            )
+            owner = missing[0].split("::", 1)[0]
+            adapter = adapters.build(engine.config.project(owner), engine.worktree)
+            resolved = _disambiguate(candidates, missing[0], adapter)
+            if resolved is not None:
+                engine.ledger.event(
+                    engine.run["id"], cycle["id"], "declared_test_mismatch",
+                    json.dumps({"declared": missing, "adopted": [resolved], "all_candidates": candidates}),
+                )
+                kept = [t for t in targets if t not in missing]
+                engine.ledger.update(
+                    "cycle", cycle["id"], target_tests=json.dumps(kept + [resolved])
+                )
+                cycle = engine.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle["id"],))
+                adopted_outcome = _outcome_from_verdicts(verdicts, resolved)
+                if adopted_outcome is None:
+                    return _reply(
+                        engine, cycle, Verb.REFACTOR_OR_ADVANCE,
+                        f"Adopted {resolved} as the target (declared {missing[0]} was not"
+                        " collected). Run `tdd advance` again to evaluate it.",
+                        adopted=[resolved],
+                    )
+                targets = kept + [resolved]
+                outcomes = {resolved: adopted_outcome}
+                others = [t for t in others if t != resolved]
+            else:
+                engine.ledger.event(
+                    engine.run["id"], cycle["id"], "multiple_new_tests",
+                    json.dumps(candidates),
+                )
+                return _reply(
+                    engine, cycle, Verb.NAME_TARGET_TEST,
+                    "Several new tests appeared; a cycle covers one behaviour. Name the"
+                    " intended target with `tdd target <id>`.",
+                    candidates=candidates,
+                )
         else:
             return _reply(
                 engine, cycle, Verb.WRITE_TEST,
