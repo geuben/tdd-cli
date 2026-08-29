@@ -114,6 +114,14 @@ class GradleAdapter(Adapter):
             " assertion failure"
         )
 
+    def lint_target_id(self, native: str) -> str | None:
+        if "/" not in native:
+            return (
+                f"gradle target ids must contain '/' between class and method "
+                f"(got {native!r}); expected shape: com.example.ClassName/testMethodName"
+            )
+        return None
+
     # ------------------------------------------------------------------
     # Core command
     # ------------------------------------------------------------------

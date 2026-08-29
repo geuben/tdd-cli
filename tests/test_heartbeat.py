@@ -103,9 +103,9 @@ def test_baseline_heartbeat_reports_elapsed_seconds(repo, capsys):
 
 def test_claim_records_projects_done_as_each_completes(repo_multi, monkeypatch):
     """Seam, proven by P6: `monkeypatch.setattr(adapters, "build", spy)`. `build` is
-    called once per project in `tdd.toml` order (`['backend', 'frontend']`), so the
-    row seen on the second call reports `projects_done == 1` and
-    `projects_total == 2`."""
+    called once per project in `tdd.toml` order (`['backend', 'frontend']`) for baseline
+    probing (plus once for target lint before the claim), so the row seen on the last
+    call reports `projects_done == 1` and `projects_total == 2`."""
     plan = write_plan(repo_multi, PLAN_MULTI)
     run_cli(repo_multi, "plan", "register", plan)
     real_build = adapters.build
@@ -122,9 +122,10 @@ def test_claim_records_projects_done_as_each_completes(repo_multi, monkeypatch):
     out = run_cli(repo_multi, "run", "start", "--plan", plan)
     assert out["ok"], out
 
-    assert len(seen) == 2, seen
-    second = seen[1]
-    assert second is not None
+    # One lint call (no claim yet) + two baseline probes (claim present)
+    probe_seen = [s for s in seen if s is not None]
+    assert len(probe_seen) == 2, seen
+    second = probe_seen[1]
     assert second["projects_done"] == 1, second
     assert second["projects_total"] == 2, second
 

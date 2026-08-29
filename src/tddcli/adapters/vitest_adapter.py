@@ -47,6 +47,17 @@ class VitestAdapter(Adapter):
     def stub_hint(self) -> str:
         return '`throw new Error("not implemented")` in every body'
 
+    def lint_target_id(self, native: str) -> str | None:
+        if " > " not in native:
+            return (
+                f"vitest target ids must contain ' > ' between the file and test name "
+                f"(got {native!r}); expected shape: <file> > <describe titles> <test title>"
+            )
+        return None
+
+    def target_path(self, native: str) -> str | None:
+        return native.split(" > ", 1)[0]
+
     def normalise_id(self, test_id: str) -> str:
         """Canonicalise the describe/test separator for target matching.
 

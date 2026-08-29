@@ -459,8 +459,8 @@ one has no move left but to re-run doctor and read the same output again.
 ### 8.2 Registration
 | Command | Behaviour |
 |---|---|
-| `tdd plan register <path>` | parse front-matter, resolve plan blob at HEAD, store contract |
-| `tdd run start --plan <path\|id>` | create run; capture executor identity from environment; capture per-project baselines; verify artifact freshness; open cycle 1 |
+| `tdd plan register <path>` | parse front-matter, resolve plan blob at HEAD, lint declared targets (grammar + root-prefix rules), store contract. Refuses with `reason: "target_lint"` and a `findings` list when any target can't match a collected id — e.g. pytest target missing `::`, vitest missing ` > `, gradle/xctest wrong separator, or target path that duplicates the project's `root`. Recovery: fix the spelling (the finding often carries a `suggestion`), or for a genuinely nested root path, create the directory first (the filesystem-existence check then exempts it). |
+| `tdd run start --plan <path\|id>` | re-lints the stored contract's declared targets against the *current* `tdd.toml` (catching root/adapter drift since registration) before claiming the worktree — refuses with `reason: "target_lint"` if findings appear; then creates run, captures executor identity from environment, captures per-project baselines, verifies artifact freshness, opens cycle 1 |
 
 ### 8.3 The loop
 | Command | Behaviour |
