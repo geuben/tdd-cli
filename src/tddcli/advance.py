@@ -117,6 +117,15 @@ def _stage_and_commit(engine: Engine, cycle, phase: str, declared) -> tuple[str 
     return sha, staged, classification
 
 
+def _outcome_from_verdicts(verdicts, test_id: str) -> str | None:
+    for v in verdicts:
+        if test_id in v.failed:
+            return FAILED
+        if test_id in v.passed:
+            return PASSED
+    return None
+
+
 # -- handlers ------------------------------------------------------------
 
 
