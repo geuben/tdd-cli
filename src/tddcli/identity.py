@@ -76,6 +76,10 @@ def resolve(project_path: Path | None = None, human_label: str | None = None) ->
             if model:
                 return Executor(model=model, session=session, source="transcript")
 
+    declared = os.environ.get("TDD_EXECUTOR_MODEL")
+    if declared:
+        return Executor(model=declared, session=session, source="declared")
+
     if human_label:
         return Executor(model=human_label, session=session, source="human")
 
