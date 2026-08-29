@@ -1,5 +1,5 @@
-from tddcli.adapters.base import Verdict
 from tddcli import advance
+from tddcli.adapters.base import Verdict
 
 
 def test_outcome_lookup_returns_none_for_unexecuted_id():
