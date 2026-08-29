@@ -94,6 +94,15 @@ class XCTestAdapter(Adapter):
             " compiles first, then observe the assertion failure"
         )
 
+    def lint_target_id(self, native: str) -> str | None:
+        parts = native.split("/")
+        if len(parts) != 3 or any(not p for p in parts):
+            return (
+                f"xctest target ids must be exactly three '/'-separated parts "
+                f"(got {native!r}); expected shape: Bundle/Class/testMethod"
+            )
+        return None
+
     # ------------------------------------------------------------------
     # Core command
     # ------------------------------------------------------------------

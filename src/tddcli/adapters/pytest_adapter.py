@@ -49,6 +49,14 @@ class PytestAdapter(Adapter):
     def stub_hint(self) -> str:
         return "`raise NotImplementedError` in every body"
 
+    def lint_target_id(self, native: str) -> str | None:
+        if "::" not in native:
+            return f"pytest target ids must contain '::' (got {native!r}); expected shape: path/to/test_file.py::test_name"
+        return None
+
+    def target_path(self, native: str) -> str | None:
+        return native.split("::", 1)[0]
+
     def _runner_prefix(self) -> str:
         """The project root is checked before the worktree root: a workspace keeps
         one lockfile at the top, but a member with its own marker owns its choice."""
