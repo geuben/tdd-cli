@@ -1,7 +1,8 @@
 from pathlib import Path
 
 from conftest import run_cli, write_plan
-from tddcli import advance, config as config_mod
+from tddcli import advance
+from tddcli import config as config_mod
 from tddcli.adapters.base import Verdict
 from tddcli.adapters.vitest_adapter import VitestAdapter
 
