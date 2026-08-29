@@ -200,3 +200,10 @@ def test_terminal_advance_invites_a_closing_note(repo):
     out = run_cli(repo, "advance")  # -> terminal COMPLETE
     assert out["next_action"]["terminal"] is True
     assert "tdd note" in out["next_action"]["detail"]
+
+
+def test_terminal_skip_invites_a_closing_note(repo):
+    _start(repo)
+    out = run_cli(repo, "cycle", "skip", "--reason", "outgrown")
+    assert out["next_action"]["terminal"] is True
+    assert "tdd note" in out["next_action"]["detail"]
