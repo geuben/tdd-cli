@@ -46,3 +46,15 @@ def test_single_new_test_is_adopted_and_evaluated_in_one_advance(repo):
     out = run_cli(repo, "advance")
     assert out["next_action"]["verb"] == "write_implementation", out
     assert out["run"]["phase"] == "AWAITING_IMPL"
+
+
+def test_adopted_passing_test_demands_sensitivity_in_one_advance(repo):
+    plan = write_plan(repo, PLAN_SINGLE_CANDIDATE)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADDING)
+    (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+
+    out = run_cli(repo, "advance")
+    assert out["next_action"]["verb"] == "run_sensitivity_check", out
