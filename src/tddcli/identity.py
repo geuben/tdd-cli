@@ -69,16 +69,17 @@ def _model_from_transcript(path: Path) -> str | None:
 
 def resolve(project_path: Path | None = None, human_label: str | None = None) -> Executor:
     session = os.environ.get("CLAUDE_CODE_SESSION_ID")
+
+    declared = os.environ.get("TDD_EXECUTOR_MODEL")
+    if declared:
+        return Executor(model=declared, session=session, source="declared")
+
     if session:
         transcript = _find_transcript(session, project_path)
         if transcript is not None:
             model = _model_from_transcript(transcript)
             if model:
                 return Executor(model=model, session=session, source="transcript")
-
-    declared = os.environ.get("TDD_EXECUTOR_MODEL")
-    if declared:
-        return Executor(model=declared, session=session, source="declared")
 
     if human_label:
         return Executor(model=human_label, session=session, source="human")
