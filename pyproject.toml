@@ -47,10 +47,11 @@ packages = ["src/tddcli"]
 include = ["src", "tests", "examples", "README.md", "LICENSE", "CHANGELOG.md", "SECURITY.md"]
 
 [dependency-groups]
-dev = ["pytest>=8.0", "pytest-json-report>=1.5", "ruff>=0.5", "zizmor>=1.29"]
+dev = ["pytest>=8.0", "pytest-json-report>=1.5", "pytest-xdist>=3.5", "ruff>=0.5", "zizmor>=1.29"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = ["-n", "auto"]
 
 [tool.ruff]
 line-length = 100
