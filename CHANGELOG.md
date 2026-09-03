@@ -6,6 +6,80 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-03
+
+### Added
+
+- **`tdd note` — an executor-narrative channel.** `tdd note "<text>"` attaches
+  a phase-stamped note to the current cycle, or a run-level note once the run
+  has ended (it falls back to the latest run, so no active run is required).
+  Cycle notes render in the friction log as blockquote claims under their cycle;
+  run-level notes render under a new `## Executor narrative` section, which is
+  omitted when there are none. Envelopes that carry an integrity event now nudge
+  for a note while the reason is fresh (silenced once the cycle has one), and
+  the terminal `COMPLETE` envelope — via `advance` or a final-cycle skip — asks
+  for a closing narrative before rendering. Stored in a new `note` table via a
+  v7→v8 ledger migration (#77, #94).
+
+- **Baseline sanity gate.** `run start` refuses a baseline whose failing ratio
+  exceeds a threshold (default 0.5, suites under 10 collected tests exempt) with
+  `reason: "baseline_implausible"`, on the grounds that a mostly-red suite means
+  the environment is broken rather than the code. A per-project
+  `baseline_max_failure_ratio` in `tdd.toml` overrides the default, and
+  `--accept-baseline` bypasses the gate and logs a `baseline_accepted` integrity
+  event (#67, #84).
+
+- **Standing-failure delta.** A non-empty baseline is now compared against the
+  previous run's baseline for the same worktree and a `baseline_standing_delta`
+  event partitions the failing set into new versus inherited failures, so a
+  pre-existing red test is distinguishable from one that broke since the last
+  run (#67, #84).
+
+- **Per-project `health_command`.** An optional command in `tdd.toml` that is
+  probed before baseline capture; if it fails, `run start` refuses with
+  `reason: "services_unreachable"` instead of recording a baseline against a
+  down dependency (#67, #84).
+
+- **Declared-target lint.** `plan register` and `run start` now lint every
+  declared target against the adapter's id grammar (pytest `::`, vitest ` > `,
+  gradle `Class/method`, xctest `Bundle/Class/testMethod`) and against project
+  roots: a target path that duplicates a non-`.` project root prefix is refused
+  unless the nested path genuinely exists in the worktree. Findings are returned
+  under `reason: "target_lint"`; `run start` re-lints the stored contract
+  against the current config before claiming a baseline (#71, #88).
+
+- **Per-adapter sensitivity evidence line.** Each adapter now extracts a
+  `target_evidence` line from a failing target — the first `E` line for pytest
+  (skipping the xdist worker header), the first `: error:` line in the test's
+  window for xctest, `failureMessages[0]` for vitest, the junit failure message
+  for gradle, and the last non-empty output line for exec. The sensitivity check
+  persists it as `sensitivity_check.evidence_line` (v6→v7 migration) and the
+  friction log's observed snippet prefers it over the raw first line, rendering
+  `<no assertion line captured>` when empty and keeping the tail of over-long
+  lines. Legacy rows with no stored evidence keep the first-line fallback (#68,
+  #90).
+
+- **Diagnosable executor attribution.** `TDD_EXECUTOR_MODEL` lets a harness
+  declare the executor identity (`source: declared`), taking precedence over
+  transcript detection. When identity cannot be resolved, `Executor.reason`
+  says why — session id unset, transcript not found, or transcript without a
+  model record — and `run start` logs an `executor_unknown` event and surfaces
+  `executor_warning` in its envelope. `tdd doctor` gains an informational
+  executor-identity check (#74, #92).
+
+### Changed
+
+- **Target adoption is evaluated in the same `advance`.** When a cycle's
+  declared target is missing and exactly one new test appears, `advance`
+  adopts it (logging `declared_test_mismatch`) and judges RED — or drives the
+  sensitivity check when it passed — from the suite run that already happened,
+  instead of asking for a re-run. A declared id that differs
+  from a single same-file candidate only by separator normalisation is
+  disambiguated and adopted without asking; two same-file candidates still
+  require an explicit `tdd target` (#72, #91).
+
+- CI now tests on Python 3.11 and 3.14 only (#87).
+
 ## [0.8.0] - 2026-08-28
 
 ### Added
