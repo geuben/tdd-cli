@@ -23,6 +23,14 @@ adapter    = "cargo"
 test_paths = ["tests/"]
 """
 
+TOML_WITH_ENV = """
+[project.kernel]
+root       = "kernel"
+adapter    = "cargo"
+test_paths = ["tests/"]
+env        = { CARGO_HOME = "/opt/cargo" }
+"""
+
 TOML_CUSTOM_CMD = """
 [project.kernel]
 root         = "kernel"
@@ -310,3 +318,16 @@ def test_collectable_is_a_no_run_build(tmp_path):
     with patch.object(CargoAdapter, "_run_suite", return_value=(101, COMPILE_ERROR, "")):
         g = a.collectable()
     assert not g.ok and "E0308" in g.output
+
+
+def test_every_invocation_carries_the_project_env(tmp_path):
+    """`env` is how a repo points at a toolchain outside PATH (e.g. an external-disk
+    rustup); the doctor gate, collection and runs must all see it."""
+    a = make_adapter(tmp_path, TOML_WITH_ENV)
+    with patch.object(CargoAdapter, "_run_suite", return_value=(0, LIST_OUTPUT, "")) as rs:
+        a.collectable()
+        a.collect()
+        a.run(INT_PASS)
+    for call in rs.call_args_list:
+        env = call.args[1] if len(call.args) > 1 else call.kwargs.get("extra_env")
+        assert env == {"CARGO_HOME": "/opt/cargo"}, call

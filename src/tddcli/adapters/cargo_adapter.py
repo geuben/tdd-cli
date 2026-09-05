@@ -200,7 +200,9 @@ class CargoAdapter(Adapter):
         return tests
 
     def collectable(self) -> GateResult:
-        code, out, err = self._run_suite(f"{self._targeted_prefix()} --no-run 2>&1")
+        code, out, err = self._run_suite(
+            f"{self._targeted_prefix()} --no-run 2>&1", self._suite_env(None)
+        )
         if code == 0:
             return GateResult(ok=True)
         return GateResult(ok=False, output=clip_failure(self._errors(out + err)))
