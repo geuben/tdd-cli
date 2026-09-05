@@ -4,6 +4,7 @@ import importlib.metadata
 from pathlib import Path
 
 from .base import Adapter, Collection, GateResult, Verdict
+from .cargo_adapter import CargoAdapter
 from .exec_adapter import ExecAdapter
 from .gradle_adapter import GradleAdapter
 from .pytest_adapter import PytestAdapter
@@ -11,6 +12,7 @@ from .vitest_adapter import VitestAdapter
 from .xctest_adapter import XCTestAdapter
 
 REGISTRY: dict[str, type[Adapter]] = {
+    "cargo": CargoAdapter,
     "exec": ExecAdapter,
     "gradle": GradleAdapter,
     "pytest": PytestAdapter,

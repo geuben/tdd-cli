@@ -6,6 +6,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **cargo adapter** — Rust driver through `cargo test`. Ids are `<target>::<path>`
+  (`lib::…` for unit tests, `<tests-file-stem>::…` for integration tests) and compose
+  to `--lib`/`--test <name>` + `-- --exact <path>` for targeted runs. Verdicts are
+  parsed from cargo's per-test console lines, attributed to targets by the
+  `Running …` headers with stderr merged; doc-tests are excluded. A compile error maps
+  to `not_collected`, matching gradle/xctest. Collection is `cargo test --tests --
+  --list` with a per-file `--test <stem>` fallback; `tdd doctor`'s collectable gate is
+  `cargo test --no-run`. Target lint requires the `::` separator.
+
 ## [0.9.0] - 2026-09-03
 
 ### Added
