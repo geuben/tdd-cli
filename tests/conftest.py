@@ -64,7 +64,6 @@ def repo(tmp_path, ledger_home):
         ".pytest_cache/\n__pycache__/\n*.pyc\n.coverage\njsonreport*.json\n"
     )
 
-    git(root.parent, "init", "-q", str(root)) if False else None
     subprocess.run(["git", "init", "-q", str(root)], check=True)
     git(root, "config", "user.email", "test@example.com")
     git(root, "config", "user.name", "Test")
