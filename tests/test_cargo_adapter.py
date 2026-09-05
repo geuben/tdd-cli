@@ -76,6 +76,49 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 """
 
+# Two targets each fail a test at the same bare path (`tests::it_works`) — the
+# panic text must attribute to the target whose header preceded each block,
+# not collide on the shared path.
+COLLIDING_PATHS_RUN = """\
+     Running unittests src/lib.rs (/work/target/debug/deps/probe_kernel-aaaa)
+
+running 1 test
+test tests::it_works ... FAILED
+
+failures:
+
+---- tests::it_works stdout ----
+
+thread 'tests::it_works' panicked at src/lib.rs:3:5:
+lib assertion failed
+
+
+failures:
+    tests::it_works
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`
+     Running tests/roundtrip.rs (/work/target/debug/deps/roundtrip-bbbb)
+
+running 1 test
+test tests::it_works ... FAILED
+
+failures:
+
+---- tests::it_works stdout ----
+
+thread 'tests::it_works' panicked at tests/roundtrip.rs:5:5:
+roundtrip assertion failed
+
+
+failures:
+    tests::it_works
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+"""
+
 # `cargo test --tests -- --list 2>&1`
 LIST_OUTPUT = """\
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
@@ -212,6 +255,25 @@ def test_full_run_attributes_tests_to_targets_by_header(tmp_path):
     assert v.error is None
     assert set(v.passed) == {LIB_PASS, "kernel::lib::tests::version_is_one", INT_PASS}
     assert v.failed == [LIB_FAIL]
+
+
+def test_full_run_does_not_collide_failures_sharing_a_bare_path(tmp_path):
+    a = make_adapter(tmp_path)
+    with patch.object(CargoAdapter, "_run_suite", return_value=(101, COLLIDING_PATHS_RUN, "")):
+        v = a.run()
+    assert set(v.failed) == {"kernel::lib::tests::it_works", "kernel::roundtrip::tests::it_works"}
+
+
+def test_targeted_run_attributes_the_right_target_when_paths_collide(tmp_path):
+    a = make_adapter(tmp_path)
+    with patch.object(CargoAdapter, "_run_suite", return_value=(101, COLLIDING_PATHS_RUN, "")):
+        lib_v = a.run("kernel::lib::tests::it_works")
+    with patch.object(CargoAdapter, "_run_suite", return_value=(101, COLLIDING_PATHS_RUN, "")):
+        int_v = a.run("kernel::roundtrip::tests::it_works")
+    assert lib_v.target_outcome == FAILED
+    assert "lib assertion failed" in lib_v.target_failure
+    assert int_v.target_outcome == FAILED
+    assert "roundtrip assertion failed" in int_v.target_failure
 
 
 def test_targeted_pass(tmp_path):

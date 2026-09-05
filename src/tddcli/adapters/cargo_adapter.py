@@ -125,11 +125,7 @@ class CargoAdapter(Adapter):
     def _targeted_cmd(self, native_id: str) -> str:
         """`cargo test <flags…>` from the declared command, with the suite-wide
         target selector (`--tests`) dropped so the per-target scope can be set."""
-        parts = shlex.split(self._test_cmd())
-        parts = [p for p in parts if p != "--tests"]
-        if "--" in parts:
-            parts = parts[: parts.index("--")]
-        return f"{shlex.join(parts)} {self._selector(native_id)}"
+        return f"{self._targeted_prefix()} {self._selector(native_id)}"
 
     # ------------------------------------------------------------------
     # Discovery — integration test files
@@ -218,24 +214,39 @@ class CargoAdapter(Adapter):
         failed: set[str] = set()
         failures: dict[str, str] = {}
         target = default
-        block_target: dict[str, str] = {}
-        for line in output.splitlines():
+        # Position of each header, alongside the target it switches to — used to
+        # attribute a failure block by the header most recently seen before it,
+        # since two targets can share a test path (e.g. both name a test
+        # `tests::it_works`) and a path-only lookup would collide between them.
+        header_spans: list[tuple[int, str | None]] = []
+        pos = 0
+        for line in output.splitlines(keepends=True):
             header = _RUNNING_RE.match(line)
             if header:
                 target = _target_of_header(header)
-                continue
-            if _DOCTEST_RE.match(line):
+                header_spans.append((pos, target))
+            elif _DOCTEST_RE.match(line):
                 target = None
-                continue
-            entry = _TEST_LINE_RE.match(line)
-            if entry and target is not None:
-                path, outcome = entry.groups()
-                tid = f"{target}::{path}"
-                if outcome == "ok":
-                    passed.add(tid)
-                elif outcome == "FAILED":
-                    failed.add(tid)
-                    block_target[path] = target
+                header_spans.append((pos, target))
+            else:
+                entry = _TEST_LINE_RE.match(line)
+                if entry and target is not None:
+                    path, outcome = entry.groups()
+                    tid = f"{target}::{path}"
+                    if outcome == "ok":
+                        passed.add(tid)
+                    elif outcome == "FAILED":
+                        failed.add(tid)
+            pos += len(line)
+
+        def _target_at(offset: int) -> str | None:
+            current = default
+            for start, tgt in header_spans:
+                if start > offset:
+                    break
+                current = tgt
+            return current
+
         # Failure blocks: from `---- <path> stdout ----` up to the next block or
         # the trailing `failures:` summary list.
         blocks = list(_FAILURE_BLOCK_RE.finditer(output))
@@ -244,7 +255,7 @@ class CargoAdapter(Adapter):
             body = output[m.end() : end]
             body = body.split("\nfailures:\n", 1)[0].strip()
             path = m.group(1)
-            tid = f"{block_target.get(path, default or 'lib')}::{path}"
+            tid = f"{_target_at(m.start()) or 'lib'}::{path}"
             failures[tid] = clip_failure(body) if body else "test failed"
         return passed, failed, failures
 
