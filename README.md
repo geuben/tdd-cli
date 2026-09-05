@@ -313,7 +313,7 @@ the next plan is written.
 
 ## Adapters
 
-`pytest`, `vitest`, `gradle`, `xctest`, and `exec` are built in. The pytest adapter runs
+`pytest`, `vitest`, `gradle`, `xctest`, `cargo`, and `exec` are built in. The pytest adapter runs
 the suite through the project's own environment manager, detected from its marker files —
 `uv.lock`, `poetry.lock`, `Pipfile`, `pdm.lock`, or `[tool.poetry]` in `pyproject.toml` —
 checked at the project root first, then the worktree root (workspace layouts keep one
@@ -363,6 +363,23 @@ test_command = """xcodebuild test \
   -derivedDataPath /tmp/app-unit-dd"""
 lease        = "ios-simulator"
 timeout      = 900
+```
+
+The `cargo` adapter drives Rust crates through `cargo test`. Test ids are
+`<target>::<path>` — `lib::layout::tests::wraps_short` for a `#[cfg(test)]` unit test,
+`roundtrip::renders_cover_only` for `tests/roundtrip.rs` — so a targeted run composes to
+cargo's own selectors (`--lib` / `--test <name>` plus `-- --exact <path>`) with no
+translation. Verdicts come from cargo's per-test console lines, attributed to targets by
+the `Running …` headers (stderr is merged so the order survives); doc-tests are excluded
+(`--tests`). A *compile* failure maps to `not_collected`, as for gradle and xctest: write a
+compiling stub (`todo!()`), then observe the panic. Declare `tests/` as `test_paths`, not
+`src/` — unit-test modules live inside production files and must not be staged as tests.
+
+```toml
+[project.kernel]
+root       = "kernel"
+adapter    = "cargo"
+test_paths = ["tests/"]
 ```
 
 Third-party adapters register under the
