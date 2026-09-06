@@ -756,7 +756,11 @@ Adapter.typecheck(project)               -> GateResult
   re-qualifies. The result: a declared id that differs from the collected id only by the
   separator is matched silently — no `declared_test_mismatch` event and no extra advance round
   trip. `PytestAdapter` inherits the identity hook (pytest node ids use `::` and carry no
-  describe/test separator ambiguity).
+  describe/test separator ambiguity). Its one runner-side divergence is handled on the report
+  side instead: pytest-xdist's `--dist loadgroup` reports a test marked `xdist_group("<g>")`
+  as `<nodeid>@<g>`, and the adapter strips that trailing suffix when reading report and
+  `--collect-only` ids (only an `@` after the last `]` qualifies, so parametrised values that
+  contain `@` are untouched), so grouped targets match their declared and collected spelling.
 - **R10.7** `collectable()` is a single **whole-suite** `--collect-only` (pytest) / `vitest list`
   (vitest) probe used only by `tdd doctor` (§8.1, issues #3/#5). `collect()` now opens with the
   same *shape* (R10.3) but remains a distinct path: `collectable()` reports whether a suite can be

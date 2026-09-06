@@ -43,6 +43,21 @@ RUNNER_MARKERS = (
 )
 
 
+def _strip_xdist_group(nodeid: str) -> str:
+    """The plain node id behind xdist's `--dist loadgroup` spelling.
+
+    A test marked `xdist_group("<g>")` is reported as `<nodeid>@<g>` and pytest-json-report
+    records it that way; collected ids and declared targets carry no suffix, so the report
+    side is canonicalised here. Only an `@` after the last `]` can be xdist's: function names
+    cannot contain one, and parametrised values (`test_x[user@example.com]`) live inside the
+    brackets.
+    """
+    at = nodeid.rfind("@")
+    if at == -1 or at < nodeid.rfind("]"):
+        return nodeid
+    return nodeid[:at]
+
+
 class PytestAdapter(Adapter):
     name = "pytest"
 
@@ -121,7 +136,9 @@ class PytestAdapter(Adapter):
             verdict.duration_ms += int(report.get("duration", 0) * 1000)
             tests.extend(report.get("tests", []))
             collectors.extend(report.get("collectors", []))
-            suite_ids.append({t["nodeid"] for t in report.get("tests", [])})
+            suite_ids.append(
+                {_strip_xdist_group(t["nodeid"]) for t in report.get("tests", [])}
+            )
 
         overlap = _suite_overlap(suite_ids)
         if overlap:
@@ -134,7 +151,7 @@ class PytestAdapter(Adapter):
                 uncollectable.add(collector.get("nodeid", ""))
 
         for test in tests:
-            qualified = self.qualify(test["nodeid"])
+            qualified = self.qualify(_strip_xdist_group(test["nodeid"]))
             if test["outcome"] == "passed":
                 verdict.passed.append(qualified)
             elif test["outcome"] in ("failed", "error"):
@@ -145,7 +162,7 @@ class PytestAdapter(Adapter):
             return verdict
 
         native = self.strip(target)
-        hit = next((t for t in tests if t["nodeid"] == native), None)
+        hit = next((t for t in tests if _strip_xdist_group(t["nodeid"]) == native), None)
         if hit is not None:
             verdict.target_outcome = PASSED if hit["outcome"] == "passed" else FAILED
             call = hit.get("call") or hit.get("setup") or {}
@@ -268,6 +285,7 @@ class PytestAdapter(Adapter):
         for line in out.splitlines():
             line = line.strip()
             if "::" in line and not line.startswith(("=", "-", "no tests")):
+                line = _strip_xdist_group(line)
                 tests.add(self.qualify(line))
                 files.add(line.split("::", 1)[0])
         return tests, files

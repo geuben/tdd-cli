@@ -6,6 +6,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **pytest adapter: `--dist loadgroup` node ids.** pytest-xdist reports a test marked
+  `xdist_group("<g>")` as `<nodeid>@<g>` and pytest-json-report records that spelling, so a
+  grouped target was `not_found` on every suite run even though it was collected and
+  passed, and its `passed`/`failed` ids never matched collected ids. The adapter now strips
+  the trailing `@<group>` when reading report and `--collect-only` ids. Only an `@` after
+  the last `]` is treated as the suffix, so parametrised ids such as
+  `test_x[user@example.com]` are left intact.
+
 ## [0.10.0] - 2026-09-05
 
 ### Added
