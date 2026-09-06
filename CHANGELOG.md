@@ -6,6 +6,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-09-06
+
 ### Fixed
 
 - **pytest adapter: `--dist loadgroup` node ids.** pytest-xdist reports a test marked
