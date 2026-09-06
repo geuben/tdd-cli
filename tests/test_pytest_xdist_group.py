@@ -62,3 +62,35 @@ def test_pytest_run_matches_target_reported_with_xdist_group_suffix(tmp_path, mo
     assert verdict.error is None
     assert verdict.target_outcome == "passed"
     assert verdict.passed == ["backend::tests/test_a.py::test_a"]
+
+
+def test_pytest_run_keeps_at_sign_inside_parametrised_id(tmp_path, monkeypatch):
+    adapter = adapters.build(_pytest_project(tmp_path), tmp_path)
+    monkeypatch.setattr(
+        adapters.base,
+        "run_command",
+        _fake_pytest_run(
+            {
+                "duration": 1.0,
+                "tests": [
+                    {
+                        "nodeid": "tests/test_a.py::test_a[user@example.com]@restate_workflows",
+                        "outcome": "passed",
+                    },
+                    {
+                        "nodeid": "tests/test_a.py::test_b[user@example.com]",
+                        "outcome": "passed",
+                    },
+                ],
+            }
+        ),
+    )
+
+    verdict = adapter.run("backend::tests/test_a.py::test_a[user@example.com]")
+
+    assert verdict.error is None
+    assert verdict.target_outcome == "passed"
+    assert verdict.passed == [
+        "backend::tests/test_a.py::test_a[user@example.com]",
+        "backend::tests/test_a.py::test_b[user@example.com]",
+    ]
