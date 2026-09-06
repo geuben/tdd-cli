@@ -29,7 +29,7 @@ pytest-xdist's loadgroup scheduler reports a test marked
 pytest-json-report records that spelling. `PytestAdapter.run` matches the declared target
 by exact equality against `test["nodeid"]` and qualifies passed/failed ids verbatim, so in a
 project whose `addopts` carries `--dist loadgroup` every grouped target is reported missing
-even though it is collected and passes. Seen 2026-09-06 in geuben/coparenting run 187: the
+even though it is collected and passes. Seen 2026-09-06 in a downstream project: the
 executor filed a `plan_defect` blocker for a correct test. The tracking issue could not be
 filed from this session (the token cannot create issues on this repo); the PR carries the
 description.
@@ -57,7 +57,7 @@ description.
 
 `tests/test_pytest_xdist_group.py::test_pytest_run_matches_target_reported_with_xdist_group_suffix`
 builds a pytest project with `project_with`-style registry text, fakes `run_command` to write a
-report whose single test has `"nodeid": "tests/test_a.py::test_a@restate_workflows"`, calls
+report whose single test has `"nodeid": "tests/test_a.py::test_a@shared_db"`, calls
 `adapter.run("backend::tests/test_a.py::test_a")`, and asserts `target_outcome == "passed"`
 and `passed == ["backend::tests/test_a.py::test_a"]`.
 
@@ -70,7 +70,7 @@ EXPECTED FAILURE: `AssertionError: assert 'not_found' == 'passed'`.
 ### Cycle 2
 
 `tests/test_pytest_xdist_group.py::test_pytest_run_keeps_at_sign_inside_parametrised_id`
-reports `"nodeid": "tests/test_a.py::test_a[user@example.com]@restate_workflows"` and
+reports `"nodeid": "tests/test_a.py::test_a[user@example.com]@shared_db"` and
 `"tests/test_a.py::test_b[user@example.com]"` (ungrouped), targets
 `backend::tests/test_a.py::test_a[user@example.com]`, and asserts the target passed and
 `passed == ["backend::tests/test_a.py::test_a[user@example.com]",
