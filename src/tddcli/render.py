@@ -17,9 +17,7 @@ def _fmt_list(items) -> str:
 
 
 def friction_log(ledger: Ledger, run) -> str:
-    contract = ledger.one(
-        "SELECT * FROM plan_contract WHERE id = ?", (run["plan_contract_id"],)
-    )
+    contract = ledger.one("SELECT * FROM plan_contract WHERE id = ?", (run["plan_contract_id"],))
     cycles = ledger.cycles(run["id"])
     lines: list[str] = []
     a = lines.append
@@ -29,11 +27,15 @@ def friction_log(ledger: Ledger, run) -> str:
     a(f"- Run: {run['id']}")
     a(f"- Executor: {run['executor_model']} (source: {run['executor_source']})")
     a(f"- Plan blob: `{contract['git_blob_sha']}` ({contract['status']})")
-    a(f"- Started: {run['started_at']}  Ended: {run['ended_at'] or '—'}"
-      f"  Outcome: {run['outcome'] or 'live'}")
+    a(
+        f"- Started: {run['started_at']}  Ended: {run['ended_at'] or '—'}"
+        f"  Outcome: {run['outcome'] or 'live'}"
+    )
     baselines = ledger.baselines(run["id"])
-    a("- Baseline failures at start: "
-      + (", ".join(f"{k}={len(v)}" for k, v in baselines.items()) or "none"))
+    a(
+        "- Baseline failures at start: "
+        + (", ".join(f"{k}={len(v)}" for k, v in baselines.items()) or "none")
+    )
     regen_rows = ledger.all(
         "SELECT DISTINCT artifact FROM artifact_check WHERE run_id = ? AND regenerated = 1",
         (run["id"],),
@@ -49,11 +51,9 @@ def friction_log(ledger: Ledger, run) -> str:
     a("")
     a(f"- Declared cycles: {len(declared)}")
     a(f"- Delivered: {len(delivered)}   Skipped: {len(skipped)}")
-    missing = sorted({d['n'] for d in declared} - delivered - skipped)
+    missing = sorted({d["n"] for d in declared} - delivered - skipped)
     a(f"- Never reached: {missing or 'none'}")
-    interventions = ledger.all(
-        "SELECT * FROM human_intervention WHERE run_id = ?", (run["id"],)
-    )
+    interventions = ledger.all("SELECT * FROM human_intervention WHERE run_id = ?", (run["id"],))
     a(f"- Human interventions: {len(interventions)}")
     for i in interventions:
         a(f"  - {i['at']}: {i['note']}")
@@ -64,9 +64,11 @@ def friction_log(ledger: Ledger, run) -> str:
         events[e["cycle_id"]].append(e)
 
     for cycle in reversed(cycles):
-        a(f"### Cycle {cycle['ordinal']}"
-          + (f": {cycle['title']}" if cycle["title"] else "")
-          + f"  _({cycle['kind']})_")
+        a(
+            f"### Cycle {cycle['ordinal']}"
+            + (f": {cycle['title']}" if cycle["title"] else "")
+            + f"  _({cycle['kind']})_"
+        )
         if cycle["phase"] == "SKIPPED":
             a(f"- **Skipped:** {cycle['skip_reason']}")
             a("")
@@ -122,9 +124,7 @@ def friction_log(ledger: Ledger, run) -> str:
         )
         for ann in annotations:
             a(f"- **{ann['key']}:** {ann['value']}")
-        notes = ledger.all(
-            "SELECT * FROM note WHERE cycle_id = ? ORDER BY id", (cycle["id"],)
-        )
+        notes = ledger.all("SELECT * FROM note WHERE cycle_id = ? ORDER BY id", (cycle["id"],))
         for n in notes:
             a(f"> **note** _(during {n['phase']})_: {n['text']}")
         a("")
@@ -174,9 +174,7 @@ def _elapsed(start: str, end: str | None) -> str:
 
 def progress(ledger: Ledger, run) -> str:
     """A human's view of where the run is. Never consulted by an agent."""
-    contract = ledger.one(
-        "SELECT * FROM plan_contract WHERE id = ?", (run["plan_contract_id"],)
-    )
+    contract = ledger.one("SELECT * FROM plan_contract WHERE id = ?", (run["plan_contract_id"],))
     declared = json.loads(contract["declared_cycles"])
     rows = {c["ordinal"]: c for c in ledger.cycles(run["id"])}
 
@@ -209,9 +207,7 @@ def progress(ledger: Ledger, run) -> str:
             "SELECT phase, sha FROM commit_record WHERE cycle_id = ? ORDER BY id",
             (row["id"],),
         )
-        events = ledger.all(
-            "SELECT kind FROM integrity_event WHERE cycle_id = ?", (row["id"],)
-        )
+        events = ledger.all("SELECT kind FROM integrity_event WHERE cycle_id = ?", (row["id"],))
         detail = f"{runs} suite run{'' if runs == 1 else 's'}"
         if commits:
             detail += "  " + " ".join(f"{c['phase']}:{c['sha'][:7]}" for c in commits)
@@ -236,7 +232,8 @@ def progress(ledger: Ledger, run) -> str:
     if skipped:
         summary += f" · {skipped} skipped"
     summary += (
-        " · no integrity events" if not total_events
+        " · no integrity events"
+        if not total_events
         else " · " + ", ".join(f"{e['kind']}×{e['n']}" for e in total_events)
     )
     blockers = ledger.all("SELECT kind, detail FROM blocker WHERE run_id = ?", (run["id"],))
@@ -247,13 +244,14 @@ def progress(ledger: Ledger, run) -> str:
 
 
 def metrics(ledger: Ledger, worktree: str) -> dict:
-    runs = ledger.all(
-        "SELECT * FROM run WHERE worktree_path = ? ORDER BY id", (worktree,)
-    )
-    out = {"runs": [], "note": (
-        "Cross-plan aggregates are not comparable: cycle difficulty varies too much."
-        " Compare runs of the same contract only (R11.1)."
-    )}
+    runs = ledger.all("SELECT * FROM run WHERE worktree_path = ? ORDER BY id", (worktree,))
+    out = {
+        "runs": [],
+        "note": (
+            "Cross-plan aggregates are not comparable: cycle difficulty varies too much."
+            " Compare runs of the same contract only (R11.1)."
+        ),
+    }
     for run in runs:
         cycles = ledger.cycles(run["id"])
         # Pin cycles pass on arrival by design; refactor cycles have no test at all.
@@ -262,9 +260,7 @@ def metrics(ledger: Ledger, worktree: str) -> dict:
             "SELECT * FROM integrity_event WHERE run_id = ? AND kind = 'red_first_violation'",
             (run["id"],),
         )
-        impl_attempts = [
-            len(ledger.invocations(c["id"], "AWAITING_IMPL")) for c in cycles
-        ]
+        impl_attempts = [len(ledger.invocations(c["id"], "AWAITING_IMPL")) for c in cycles]
         blockers = ledger.all(
             "SELECT kind, COUNT(*) n FROM blocker WHERE run_id = ? GROUP BY kind",
             (run["id"],),
@@ -273,34 +269,42 @@ def metrics(ledger: Ledger, worktree: str) -> dict:
         for c in cycles:
             for p in json.loads(c["projects"]):
                 by_project[p] += 1
-        out["runs"].append({
-            "run": run["id"],
-            "plan_contract": run["plan_contract_id"],
-            "executor": run["executor_model"],
-            "executor_source": run["executor_source"],
-            "outcome": run["outcome"],
-            "cycles_declared": len(json.loads(
-                ledger.one("SELECT declared_cycles FROM plan_contract WHERE id = ?",
-                           (run["plan_contract_id"],))["declared_cycles"]
-            )),
-            "cycles_closed": sum(1 for c in cycles if c["phase"] == "CLOSED"),
-            "cycles_skipped": sum(1 for c in cycles if c["phase"] == "SKIPPED"),
-            # R6.2 — pin cycles pass on arrival by design and are excluded.
-            "red_first_violation_rate": (
-                round(len(red_violations) / len(standard), 3) if standard else None
-            ),
-            "impl_attempts_total": sum(impl_attempts),
-            "impl_attempts_max": max(impl_attempts, default=0),
-            "cycles_by_project": dict(by_project),
-            "blockers": {b["kind"]: b["n"] for b in blockers},
-            "human_interventions": len(ledger.all(
-                "SELECT id FROM human_intervention WHERE run_id = ?", (run["id"],)
-            )),
-            "integrity_events": {
-                r["kind"]: r["n"] for r in ledger.all(
-                    "SELECT kind, COUNT(*) n FROM integrity_event WHERE run_id = ?"
-                    " GROUP BY kind", (run["id"],)
-                )
-            },
-        })
+        out["runs"].append(
+            {
+                "run": run["id"],
+                "plan_contract": run["plan_contract_id"],
+                "executor": run["executor_model"],
+                "executor_source": run["executor_source"],
+                "outcome": run["outcome"],
+                "cycles_declared": len(
+                    json.loads(
+                        ledger.one(
+                            "SELECT declared_cycles FROM plan_contract WHERE id = ?",
+                            (run["plan_contract_id"],),
+                        )["declared_cycles"]
+                    )
+                ),
+                "cycles_closed": sum(1 for c in cycles if c["phase"] == "CLOSED"),
+                "cycles_skipped": sum(1 for c in cycles if c["phase"] == "SKIPPED"),
+                # R6.2 — pin cycles pass on arrival by design and are excluded.
+                "red_first_violation_rate": (
+                    round(len(red_violations) / len(standard), 3) if standard else None
+                ),
+                "impl_attempts_total": sum(impl_attempts),
+                "impl_attempts_max": max(impl_attempts, default=0),
+                "cycles_by_project": dict(by_project),
+                "blockers": {b["kind"]: b["n"] for b in blockers},
+                "human_interventions": len(
+                    ledger.all("SELECT id FROM human_intervention WHERE run_id = ?", (run["id"],))
+                ),
+                "integrity_events": {
+                    r["kind"]: r["n"]
+                    for r in ledger.all(
+                        "SELECT kind, COUNT(*) n FROM integrity_event WHERE run_id = ?"
+                        " GROUP BY kind",
+                        (run["id"],),
+                    )
+                },
+            }
+        )
     return out

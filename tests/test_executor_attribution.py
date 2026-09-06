@@ -94,9 +94,7 @@ def test_run_start_records_executor_unknown_event(repo, tmp_path, monkeypatch):
     assert out["ok"], out
 
     ledger = Ledger(repo)
-    rows = ledger.all(
-        "SELECT detail FROM integrity_event WHERE kind = 'executor_unknown'"
-    )
+    rows = ledger.all("SELECT detail FROM integrity_event WHERE kind = 'executor_unknown'")
     assert len(rows) == 1
     assert "CLAUDE_CODE_SESSION_ID" in rows[0]["detail"]
 

@@ -27,7 +27,7 @@ cycles:
 
 def project_with(tmp_path: Path, extra: str):
     (tmp_path / "tdd.toml").write_text(
-        '[project.backend]\n'
+        "[project.backend]\n"
         'root       = "backend"\n'
         'adapter    = "pytest"\n'
         'test_paths = ["tests/"]\n' + extra
@@ -54,9 +54,7 @@ def test_only_reporting_flags_are_appended(tmp_path, monkeypatch):
     """
     forced = tmp_path / "tdd-pytest-q1x2m3k4"
     forced.mkdir()
-    monkeypatch.setattr(
-        adapters.pytest_adapter.tempfile, "mkdtemp", lambda *a, **k: str(forced)
-    )
+    monkeypatch.setattr(adapters.pytest_adapter.tempfile, "mkdtemp", lambda *a, **k: str(forced))
 
     project = project_with(tmp_path, 'test_command = "uv run pytest tests/ -v -n auto"\n')
     adapter = adapters.build(project, tmp_path)
@@ -76,7 +74,7 @@ def test_only_reporting_flags_are_appended(tmp_path, monkeypatch):
     assert "--json-report" in seen["command"]
     # Whole arguments, not substrings: the report path is an argument in its own
     # right and may legitimately contain any of these sequences.
-    appended = shlex.split(seen["command"][len(base):])
+    appended = shlex.split(seen["command"][len(base) :])
     for flag in ("-q", "-p", "-k", "-m"):
         assert flag not in appended, appended
 
@@ -84,8 +82,7 @@ def test_only_reporting_flags_are_appended(tmp_path, monkeypatch):
 def test_collect_command_is_separate_so_collection_is_not_parallelised(tmp_path):
     project = project_with(
         tmp_path,
-        'test_command    = "uv run pytest tests/ -n auto"\n'
-        'collect_command = "uv run pytest"\n',
+        'test_command    = "uv run pytest tests/ -n auto"\ncollect_command = "uv run pytest"\n',
     )
     adapter = adapters.build(project, tmp_path)
     assert "-n auto" not in adapter._collect_cmd()
@@ -101,7 +98,7 @@ def test_defaults_are_unchanged_when_nothing_is_declared(tmp_path):
 def test_a_declared_command_drives_a_real_cycle(repo):
     """End-to-end with an explicit command, proving the wiring is live."""
     (repo / "tdd.toml").write_text(
-        '[project.backend]\n'
+        "[project.backend]\n"
         'root         = "backend"\n'
         'adapter      = "pytest"\n'
         'test_paths   = ["tests/"]\n'

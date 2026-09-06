@@ -513,7 +513,17 @@ def cmd_plan_register(args) -> Envelope:
     )
 
 
-def _probe_projects(projects, worktree, ledger, on_progress, cfg=None, config_sha=None, reuse_baselines=False, reuse_max_age=None, jobs: int = 1):
+def _probe_projects(
+    projects,
+    worktree,
+    ledger,
+    on_progress,
+    cfg=None,
+    config_sha=None,
+    reuse_baselines=False,
+    reuse_max_age=None,
+    jobs: int = 1,
+):
     """Probe a mapping of projects' baselines (R9.5a): run + collect, timing each,
     emitting a `baseline_captured` heartbeat, and calling `on_progress(done, name)`.
     Returns `({name: (verdict, collection)}, reused_set)`.
@@ -527,10 +537,17 @@ def _probe_projects(projects, worktree, ledger, on_progress, cfg=None, config_sh
             if reuse_baselines and cfg is not None and config_sha is not None:
                 roots = cfg.upstream_producer_roots(name)
                 tree_hash = gitutil.tree_hash(worktree, roots)
-                cached = ledger.cached_baseline(name, tree_hash, config_sha, max_age_s=reuse_max_age)
+                cached = ledger.cached_baseline(
+                    name, tree_hash, config_sha, max_age_s=reuse_max_age
+                )
                 if cached is not None:
-                    verdict = adapters.base.Verdict(project=name, adapter=adapter.name, failed=json.loads(cached["failing"]))
-                    collection = adapters.base.Collection(tests=set(json.loads(cached["tests"])), failed_files=json.loads(cached["failed_files"]))
+                    verdict = adapters.base.Verdict(
+                        project=name, adapter=adapter.name, failed=json.loads(cached["failing"])
+                    )
+                    collection = adapters.base.Collection(
+                        tests=set(json.loads(cached["tests"])),
+                        failed_files=json.loads(cached["failed_files"]),
+                    )
                     probes[name] = (verdict, collection)
                     reused.add(name)
                     heartbeat(
@@ -560,7 +577,9 @@ def _probe_projects(projects, worktree, ledger, on_progress, cfg=None, config_sh
             )
             if reuse_baselines and cfg is not None and config_sha is not None:
                 ledger.cache_baseline(
-                    name, tree_hash, config_sha,
+                    name,
+                    tree_hash,
+                    config_sha,
                     failing=sorted(verdict.failed),
                     tests=sorted(collection.tests),
                     failed_files=collection.failed_files,
@@ -575,7 +594,14 @@ def _probe_projects(projects, worktree, ledger, on_progress, cfg=None, config_sh
         ran = time.monotonic()
         collection = adapter.collect()
         elapsed = time.monotonic() - started
-        return name, verdict, collection, round(ran - started, 2), round(elapsed - (ran - started), 2), round(elapsed, 2)
+        return (
+            name,
+            verdict,
+            collection,
+            round(ran - started, 2),
+            round(elapsed - (ran - started), 2),
+            round(elapsed, 2),
+        )
 
     futures = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
@@ -964,7 +990,7 @@ def cmd_cycle_skip(args) -> Envelope:
             next_action=NextAction(
                 Verb.COMPLETE,
                 "Final cycle skipped; run complete."
-                " Before rendering, record a closing narrative with `tdd note \"<hardest cycle and why, plan inaccuracies, deviations>\"`."
+                ' Before rendering, record a closing narrative with `tdd note "<hardest cycle and why, plan inaccuracies, deviations>"`.'
                 " Then run `tdd log render`.",
             ),
         )
@@ -1014,7 +1040,9 @@ def cmd_note(args) -> Envelope:
         at=now(),
     )
     if cycle is not None:
-        next_action = NextAction(Verb.REFACTOR_OR_ADVANCE, "Note recorded. Resume the phase in progress.")
+        next_action = NextAction(
+            Verb.REFACTOR_OR_ADVANCE, "Note recorded. Resume the phase in progress."
+        )
     else:
         next_action = NextAction(Verb.COMPLETE, "Note recorded. Run `tdd log render`.")
     return Envelope(
@@ -1404,11 +1432,33 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--executor", help="human-supplied label; agents must not use this")
     s.add_argument("--allow-dirty", action="store_true")
     s.add_argument("--allow-undeclared", action="store_true")
-    s.add_argument("--baseline-all", action="store_true", help="probe all projects, skipping reachability scoping")
-    s.add_argument("--reuse-baselines", action="store_true", help="cache and reuse baseline probe results keyed by content hash")
-    s.add_argument("--reuse-max-age", type=float, default=None, help="max age in seconds for a cached baseline entry")
-    s.add_argument("--baseline-jobs", type=int, default=1, help="number of parallel baseline probes (default: 1, serial)")
-    s.add_argument("--accept-baseline", action="store_true", help="override the implausibility gate and record the baseline anyway")
+    s.add_argument(
+        "--baseline-all",
+        action="store_true",
+        help="probe all projects, skipping reachability scoping",
+    )
+    s.add_argument(
+        "--reuse-baselines",
+        action="store_true",
+        help="cache and reuse baseline probe results keyed by content hash",
+    )
+    s.add_argument(
+        "--reuse-max-age",
+        type=float,
+        default=None,
+        help="max age in seconds for a cached baseline entry",
+    )
+    s.add_argument(
+        "--baseline-jobs",
+        type=int,
+        default=1,
+        help="number of parallel baseline probes (default: 1, serial)",
+    )
+    s.add_argument(
+        "--accept-baseline",
+        action="store_true",
+        help="override the implausibility gate and record the baseline anyway",
+    )
     s.set_defaults(fn=cmd_run_start)
 
     s = sub.add_parser("status")

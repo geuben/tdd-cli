@@ -111,9 +111,8 @@ def _with_artifact(repo, hook: str = 'regenerate = "true"') -> None:
     (repo / "schema").mkdir(exist_ok=True)
     (repo / "schema" / "openapi.json").write_text("{}\n")
     (repo / "tdd.toml").write_text(
-        (repo / "tdd.toml").read_text()
-        + f'\n[artifact.openapi]\npath = "schema/openapi.json"\n'
-          f'produced_by = "backend"\n{hook}\n'
+        (repo / "tdd.toml").read_text() + f'\n[artifact.openapi]\npath = "schema/openapi.json"\n'
+        f'produced_by = "backend"\n{hook}\n'
     )
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "declare openapi artifact")
@@ -136,14 +135,18 @@ def test_an_artifact_needs_only_one_of_check_or_regenerate(repo):
     every artifact that only knows how to rebuild itself."""
     _with_artifact(repo, hook='regenerate = "true"')
 
-    assert _check(run_cli(repo, "doctor"), "artifact openapi: has check or regenerate")["ok"] is True
+    assert (
+        _check(run_cli(repo, "doctor"), "artifact openapi: has check or regenerate")["ok"] is True
+    )
 
     _check_only = repo / "tdd.toml"
     _check_only.write_text(_check_only.read_text().replace('regenerate = "true"', 'check = "true"'))
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "swap regenerate for check")
 
-    assert _check(run_cli(repo, "doctor"), "artifact openapi: has check or regenerate")["ok"] is True
+    assert (
+        _check(run_cli(repo, "doctor"), "artifact openapi: has check or regenerate")["ok"] is True
+    )
 
 
 def test_a_long_dirt_list_is_truncated_but_the_fifth_path_is_not(repo):

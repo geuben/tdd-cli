@@ -107,10 +107,7 @@ class PytestAdapter(Adapter):
             # stay exactly as the project declared them. json-report is xdist-safe:
             # `collectors` is omitted when nothing fails to collect, and present with
             # the failing entry when something does, which is when it is consulted.
-            cmd = (
-                f"{base_cmd} --json-report"
-                f" --json-report-file={shlex.quote(str(report_path))}"
-            )
+            cmd = f"{base_cmd} --json-report --json-report-file={shlex.quote(str(report_path))}"
             code, out, err = self._run_suite(cmd, extra_env)
             if not report_path.is_file():
                 return None, (
@@ -136,9 +133,7 @@ class PytestAdapter(Adapter):
             verdict.duration_ms += int(report.get("duration", 0) * 1000)
             tests.extend(report.get("tests", []))
             collectors.extend(report.get("collectors", []))
-            suite_ids.append(
-                {_strip_xdist_group(t["nodeid"]) for t in report.get("tests", [])}
-            )
+            suite_ids.append({_strip_xdist_group(t["nodeid"]) for t in report.get("tests", [])})
 
         overlap = _suite_overlap(suite_ids)
         if overlap:
@@ -254,22 +249,24 @@ class PytestAdapter(Adapter):
         code, out, err = run_command(
             probe, self.root, extra_env=self._suite_env(None), label="doctor"
         )
-        reached = sorted({
-            f for f in (
-                line.split("::", 1)[0]
-                for line in out.splitlines()
-                if "::" in line
-            )
-            if self.project.override_for(f)
-        })
+        reached = sorted(
+            {
+                f
+                for f in (line.split("::", 1)[0] for line in out.splitlines() if "::" in line)
+                if self.project.override_for(f)
+            }
+        )
         if not reached:
             return GateResult(ok=True)
-        return GateResult(ok=False, output=(
-            "the default suite's discovery reaches files an override owns, so"
-            " suite runs would observe them without the override's command/env:"
-            f" {', '.join(reached[:5])}. Scope the default test_command so it"
-            " cannot reach them (e.g. `pytest tests/`)."
-        ))
+        return GateResult(
+            ok=False,
+            output=(
+                "the default suite's discovery reaches files an override owns, so"
+                " suite runs would observe them without the override's command/env:"
+                f" {', '.join(reached[:5])}. Scope the default test_command so it"
+                " cannot reach them (e.g. `pytest tests/`)."
+            ),
+        )
 
     def _collect_invocations(self) -> list[tuple[str, dict[str, str] | None]]:
         """An override without a `collect_command` collects with its `test_command`

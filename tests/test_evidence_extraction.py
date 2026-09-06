@@ -97,20 +97,25 @@ def _pytest_adapter(tmp_path):
 def test_pytest_evidence_is_empty_when_no_assertion_line_exists(tmp_path, monkeypatch):
     adapter = _pytest_adapter(tmp_path)
     longrepr = (
-        "tests/test_calc.py:10: RecursionError\n"
-        "RecursionError: maximum recursion depth exceeded\n"
+        "tests/test_calc.py:10: RecursionError\nRecursionError: maximum recursion depth exceeded\n"
     )
 
     def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         marker = "--json-report-file="
         path = command.split(marker, 1)[1].split(" --", 1)[0]
-        Path(path.strip("'\"")).write_text(json.dumps({
-            "tests": [{
-                "nodeid": "tests/test_calc.py::test_recurse",
-                "outcome": "failed",
-                "call": {"longrepr": longrepr},
-            }],
-        }))
+        Path(path.strip("'\"")).write_text(
+            json.dumps(
+                {
+                    "tests": [
+                        {
+                            "nodeid": "tests/test_calc.py::test_recurse",
+                            "outcome": "failed",
+                            "call": {"longrepr": longrepr},
+                        }
+                    ],
+                }
+            )
+        )
         return 1, "", ""
 
     monkeypatch.setattr(adapters_base, "run_command", fake)
@@ -134,13 +139,19 @@ def test_pytest_evidence_is_the_assertion_line_not_the_xdist_header(tmp_path, mo
     def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         marker = "--json-report-file="
         path = command.split(marker, 1)[1].split(" --", 1)[0]
-        Path(path.strip("'\"")).write_text(json.dumps({
-            "tests": [{
-                "nodeid": "tests/test_calc.py::test_add",
-                "outcome": "failed",
-                "call": {"longrepr": longrepr},
-            }],
-        }))
+        Path(path.strip("'\"")).write_text(
+            json.dumps(
+                {
+                    "tests": [
+                        {
+                            "nodeid": "tests/test_calc.py::test_add",
+                            "outcome": "failed",
+                            "call": {"longrepr": longrepr},
+                        }
+                    ],
+                }
+            )
+        )
         return 1, "", ""
 
     monkeypatch.setattr(adapters_base, "run_command", fake)
@@ -156,7 +167,7 @@ def test_xctest_evidence_is_the_error_line_not_console_noise(tmp_path):
         "Test Case '-[AppTests.RecTests testStopsRecording]' started.\n"
         "2026-08-27 10:00:00.001 AppTests[1234:5678] Socket SO_ERROR [61: Connection refused]\n"
         "/Users/x/RecTests.swift:42: error: -[AppTests.RecTests testStopsRecording] :"
-        " XCTAssertEqual failed: (\"recording\") is not equal to (\"stopped\")\n"
+        ' XCTAssertEqual failed: ("recording") is not equal to ("stopped")\n'
         "Test Case '-[AppTests.RecTests testStopsRecording]' failed (0.002 seconds).\n"
         "Test Suite 'All tests' failed at 2026-08-27 10:00:00.003.\n"
         "** TEST FAILED **\n"
@@ -172,17 +183,21 @@ def test_vitest_evidence_is_the_first_failure_message_line(tmp_path):
     suite_path = str(tmp_path / "frontend" / "calc.test.ts")
     target = "frontend::calc.test.ts > calc add returns the sum"
     report = {
-        "testResults": [{
-            "name": suite_path,
-            "status": "failed",
-            "assertionResults": [{
-                "fullName": "calc add returns the sum",
+        "testResults": [
+            {
+                "name": suite_path,
                 "status": "failed",
-                "failureMessages": [
-                    "AssertionError: expected 2 to be 3 // Object.is equality\n    at Object.<anonymous> (calc.test.ts:5:14)\n"
+                "assertionResults": [
+                    {
+                        "fullName": "calc add returns the sum",
+                        "status": "failed",
+                        "failureMessages": [
+                            "AssertionError: expected 2 to be 3 // Object.is equality\n    at Object.<anonymous> (calc.test.ts:5:14)\n"
+                        ],
+                    }
                 ],
-            }],
-        }],
+            }
+        ],
     }
     with patch.object(type(adapter), "_run_suite", return_value=(1, json.dumps(report), "")):
         verdict = adapter.run(target)

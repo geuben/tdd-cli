@@ -52,8 +52,7 @@ def flat_repo(tmp_path, ledger_home):
     (root / "app" / "__init__.py").write_text("")
     (root / "tests" / "test_smoke.py").write_text("def test_smoke():\n    assert True\n")
     (root / "conftest.py").write_text(
-        "import sys, pathlib\n"
-        "sys.path.insert(0, str(pathlib.Path(__file__).parent))\n"
+        "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parent))\n"
     )
     subprocess.run(["git", "init", "-q", str(root)], check=True)
     git(root, "config", "user.email", "test@example.com")
@@ -93,9 +92,7 @@ def test_full_cycle_in_a_single_project_repo(flat_repo):
     assert run_cli(flat_repo, "run", "start", "--plan", plan)["ok"]
 
     (flat_repo / "tests" / "test_add.py").write_text(TEST_ADD)
-    (flat_repo / "app" / "calc.py").write_text(
-        "def add(a, b):\n    raise NotImplementedError\n"
-    )
+    (flat_repo / "app" / "calc.py").write_text("def add(a, b):\n    raise NotImplementedError\n")
     red = run_cli(flat_repo, "advance")
     assert red["run"]["phase"] == "AWAITING_IMPL", red
     assert set(red["result"]["staged"]) == {"tests/test_add.py", "app/calc.py"}

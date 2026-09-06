@@ -74,7 +74,9 @@ def test_create_stub_detail_uses_the_target_projects_adapter(repo, monkeypatch):
     def build_with_sentinel(project, worktree):
         adapter = real_build(project, worktree)
         monkeypatch.setattr(
-            type(adapter), "stub_hint", lambda self: "SENTINEL_STUB_IDIOM",
+            type(adapter),
+            "stub_hint",
+            lambda self: "SENTINEL_STUB_IDIOM",
             raising=False,
         )
         return adapter

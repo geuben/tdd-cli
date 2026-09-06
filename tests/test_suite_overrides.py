@@ -37,7 +37,7 @@ OVERRIDE_BLOCK = (
     'pattern         = "contract/"\n'
     'test_command    = "pytest contract"\n'
     'collect_command = "pytest contract -p no:cacheprovider"\n'
-    "env             = { API_URL = \"http://localhost:${TDD_TEST_PORT}\" }\n"
+    'env             = { API_URL = "http://localhost:${TDD_TEST_PORT}" }\n'
 )
 
 
@@ -55,9 +55,7 @@ def test_override_is_parsed_from_the_registry(tmp_path):
 
 def test_override_without_pattern_or_command_is_refused(tmp_path):
     with pytest_framework.raises(ConfigError, match="has no pattern"):
-        project_with(
-            tmp_path, '[[project.backend.override]]\ntest_command = "pytest x"\n'
-        )
+        project_with(tmp_path, '[[project.backend.override]]\ntest_command = "pytest x"\n')
     with pytest_framework.raises(ConfigError, match="has no test_command"):
         project_with(tmp_path, '[[project.backend.override]]\npattern = "x/"\n')
 
@@ -167,9 +165,7 @@ def test_pytest_run_unions_default_and_override_suites(tmp_path, monkeypatch):
     ]
 
 
-def test_pytest_override_env_reaches_the_suite_with_vars_expanded(
-    tmp_path, monkeypatch
-):
+def test_pytest_override_env_reaches_the_suite_with_vars_expanded(tmp_path, monkeypatch):
     monkeypatch.setenv("TDD_TEST_PORT", "9600")
     project = project_with(tmp_path, 'test_command = "pytest tests"\n' + OVERRIDE_BLOCK)
     adapter = adapters.build(project, tmp_path)
@@ -177,9 +173,7 @@ def test_pytest_override_env_reaches_the_suite_with_vars_expanded(
     monkeypatch.setattr(
         adapters.base,
         "run_command",
-        _fake_pytest_run(
-            {"pytest tests": {"tests": []}, "pytest contract": {"tests": []}}, seen
-        ),
+        _fake_pytest_run({"pytest tests": {"tests": []}, "pytest contract": {"tests": []}}, seen),
     )
     adapter.run(None)
     (_, default_env), (_, override_env) = seen
@@ -187,9 +181,7 @@ def test_pytest_override_env_reaches_the_suite_with_vars_expanded(
     assert override_env["API_URL"] == "http://localhost:9600"
 
 
-def test_pytest_broken_override_suite_is_a_loud_error_not_a_silent_gap(
-    tmp_path, monkeypatch
-):
+def test_pytest_broken_override_suite_is_a_loud_error_not_a_silent_gap(tmp_path, monkeypatch):
     """Swallowing a report-less override run would resolve a target living in that
     suite as `not_found`, sending the agent to rewrite a perfectly good test."""
     project = project_with(tmp_path, 'test_command = "pytest tests"\n' + OVERRIDE_BLOCK)
@@ -209,16 +201,12 @@ def test_pytest_broken_override_suite_is_a_loud_error_not_a_silent_gap(
     assert "pytest contract" in verdict.error
 
 
-def test_pytest_collection_routes_override_files_to_the_override_command(
-    tmp_path, monkeypatch
-):
+def test_pytest_collection_routes_override_files_to_the_override_command(tmp_path, monkeypatch):
     project = project_with(tmp_path, OVERRIDE_BLOCK)
     (tmp_path / "backend" / "tests").mkdir(parents=True)
     (tmp_path / "backend" / "contract").mkdir()
     (tmp_path / "backend" / "tests" / "test_a.py").write_text("def test_a(): pass\n")
-    (tmp_path / "backend" / "contract" / "test_api.py").write_text(
-        "def test_ping(): pass\n"
-    )
+    (tmp_path / "backend" / "contract" / "test_api.py").write_text("def test_ping(): pass\n")
     adapter = adapters.build(project, tmp_path)
     seen: list = []
 
@@ -266,9 +254,7 @@ def _vitest_report(file_path: str, full_name: str, status: str) -> dict:
     }
 
 
-def test_vitest_run_finds_a_target_that_only_the_override_config_reaches(
-    tmp_path, monkeypatch
-):
+def test_vitest_run_finds_a_target_that_only_the_override_config_reaches(tmp_path, monkeypatch):
     project = project_with(tmp_path, VITEST_OVERRIDE, adapter="vitest")
     adapter = adapters.build(project, tmp_path)
 
@@ -280,9 +266,7 @@ def test_vitest_run_finds_a_target_that_only_the_override_config_reaches(
                 "failed",
             )
         else:
-            report = _vitest_report(
-                str(tmp_path / "backend" / "unit.test.ts"), "adds", "passed"
-            )
+            report = _vitest_report(str(tmp_path / "backend" / "unit.test.ts"), "adds", "passed")
         return 1, json.dumps(report), ""
 
     monkeypatch.setattr(adapters.base, "run_command", fake)
@@ -294,9 +278,7 @@ def test_vitest_run_finds_a_target_that_only_the_override_config_reaches(
     assert verdict.passed == ["backend::unit.test.ts > adds"]
 
 
-def test_vitest_override_without_collect_command_fails_the_collectable_gate(
-    tmp_path, monkeypatch
-):
+def test_vitest_override_without_collect_command_fails_the_collectable_gate(tmp_path, monkeypatch):
     """Fail at run start, not per-file mid-cycle: `vitest list` knows nothing of
     the override config, and falling back to the override's *run* command would
     execute the suite — against a live backend — just to enumerate it."""
@@ -308,9 +290,7 @@ def test_vitest_override_without_collect_command_fails_the_collectable_gate(
         adapter="vitest",
     )
     adapter = adapters.build(project, tmp_path)
-    monkeypatch.setattr(
-        adapters.vitest_adapter, "run_command", lambda *a, **k: (0, "", "")
-    )
+    monkeypatch.setattr(adapters.vitest_adapter, "run_command", lambda *a, **k: (0, "", ""))
     gate = adapter.collectable()
     assert not gate.ok
     assert "collect_command" in gate.output
@@ -321,9 +301,7 @@ def test_vitest_override_without_collect_command_fails_the_collectable_gate(
     assert "contract/api.contract.test.ts" in collection.failed_files
 
 
-def test_vitest_collection_routes_override_files_to_the_override_command(
-    tmp_path, monkeypatch
-):
+def test_vitest_collection_routes_override_files_to_the_override_command(tmp_path, monkeypatch):
     project = project_with(tmp_path, VITEST_OVERRIDE, adapter="vitest")
     (tmp_path / "backend" / "contract").mkdir(parents=True)
     contract_file = tmp_path / "backend" / "contract" / "api.contract.test.ts"
@@ -337,16 +315,14 @@ def test_vitest_collection_routes_override_files_to_the_override_command(
 
     monkeypatch.setattr(adapters.vitest_adapter, "run_command", fake)
     collection = adapter.collect()
-    assert collection.tests == {
-        "backend::contract/api.contract.test.ts > pings the api"
-    }
+    assert collection.tests == {"backend::contract/api.contract.test.ts > pings the api"}
     # R7.13's requirement is that the override's own command enumerates its files —
     # not that it does so one file at a time. Collection batches per declared suite
     # (issue #27), so the override's command is one of the invocations rather than
     # the first, and carries no file argument.
-    assert any(
-        c.startswith("npx vitest list --config vitest.contract.config.ts") for c in seen
-    ), seen
+    assert any(c.startswith("npx vitest list --config vitest.contract.config.ts") for c in seen), (
+        seen
+    )
 
     # With every suite listable the gate passes: the probe must not manufacture a
     # failure out of a healthy override.
@@ -399,15 +375,12 @@ def test_a_cycle_can_target_a_test_only_an_override_suite_reaches(repo):
     assert start["ok"], start
 
     (repo / "backend" / "contract" / "test_api.py").write_text(
-        "from app.calc import add\n\n\n"
-        "def test_add_via_api():\n    assert add(2, 2) == 4\n"
+        "from app.calc import add\n\n\ndef test_add_via_api():\n    assert add(2, 2) == 4\n"
     )
     red = run_cli(repo, "advance")
     assert red["next_action"]["verb"] == "write_implementation", red
 
-    (repo / "backend" / "app" / "calc.py").write_text(
-        "def add(a, b):\n    return a + b\n"
-    )
+    (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
     green = run_cli(repo, "advance")
     assert green["next_action"]["verb"] == "refactor_or_advance", green
 
@@ -423,12 +396,8 @@ def test_a_cycle_can_target_a_test_only_an_override_suite_reaches(repo):
 # overlap), so it must be a loud typed error instead.
 
 
-def test_pytest_duplicate_nodeid_across_suites_is_a_loud_error(
-    tmp_path, monkeypatch
-):
-    project = project_with(
-        tmp_path, 'test_command = "pytest"\n' + OVERRIDE_BLOCK
-    )
+def test_pytest_duplicate_nodeid_across_suites_is_a_loud_error(tmp_path, monkeypatch):
+    project = project_with(tmp_path, 'test_command = "pytest"\n' + OVERRIDE_BLOCK)
     adapter = adapters.build(project, tmp_path)
     duplicated = {
         "nodeid": "contract/test_api.py::test_ping",
@@ -457,9 +426,7 @@ def test_pytest_duplicate_nodeid_across_suites_is_a_loud_error(
     assert "test_command" in verdict.error
 
 
-def test_vitest_duplicate_test_id_across_suites_is_a_loud_error(
-    tmp_path, monkeypatch
-):
+def test_vitest_duplicate_test_id_across_suites_is_a_loud_error(tmp_path, monkeypatch):
     project = project_with(
         tmp_path,
         'test_command = "npx vitest run"\n'
@@ -478,9 +445,7 @@ def test_vitest_duplicate_test_id_across_suites_is_a_loud_error(
                 {
                     "name": suite_path,
                     "status": status,
-                    "assertionResults": [
-                        {"fullName": "pings", "status": status}
-                    ],
+                    "assertionResults": [{"fullName": "pings", "status": status}],
                 }
             ]
         }
@@ -497,22 +462,22 @@ def test_vitest_duplicate_test_id_across_suites_is_a_loud_error(
     assert "more than one suite" in verdict.error
 
 
-def test_pytest_isolation_probe_flags_default_reach_into_override_files(
-    tmp_path, monkeypatch
-):
-    project = project_with(
-        tmp_path, 'test_command = "pytest -n {workers}"\n' + OVERRIDE_BLOCK
-    )
+def test_pytest_isolation_probe_flags_default_reach_into_override_files(tmp_path, monkeypatch):
+    project = project_with(tmp_path, 'test_command = "pytest -n {workers}"\n' + OVERRIDE_BLOCK)
     adapter = adapters.build(project, tmp_path)
     seen: list = []
 
     def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         seen.append(command)
-        return 0, (
-            "tests/test_a.py::test_a\n"
-            "contract/test_api.py::test_ping\n"
-            "2 tests collected in 0.01s\n"
-        ), ""
+        return (
+            0,
+            (
+                "tests/test_a.py::test_a\n"
+                "contract/test_api.py::test_ping\n"
+                "2 tests collected in 0.01s\n"
+            ),
+            "",
+        )
 
     monkeypatch.setattr(adapters.pytest_adapter, "run_command", fake)
     gate = adapter.override_isolation()
@@ -524,27 +489,23 @@ def test_pytest_isolation_probe_flags_default_reach_into_override_files(
     assert seen == ["pytest -n 0 --collect-only -q"]
 
 
-def test_pytest_isolation_probe_passes_when_the_default_suite_is_scoped(
-    tmp_path, monkeypatch
-):
-    project = project_with(
-        tmp_path, 'test_command = "pytest tests"\n' + OVERRIDE_BLOCK
-    )
+def test_pytest_isolation_probe_passes_when_the_default_suite_is_scoped(tmp_path, monkeypatch):
+    project = project_with(tmp_path, 'test_command = "pytest tests"\n' + OVERRIDE_BLOCK)
     adapter = adapters.build(project, tmp_path)
     monkeypatch.setattr(
         adapters.pytest_adapter,
         "run_command",
         lambda command, cwd, timeout=1800, extra_env=None, label=None: (
-            0, "tests/test_a.py::test_a\n", ""
+            0,
+            "tests/test_a.py::test_a\n",
+            "",
         ),
     )
     gate = adapter.override_isolation()
     assert gate.ok is True
 
 
-def test_vitest_isolation_probe_flags_default_reach_into_override_files(
-    tmp_path, monkeypatch
-):
+def test_vitest_isolation_probe_flags_default_reach_into_override_files(tmp_path, monkeypatch):
     project = project_with(
         tmp_path,
         "[[project.backend.override]]\n"
@@ -558,10 +519,7 @@ def test_vitest_isolation_probe_flags_default_reach_into_override_files(
 
     def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         seen.append(command)
-        return 0, (
-            "src/__tests__/a.test.ts > adds\n"
-            "contract/api.test.ts > pings\n"
-        ), ""
+        return 0, ("src/__tests__/a.test.ts > adds\ncontract/api.test.ts > pings\n"), ""
 
     monkeypatch.setattr(adapters.vitest_adapter, "run_command", fake)
     gate = adapter.override_isolation()
@@ -570,9 +528,7 @@ def test_vitest_isolation_probe_flags_default_reach_into_override_files(
     assert seen == ["npx vitest list"]
 
 
-def test_isolation_probe_is_free_when_a_project_declares_no_overrides(
-    tmp_path, monkeypatch
-):
+def test_isolation_probe_is_free_when_a_project_declares_no_overrides(tmp_path, monkeypatch):
     project = project_with(tmp_path, 'test_command = "pytest tests"\n')
     adapter = adapters.build(project, tmp_path)
 

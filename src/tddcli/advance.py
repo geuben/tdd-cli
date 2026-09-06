@@ -36,9 +36,7 @@ def _note_nudge(engine: Engine, cycle) -> str:
     )
     if not events:
         return ""
-    existing_note = engine.ledger.one(
-        "SELECT id FROM note WHERE cycle_id = ?", (cycle["id"],)
-    )
+    existing_note = engine.ledger.one("SELECT id FROM note WHERE cycle_id = ?", (cycle["id"],))
     if existing_note is not None:
         return ""
     return ' An integrity event was recorded on this cycle — consider `tdd note "<why>"` while the reason is fresh.'
@@ -75,10 +73,13 @@ def _adopt_target(engine: Engine, cycle, missing: list[str]) -> tuple[list[str],
 
 
 def _stub_directive_issued(engine: Engine, cycle) -> bool:
-    return engine.ledger.one(
-        "SELECT id FROM integrity_event WHERE cycle_id = ? AND kind = 'stub_directive_issued'",
-        (cycle["id"],),
-    ) is not None
+    return (
+        engine.ledger.one(
+            "SELECT id FROM integrity_event WHERE cycle_id = ? AND kind = 'stub_directive_issued'",
+            (cycle["id"],),
+        )
+        is not None
+    )
 
 
 def _last_outside_emitted(engine: Engine, cycle) -> str | None:
@@ -104,10 +105,16 @@ def _sanctioned_stubs(engine: Engine, cycle, implementation: list[str]) -> list[
     return [p for p in implementation if p not in at_head]
 
 
-def _stage_and_commit(engine: Engine, cycle, phase: str, declared) -> tuple[str | None, list[str], object]:
+def _stage_and_commit(
+    engine: Engine, cycle, phase: str, declared
+) -> tuple[str | None, list[str], object]:
     changed = engine.authored_changes(cycle)
     classification = staging.classify(
-        engine.config, changed, json.loads(cycle["projects"]), declared, engine.excluded,
+        engine.config,
+        changed,
+        json.loads(cycle["projects"]),
+        declared,
+        engine.excluded,
         ancillary=set(engine.ancillary_files),
     )
     if phase == staging.RED:
@@ -115,25 +122,30 @@ def _stage_and_commit(engine: Engine, cycle, phase: str, declared) -> tuple[str 
         if adopted:
             classification.adopt_stubs(adopted)
             engine.ledger.event(
-                engine.run["id"], cycle["id"], "stub_adopted", json.dumps(adopted),
+                engine.run["id"],
+                cycle["id"],
+                "stub_adopted",
+                json.dumps(adopted),
             )
         if classification.implementation:
             engine.ledger.event(
-                engine.run["id"], cycle["id"], "implementation_during_red",
+                engine.run["id"],
+                cycle["id"],
+                "implementation_during_red",
                 json.dumps(classification.implementation),
             )
     if classification.outside:
         _detail = json.dumps(classification.outside)
         if _last_outside_emitted(engine, cycle) != _detail:
             engine.ledger.event(
-                engine.run["id"], cycle["id"], "undeclared_file_touched",
+                engine.run["id"],
+                cycle["id"],
+                "undeclared_file_touched",
                 _detail,
             )
     paths = staging.paths_for_phase(phase, classification)
     message = staging.default_message(phase, declared, cycle["ordinal"])
-    sha, staged = staging.commit(
-        engine.worktree, paths, message, engine.trailers(cycle, phase)
-    )
+    sha, staged = staging.commit(engine.worktree, paths, message, engine.trailers(cycle, phase))
     if sha:
         engine.record_commit(cycle, phase, sha, message, staged)
     return sha, staged, classification
@@ -145,7 +157,11 @@ def _disambiguate(candidates: list[str], declared: str, adapter) -> str | None:
     if len(matches) == 1:
         return matches[0]
     declared_file = declared.split("::", 1)[-1].split("::")[0].split(" > ")[0]
-    same_file = [c for c in candidates if c.split("::", 1)[-1].split("::")[0].split(" > ")[0] == declared_file]
+    same_file = [
+        c
+        for c in candidates
+        if c.split("::", 1)[-1].split("::")[0].split(" > ")[0] == declared_file
+    ]
     if len(same_file) == 1:
         return same_file[0]
     return None
@@ -179,18 +195,20 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
         candidates, _ = _adopt_target(engine, cycle, missing)
         if len(candidates) == 1:
             engine.ledger.event(
-                engine.run["id"], cycle["id"], "declared_test_mismatch",
+                engine.run["id"],
+                cycle["id"],
+                "declared_test_mismatch",
                 json.dumps({"declared": missing, "adopted": candidates}),
             )
             kept = [t for t in targets if t not in missing]
-            engine.ledger.update(
-                "cycle", cycle["id"], target_tests=json.dumps(kept + candidates)
-            )
+            engine.ledger.update("cycle", cycle["id"], target_tests=json.dumps(kept + candidates))
             cycle = engine.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle["id"],))
             adopted_outcome = _outcome_from_verdicts(verdicts, candidates[0])
             if adopted_outcome is None:
                 return _reply(
-                    engine, cycle, Verb.REFACTOR_OR_ADVANCE,
+                    engine,
+                    cycle,
+                    Verb.REFACTOR_OR_ADVANCE,
                     f"Adopted {candidates[0]} as the target (declared {missing[0]} was not"
                     " collected). Run `tdd advance` again to evaluate it.",
                     adopted=candidates,
@@ -204,8 +222,12 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
             resolved = _disambiguate(candidates, missing[0], adapter)
             if resolved is not None:
                 engine.ledger.event(
-                    engine.run["id"], cycle["id"], "declared_test_mismatch",
-                    json.dumps({"declared": missing, "adopted": [resolved], "all_candidates": candidates}),
+                    engine.run["id"],
+                    cycle["id"],
+                    "declared_test_mismatch",
+                    json.dumps(
+                        {"declared": missing, "adopted": [resolved], "all_candidates": candidates}
+                    ),
                 )
                 kept = [t for t in targets if t not in missing]
                 engine.ledger.update(
@@ -215,7 +237,9 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
                 adopted_outcome = _outcome_from_verdicts(verdicts, resolved)
                 if adopted_outcome is None:
                     return _reply(
-                        engine, cycle, Verb.REFACTOR_OR_ADVANCE,
+                        engine,
+                        cycle,
+                        Verb.REFACTOR_OR_ADVANCE,
                         f"Adopted {resolved} as the target (declared {missing[0]} was not"
                         " collected). Run `tdd advance` again to evaluate it.",
                         adopted=[resolved],
@@ -225,18 +249,24 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
                 others = [t for t in others if t != resolved]
             else:
                 engine.ledger.event(
-                    engine.run["id"], cycle["id"], "multiple_new_tests",
+                    engine.run["id"],
+                    cycle["id"],
+                    "multiple_new_tests",
                     json.dumps(candidates),
                 )
                 return _reply(
-                    engine, cycle, Verb.NAME_TARGET_TEST,
+                    engine,
+                    cycle,
+                    Verb.NAME_TARGET_TEST,
                     "Several new tests appeared; a cycle covers one behaviour. Name the"
                     " intended target with `tdd target <id>`.",
                     candidates=candidates,
                 )
         else:
             return _reply(
-                engine, cycle, Verb.WRITE_TEST,
+                engine,
+                cycle,
+                Verb.WRITE_TEST,
                 f"Target {missing[0]} was not collected and no new test was found."
                 " Write the failing test.",
                 missing=missing,
@@ -246,26 +276,32 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
     if not_collected:
         if not _stub_directive_issued(engine, cycle):
             engine.ledger.event(
-                engine.run["id"], cycle["id"], "stub_directive_issued",
+                engine.run["id"],
+                cycle["id"],
+                "stub_directive_issued",
                 json.dumps(not_collected),
             )
         owner = not_collected[0].split("::", 1)[0]
         hint = adapters.build(engine.config.project(owner), engine.worktree).stub_hint()
         return _reply(
-            engine, cycle, Verb.CREATE_STUB,
+            engine,
+            cycle,
+            Verb.CREATE_STUB,
             f"{not_collected[0]} could not be collected — the module it imports does not"
             " exist yet. Create the stub and nothing else: no logic, no behaviour, just"
             f" enough for the import and the type checker ({hint})."
             " It is staged with the test in the RED commit, not counted as"
             " implementation. Then run `tdd advance`.",
-            not_collected=not_collected, failure=failure,
+            not_collected=not_collected,
+            failure=failure,
         )
 
     if others:
         return _reply(
-            engine, cycle, Verb.FIX_REGRESSION,
-            f"{len(others)} test(s) outside this cycle are failing. Fix them before"
-            " proceeding.",
+            engine,
+            cycle,
+            Verb.FIX_REGRESSION,
+            f"{len(others)} test(s) outside this cycle are failing. Fix them before proceeding.",
             other_failures=others,
         )
 
@@ -275,18 +311,24 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
     if expect_pass:
         if not passed_all:
             return _reply(
-                engine, cycle, Verb.WRITE_TEST,
+                engine,
+                cycle,
+                Verb.WRITE_TEST,
                 "A pin cycle's test must pass on arrival — it characterises behaviour"
                 " that already exists. This one does not pass.",
-                outcomes=outcomes, failure=failure,
+                outcomes=outcomes,
+                failure=failure,
             )
         sha, staged, _ = _stage_and_commit(engine, cycle, staging.PIN, declared)
         engine.transition(cycle, SENSITIVITY_REQUIRED)
         return _reply(
-            engine, cycle, Verb.RUN_SENSITIVITY_CHECK,
+            engine,
+            cycle,
+            Verb.RUN_SENSITIVITY_CHECK,
             "Pin recorded. Now prove it bites: `tdd sensitivity begin`, mutate the"
             " behaviour under test, `tdd sensitivity check`, then `tdd sensitivity end`.",
-            commit=sha, staged=staged,
+            commit=sha,
+            staged=staged,
         )
 
     if passed_all:
@@ -297,7 +339,9 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
         # is reachable only from SENSITIVITY_REQUIRED, so staying here asks forever.
         engine.transition(cycle, SENSITIVITY_REQUIRED)
         return _reply(
-            engine, cycle, Verb.RUN_SENSITIVITY_CHECK,
+            engine,
+            cycle,
+            Verb.RUN_SENSITIVITY_CHECK,
             "The test passed before any implementation. Run a sensitivity check to prove"
             " it can fail: `tdd sensitivity begin`, mutate, `tdd sensitivity check`,"
             " `tdd sensitivity end`.",
@@ -306,7 +350,9 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
 
     if not failed_all:
         return _reply(
-            engine, cycle, Verb.WRITE_TEST,
+            engine,
+            cycle,
+            Verb.WRITE_TEST,
             "A contract cycle's targets must all fail together before implementation.",
             outcomes=outcomes,
         )
@@ -314,10 +360,13 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
     sha, staged, classification = _stage_and_commit(engine, cycle, staging.RED, declared)
     engine.transition(cycle, AWAITING_IMPL)
     return _reply(
-        engine, cycle, Verb.WRITE_IMPLEMENTATION,
-        f"RED confirmed. Write the minimum code to pass {targets[0]}, then"
-        " `tdd advance`.",
-        commit=sha, staged=staged, failure=failure,
+        engine,
+        cycle,
+        Verb.WRITE_IMPLEMENTATION,
+        f"RED confirmed. Write the minimum code to pass {targets[0]}, then `tdd advance`.",
+        commit=sha,
+        staged=staged,
+        failure=failure,
         implementation_during_red=classification.implementation or None,
     )
 
@@ -333,24 +382,32 @@ def _handle_impl(engine: Engine, cycle, retried: bool) -> Envelope:
 
     if others:
         return _reply(
-            engine, cycle, Verb.FIX_REGRESSION,
+            engine,
+            cycle,
+            Verb.FIX_REGRESSION,
             f"The implementation broke {len(others)} test(s) elsewhere.",
             other_failures=others,
         )
     if not all(o == PASSED for o in outcomes.values()):
         return _reply(
-            engine, cycle, Verb.WRITE_IMPLEMENTATION,
+            engine,
+            cycle,
+            Verb.WRITE_IMPLEMENTATION,
             "Target still failing. Adjust the implementation and `tdd advance`.",
-            outcomes=outcomes, failure=failure,
+            outcomes=outcomes,
+            failure=failure,
         )
 
     sha, staged, _ = _stage_and_commit(engine, cycle, staging.GREEN, declared)
     engine.transition(cycle, AWAITING_REFACTOR)
     return _reply(
-        engine, cycle, Verb.REFACTOR_OR_ADVANCE,
+        engine,
+        cycle,
+        Verb.REFACTOR_OR_ADVANCE,
         "GREEN confirmed. Refactor if the plan calls for it, then `tdd advance` to close"
         " the cycle.",
-        commit=sha, staged=staged,
+        commit=sha,
+        staged=staged,
     )
 
 
@@ -358,12 +415,16 @@ def _handle_sensitivity(engine: Engine, cycle) -> Envelope:
     done = engine.ledger.completed_sensitivity(cycle["id"])
     if done is None:
         return _reply(
-            engine, cycle, Verb.RUN_SENSITIVITY_CHECK,
+            engine,
+            cycle,
+            Verb.RUN_SENSITIVITY_CHECK,
             "A verified sensitivity check is required before this cycle can proceed.",
         )
     engine.transition(cycle, AWAITING_REFACTOR)
     return _reply(
-        engine, cycle, Verb.REFACTOR_OR_ADVANCE,
+        engine,
+        cycle,
+        Verb.REFACTOR_OR_ADVANCE,
         "Sensitivity verified. Perform the planned refactor, then `tdd advance`.",
     )
 
@@ -373,9 +434,10 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     missing = engine.missing_annotations(cycle)
     if missing:
         return _reply(
-            engine, cycle, Verb.ANNOTATE_CYCLE,
-            "This plan requires judgement annotations before a cycle closes: "
-            + ", ".join(missing),
+            engine,
+            cycle,
+            Verb.ANNOTATE_CYCLE,
+            "This plan requires judgement annotations before a cycle closes: " + ", ".join(missing),
             missing_annotations=missing,
         )
 
@@ -401,24 +463,33 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
         if outcome.unbaselined:
             projects_list = ", ".join(sorted(outcome.unbaselined))
             return _reply(
-                engine, cycle, Verb.RESOLVE_BLOCKER,
+                engine,
+                cycle,
+                Verb.RESOLVE_BLOCKER,
                 f"Close sweep found failures in un-baselined project(s): {projects_list}. "
                 "These are unattributable — no baseline exists to subtract. "
                 "File: tdd blocker --kind no_baseline_for_project --detail '...', "
                 "then resume --unblock --accept-failures to fold them into the baseline.",
-                unbaselined=outcome.unbaselined, commit=sha,
+                unbaselined=outcome.unbaselined,
+                commit=sha,
             )
         if outcome.failures:
             return _reply(
-                engine, cycle, Verb.FIX_REGRESSION,
+                engine,
+                cycle,
+                Verb.FIX_REGRESSION,
                 f"Close sweep found {len(outcome.failures)} failing test(s).",
-                failures=outcome.failures, commit=sha,
+                failures=outcome.failures,
+                commit=sha,
             )
         gates = [{"project": p, "kind": k, "output": o} for p, k, o in outcome.gates]
         return _reply(
-            engine, cycle, Verb.FIX_REGRESSION,
+            engine,
+            cycle,
+            Verb.FIX_REGRESSION,
             "Close sweep is green but lint/typecheck gates failed.",
-            gates=gates, commit=sha,
+            gates=gates,
+            commit=sha,
         )
 
     nxt = engine.close_cycle(cycle)
@@ -468,14 +539,18 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
             next_action=NextAction(
                 Verb.COMPLETE,
                 "All declared cycles are complete."
-                " Before rendering, record a closing narrative with `tdd note \"<hardest cycle and why, plan inaccuracies, deviations>\"`."
+                ' Before rendering, record a closing narrative with `tdd note "<hardest cycle and why, plan inaccuracies, deviations>"`.'
                 " Then run `tdd log render`.",
             ),
         )
     verb, opening = engine.opening_action(nxt)
     return _reply(
-        engine, nxt, verb, f"Cycle {cycle['ordinal']} closed. {opening}",
-        commit=sha, regenerated=regenerated or None,
+        engine,
+        nxt,
+        verb,
+        f"Cycle {cycle['ordinal']} closed. {opening}",
+        commit=sha,
+        regenerated=regenerated or None,
     )
 
 
@@ -509,7 +584,9 @@ def _check_config_drift(engine: Engine, cycle) -> None:
     )
     if already is None:
         engine.ledger.event(
-            engine.run["id"], cycle["id"], "config_changed",
+            engine.run["id"],
+            cycle["id"],
+            "config_changed",
             current,
         )
 
@@ -519,7 +596,9 @@ def advance(engine: Engine, cycle, retry: bool = False) -> Envelope:
 
     if engine.ledger.open_sensitivity(cycle["id"]) is not None:
         return _reply(
-            engine, cycle, Verb.RUN_SENSITIVITY_CHECK,
+            engine,
+            cycle,
+            Verb.RUN_SENSITIVITY_CHECK,
             "A sensitivity check is open. Close it with `tdd sensitivity end` before"
             " advancing — the tree is deliberately mutated.",
         )
@@ -530,18 +609,20 @@ def advance(engine: Engine, cycle, retry: bool = False) -> Envelope:
         previous = _last_invocation_hash(engine, cycle)
         if previous == current and not retry:
             consecutive = sum(
-                1 for r in engine.ledger.invocations(cycle["id"], phase)[-3:]
-                if r["retried"]
+                1 for r in engine.ledger.invocations(cycle["id"], phase)[-3:] if r["retried"]
             )
             if consecutive >= 3:
                 return _reply(
-                    engine, cycle, Verb.RESOLVE_BLOCKER,
+                    engine,
+                    cycle,
+                    Verb.RESOLVE_BLOCKER,
                     "Three consecutive retries with no change to the tree. Record a"
                     " blocker with `tdd blocker` or change the code.",
                 )
             return _reply(
-                engine, cycle, Verb.WRITE_IMPLEMENTATION
-                if phase == AWAITING_IMPL else Verb.WRITE_TEST,
+                engine,
+                cycle,
+                Verb.WRITE_IMPLEMENTATION if phase == AWAITING_IMPL else Verb.WRITE_TEST,
                 "no_change_since_last_run — nothing under this cycle's project roots has"
                 " changed since the last run. Edit the code, or pass --retry to re-run"
                 " anyway (flaky or environmental failures).",
@@ -550,7 +631,8 @@ def advance(engine: Engine, cycle, retry: bool = False) -> Envelope:
     handler = HANDLERS.get(phase)
     if handler is None:
         return Envelope(
-            ok=False, error=f"no handler for phase {phase}",
+            ok=False,
+            error=f"no handler for phase {phase}",
             run=engine.run_state(cycle),
         )
     return handler(engine, cycle, retry)

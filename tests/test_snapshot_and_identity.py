@@ -77,9 +77,7 @@ def test_model_is_read_from_the_session_transcript(tmp_path, monkeypatch):
     (transcripts / "sess-1.jsonl").write_text(
         json.dumps({"type": "assistant", "model": "claude-sonnet-4-6"}) + "\n"
     )
-    monkeypatch.setattr(
-        identity, "TRANSCRIPT_ROOT", tmp_path / "home" / ".claude" / "projects"
-    )
+    monkeypatch.setattr(identity, "TRANSCRIPT_ROOT", tmp_path / "home" / ".claude" / "projects")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-1")
     monkeypatch.delenv("TDD_EXECUTOR_MODEL", raising=False)
 
@@ -101,8 +99,10 @@ def test_last_model_wins_when_a_session_switches(tmp_path, monkeypatch):
     root = tmp_path / "projects"
     (root / "slug").mkdir(parents=True)
     (root / "slug" / "s.jsonl").write_text(
-        json.dumps({"model": "claude-opus-5"}) + "\n"
-        + json.dumps({"model": "claude-sonnet-4-6"}) + "\n"
+        json.dumps({"model": "claude-opus-5"})
+        + "\n"
+        + json.dumps({"model": "claude-sonnet-4-6"})
+        + "\n"
     )
     monkeypatch.setattr(identity, "TRANSCRIPT_ROOT", root)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "s")
@@ -112,20 +112,21 @@ def test_last_model_wins_when_a_session_switches(tmp_path, monkeypatch):
 
 def test_cached_baseline_respects_max_age(tmp_path, monkeypatch):
     from datetime import datetime, timedelta, timezone
+
     monkeypatch.setenv("TDD_LEDGER_HOME", str(tmp_path))
     ledger = Ledger(tmp_path / "repo")
 
     ledger.cache_baseline(
-        "svc", "treeA", "cfgA",
+        "svc",
+        "treeA",
+        "cfgA",
         failing=[],
         tests=["svc::t::a"],
         failed_files={},
     )
     # back-date the entry to 2 minutes ago
     old_ts = (datetime.now(timezone.utc) - timedelta(seconds=120)).isoformat()
-    ledger.db.execute(
-        "UPDATE baseline_cache SET created_at = ? WHERE project = 'svc'", (old_ts,)
-    )
+    ledger.db.execute("UPDATE baseline_cache SET created_at = ? WHERE project = 'svc'", (old_ts,))
     ledger.db.commit()
 
     # with a 60-second TTL the entry is too old → None
@@ -139,7 +140,9 @@ def test_baseline_cache_round_trips_by_content_key(tmp_path, monkeypatch):
     ledger = Ledger(tmp_path / "repo")
 
     ledger.cache_baseline(
-        "svc", "treeA", "cfgA",
+        "svc",
+        "treeA",
+        "cfgA",
         failing=["svc::t::a"],
         tests=["svc::t::a", "svc::t::b"],
         failed_files={},

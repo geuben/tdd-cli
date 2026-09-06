@@ -137,8 +137,11 @@ def recorded(monkeypatch):
 
 def _pytest_adapter(tmp_path, test_command):
     project = Project(
-        name="backend", root="backend", adapter="pytest",
-        test_paths=["tests/"], test_command=test_command,
+        name="backend",
+        root="backend",
+        adapter="pytest",
+        test_paths=["tests/"],
+        test_command=test_command,
     )
     (tmp_path / "backend").mkdir(exist_ok=True)
     return PytestAdapter(project, tmp_path)
@@ -166,7 +169,9 @@ def test_pytest_adapter_releases_lease_after_run(lease_dir, recorded, tmp_path):
 
 def test_vitest_adapter_substitutes_workers_placeholder(lease_dir, recorded, tmp_path):
     project = Project(
-        name="frontend", root="frontend", adapter="vitest",
+        name="frontend",
+        root="frontend",
+        adapter="vitest",
         test_paths=["**/*.test.ts"],
         test_command="npx vitest run --maxWorkers={workers}",
     )

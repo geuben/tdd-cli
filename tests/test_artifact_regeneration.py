@@ -86,7 +86,7 @@ def test_regeneration_commits_upstream_paths_the_hook_refreshed(repo):
         "\n[artifact.api_client]\n"
         'path        = "generated"\n'
         'produced_by = "artifact.openapi"\n'
-        "regenerate  = \"mkdir -p generated"
+        'regenerate  = "mkdir -p generated'
         " && printf 'client-v2\\\\n' > generated/client.ts"
         " && printf 'v2\\\\n' > schema/openapi.json\"\n"
         "generated   = true\n",

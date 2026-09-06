@@ -77,8 +77,7 @@ def test_baseline_captured_line_is_written_per_project(repo, capsys):
 
     captured = capsys.readouterr()
     lines = [
-        line for line in _heartbeat_lines(captured.err)
-        if line.get("event") == "baseline_captured"
+        line for line in _heartbeat_lines(captured.err) if line.get("event") == "baseline_captured"
     ]
     assert lines, "no baseline_captured line in stderr"
     backend = next((line for line in lines if line.get("project") == "backend"), None)
@@ -93,8 +92,7 @@ def test_baseline_heartbeat_reports_elapsed_seconds(repo, capsys):
 
     captured = capsys.readouterr()
     lines = [
-        line for line in _heartbeat_lines(captured.err)
-        if line.get("event") == "baseline_captured"
+        line for line in _heartbeat_lines(captured.err) if line.get("event") == "baseline_captured"
     ]
     backend = next((line for line in lines if line.get("project") == "backend"), None)
     assert backend is not None, lines
@@ -154,8 +152,7 @@ def test_sweep_emits_a_project_completed_line(repo, capsys):
 
     captured = capsys.readouterr()
     lines = [
-        line for line in _heartbeat_lines(captured.err)
-        if line.get("event") == "project_completed"
+        line for line in _heartbeat_lines(captured.err) if line.get("event") == "project_completed"
     ]
     assert lines, "no project_completed line in stderr"
     backend = next((line for line in lines if line.get("project") == "backend"), None)
@@ -179,18 +176,16 @@ def test_close_sweep_emits_a_project_completed_line(repo, capsys):
         "def add(a, b):\n    raise NotImplementedError\n"
     )
     run_cli(repo, "advance")  # -> AWAITING_IMPL
-    (repo / "backend" / "app" / "calc.py").write_text(
-        "def add(a, b):\n    return a + b\n"
-    )
+    (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
     run_cli(repo, "advance")  # -> green, then the close sweep
     capsys.readouterr()
 
     run_cli(repo, "advance")  # the close sweep itself
 
     lines = [
-        line for line in _heartbeat_lines(capsys.readouterr().err)
-        if line.get("event") == "project_completed"
-        and line.get("phase") == "CLOSE_SWEEP"
+        line
+        for line in _heartbeat_lines(capsys.readouterr().err)
+        if line.get("event") == "project_completed" and line.get("phase") == "CLOSE_SWEEP"
     ]
     assert lines, "no CLOSE_SWEEP project_completed line in stderr"
     assert isinstance(lines[0]["elapsed_s"], (int, float))
@@ -234,8 +229,7 @@ def test_baseline_captured_lines_emitted_under_concurrency(repo_three, capsys, m
 
     captured = capsys.readouterr()
     hb_lines = [
-        line for line in _heartbeat_lines(captured.err)
-        if line.get("event") == "baseline_captured"
+        line for line in _heartbeat_lines(captured.err) if line.get("event") == "baseline_captured"
     ]
     probed_projects = {line["project"] for line in hb_lines}
     assert probed_projects == {"backend", "svc"}, probed_projects

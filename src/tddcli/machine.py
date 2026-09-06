@@ -41,7 +41,7 @@ OPENING_PHASE = {PIN: AWAITING_PIN, REFACTOR: AWAITING_REFACTOR}
 @dataclass
 class SweepOutcome:
     failures: list[str]
-    gates: list[tuple[str, str, str]]      # (project, kind, output)
+    gates: list[tuple[str, str, str]]  # (project, kind, output)
     unbaselined: dict[str, list[str]] = field(default_factory=dict)
 
     @property
@@ -75,11 +75,7 @@ class Engine:
         return gitutil.tree_hash(self.worktree, self.roots(project_names))
 
     def authored_changes(self, cycle_row) -> set[str]:
-        return {
-            p
-            for p in gitutil.changed_paths(self.worktree)
-            if p not in self.excluded
-        }
+        return {p for p in gitutil.changed_paths(self.worktree) if p not in self.excluded}
 
     def trailers(self, cycle_row, phase: str) -> dict[str, str]:
         return {
@@ -106,7 +102,11 @@ class Engine:
         return self.ledger.baselines(self.run["id"])
 
     def run_projects(
-        self, project_names: list[str], targets: list[str], cycle_row, phase: str,
+        self,
+        project_names: list[str],
+        targets: list[str],
+        cycle_row,
+        phase: str,
         retried: bool = False,
     ) -> tuple[dict[str, str], list[str], list, str]:
         """Run each project once. Returns (target outcomes, other failures, verdicts, failure text)."""
@@ -131,7 +131,9 @@ class Engine:
             # meaning. `phase` separates these from the close sweep's own lines,
             # which `sweep()` emits — it does not route through here.
             heartbeat(
-                event="project_completed", project=name, phase=phase,
+                event="project_completed",
+                project=name,
+                phase=phase,
                 elapsed_s=round(elapsed, 2),
             )
 
@@ -162,9 +164,7 @@ class Engine:
                 started_at=now(),
             )
             if verdict.error:
-                self.ledger.event(
-                    self.run["id"], cycle_row["id"], "tooling_defect", verdict.error
-                )
+                self.ledger.event(self.run["id"], cycle_row["id"], "tooling_defect", verdict.error)
         return outcomes, others, verdicts, failure_text
 
     def sweep(self, cycle_row, touched: set[str], skip_own: bool = False) -> SweepOutcome:
@@ -190,7 +190,9 @@ class Engine:
             started = time.monotonic()
             verdict = adapter.run(None)
             heartbeat(
-                event="project_completed", project=name, phase="CLOSE_SWEEP",
+                event="project_completed",
+                project=name,
+                phase="CLOSE_SWEEP",
                 elapsed_s=round(time.monotonic() - started, 2),
             )
             if name not in baselines:
@@ -261,11 +263,14 @@ class Engine:
                 # client.
                 chain = self.config.artifact_chain(art)
                 paths = [
-                    p for p in gitutil.changed_paths(self.worktree)
+                    p
+                    for p in gitutil.changed_paths(self.worktree)
                     if self.config.is_generated(p) or any(a.owns(p) for a in chain)
                 ]
                 sha, staged = staging.commit_generated(
-                    self.worktree, paths, art.name,
+                    self.worktree,
+                    paths,
+                    art.name,
                     self.trailers(cycle_row, "artifact") if cycle_row else {},
                 )
                 if sha:
@@ -284,8 +289,10 @@ class Engine:
                 regenerated.append(art.name)
             if not resolved:
                 self.ledger.event(
-                    self.run["id"], cycle_row["id"] if cycle_row else None,
-                    "stale_artifact", art.name,
+                    self.run["id"],
+                    cycle_row["id"] if cycle_row else None,
+                    "stale_artifact",
+                    art.name,
                 )
         return regenerated
 
@@ -318,12 +325,8 @@ class Engine:
             ordinal=ordinal,
             kind=declared.kind,
             projects=json.dumps(declared.projects),
-            declared_tests=json.dumps(
-                [self._qualify(declared, t) for t in declared.tests]
-            ),
-            target_tests=json.dumps(
-                [self._qualify(declared, t) for t in declared.tests]
-            ),
+            declared_tests=json.dumps([self._qualify(declared, t) for t in declared.tests]),
+            target_tests=json.dumps([self._qualify(declared, t) for t in declared.tests]),
             phase=phase,
             head_at_open=gitutil.head(self.worktree),
             title=declared.title,
@@ -337,7 +340,7 @@ class Engine:
             return test_id
         for project in declared.projects:
             if test_id.startswith(f"{project}/"):
-                return f"{project}::{test_id[len(project) + 1:]}"
+                return f"{project}::{test_id[len(project) + 1 :]}"
         return f"{declared.projects[0]}::{test_id}"
 
     def transition(self, cycle_row, to_phase: str) -> None:
@@ -356,13 +359,9 @@ class Engine:
             return self.ledger.open_cycle(self.run["id"])
         self.transition(cycle_row, CLOSED)
         self.ledger.update("cycle", cycle_row["id"], closed_at=now())
-        nxt = next(
-            (c for c in self.declared if c.ordinal > cycle_row["ordinal"]), None
-        )
+        nxt = next((c for c in self.declared if c.ordinal > cycle_row["ordinal"]), None)
         if nxt is None:
-            self.ledger.update(
-                "run", self.run["id"], ended_at=now(), outcome="complete"
-            )
+            self.ledger.update("run", self.run["id"], ended_at=now(), outcome="complete")
             return None
         return self.open_cycle(nxt.ordinal)
 
@@ -384,9 +383,7 @@ class Engine:
         tracked = gitutil.tracked_at_head(self.worktree, list(flagged))
         dropped = sorted(p for p in flagged if p not in dirty and p not in tracked)
         if dropped:
-            self.ledger.event(
-                self.run["id"], None, "undeclared_file_dropped", json.dumps(dropped)
-            )
+            self.ledger.event(self.run["id"], None, "undeclared_file_dropped", json.dumps(dropped))
         return sorted(p for p in flagged if p in dirty)
 
     def record_commit(self, cycle_row, phase: str, sha: str, message: str, files: list[str]):
@@ -417,9 +414,7 @@ class Engine:
                 " test that passes on arrival."
             )
         target = targets[0] if targets else "the declared test"
-        return Verb.WRITE_TEST, (
-            f"Cycle {ordinal} ({title}): write the failing test {target}."
-        )
+        return Verb.WRITE_TEST, (f"Cycle {ordinal} ({title}): write the failing test {target}.")
 
     def missing_annotations(self, cycle_row) -> list[str]:
         if not self.annotation_keys:

@@ -121,7 +121,9 @@ def open_claim(repo, projects_total=1, projects_done=0, current_project="backend
     run_cli(repo, "plan", "register", plan)
     led = Ledger(gitutil.repo_identity(repo))
     led.claim(
-        str(repo), hostname=socket.gethostname(), pid=os.getpid(),
+        str(repo),
+        hostname=socket.gethostname(),
+        pid=os.getpid(),
         projects_total=projects_total,
     )
     if projects_done:

@@ -65,9 +65,7 @@ def test_successful_start_leaves_no_claim(repo, monkeypatch):
 
     def spy(project, worktree):
         led = Ledger(gitutil.repo_identity(worktree))
-        rows = led.all(
-            "SELECT * FROM baseline_claim WHERE worktree_path = ?", (str(worktree),)
-        )
+        rows = led.all("SELECT * FROM baseline_claim WHERE worktree_path = ?", (str(worktree),))
         seen_claims.append(bool(rows))
         return real_build(project, worktree)
 
@@ -86,7 +84,10 @@ def test_start_is_rejected_while_a_baseline_is_collecting(repo):
     plan = register(repo)
     led = Ledger(gitutil.repo_identity(repo))
     led.claim(
-        str(repo), hostname=socket.gethostname(), pid=os.getpid(), projects_total=1,
+        str(repo),
+        hostname=socket.gethostname(),
+        pid=os.getpid(),
+        projects_total=1,
     )
 
     out = run_cli(repo, "run", "start", "--plan", plan)
@@ -133,8 +134,7 @@ def test_a_refused_baseline_leaves_no_claim(repo):
     """An R9.5a refusal (every file fails to collect) must not strand the claim —
     otherwise a retry after fixing the environment is itself refused."""
     (repo / "backend" / "tests" / "test_smoke.py").write_text(
-        "import module_does_not_exist\n\n"
-        "def test_smoke():\n    assert True\n"
+        "import module_does_not_exist\n\ndef test_smoke():\n    assert True\n"
     )
     plan = register(repo)
 
@@ -157,7 +157,10 @@ def test_a_claim_from_a_dead_process_is_reclaimed(repo):
     plan = register(repo)
     led = Ledger(gitutil.repo_identity(repo))
     led.claim(
-        str(repo), hostname=socket.gethostname(), pid=dead_pid, projects_total=1,
+        str(repo),
+        hostname=socket.gethostname(),
+        pid=dead_pid,
+        projects_total=1,
     )
 
     out = run_cli(repo, "run", "start", "--plan", plan)
@@ -168,7 +171,10 @@ def test_baseline_in_progress_tells_the_agent_to_poll(repo):
     plan = register(repo)
     led = Ledger(gitutil.repo_identity(repo))
     led.claim(
-        str(repo), hostname=socket.gethostname(), pid=os.getpid(), projects_total=1,
+        str(repo),
+        hostname=socket.gethostname(),
+        pid=os.getpid(),
+        projects_total=1,
     )
 
     out = run_cli(repo, "run", "start", "--plan", plan)
@@ -196,7 +202,8 @@ def test_an_old_cross_host_claim_is_stale(repo):
     led.claim(str(repo), hostname="some-other-host", pid=1, projects_total=1)
     old = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(minutes=61)).isoformat()
     led.db.execute(
-        "UPDATE baseline_claim SET started_at = ? WHERE worktree_path = ?", (old, str(repo)),
+        "UPDATE baseline_claim SET started_at = ? WHERE worktree_path = ?",
+        (old, str(repo)),
     )
     led.db.commit()
 
@@ -220,8 +227,11 @@ def test_a_failed_update_does_not_strand_the_write_lock(repo):
     led = Ledger(gitutil.repo_identity(repo))
     led.claim(str(repo) + "-a", hostname="h", pid=1, projects_total=1)
     second = led.insert(
-        "baseline_claim", worktree_path=str(repo) + "-b",
-        hostname="h", pid=2, started_at=now(),
+        "baseline_claim",
+        worktree_path=str(repo) + "-b",
+        hostname="h",
+        pid=2,
+        started_at=now(),
     )
 
     with pytest.raises(sqlite3.IntegrityError):
