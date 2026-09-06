@@ -48,9 +48,14 @@ def _strip_xdist_group(nodeid: str) -> str:
 
     A test marked `xdist_group("<g>")` is reported as `<nodeid>@<g>` and pytest-json-report
     records it that way; collected ids and declared targets carry no suffix, so the report
-    side is canonicalised here.
+    side is canonicalised here. Only an `@` after the last `]` can be xdist's: function names
+    cannot contain one, and parametrised values (`test_x[user@example.com]`) live inside the
+    brackets.
     """
-    return nodeid.rsplit("@", 1)[0]
+    at = nodeid.rfind("@")
+    if at == -1 or at < nodeid.rfind("]"):
+        return nodeid
+    return nodeid[:at]
 
 
 class PytestAdapter(Adapter):
