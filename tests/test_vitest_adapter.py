@@ -82,10 +82,7 @@ def test_ids_match_what_a_plan_declaration_qualifies_to(tmp_path):
         ordinal=1,
         kind="pin",
         projects=["frontend"],
-        tests=[
-            "frontend/contexts/__tests__/AuthContext.test.tsx"
-            " > logout clears the stored token"
-        ],
+        tests=["frontend/contexts/__tests__/AuthContext.test.tsx > logout clears the stored token"],
     )
     qualified = Engine._qualify(declared, declared.tests[0])
     assert qualified in adapter._parse_list_output(LIST_OUTPUT, path)

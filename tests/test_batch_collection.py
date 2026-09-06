@@ -55,7 +55,7 @@ def test_a_healthy_project_is_collected_in_one_invocation(repo, monkeypatch):
     collected = _adapter(repo).collect()
 
     assert len(seen) == 1, seen
-    assert len(collected.tests) == 7, collected.tests   # 6 generated + test_smoke
+    assert len(collected.tests) == 7, collected.tests  # 6 generated + test_smoke
     assert collected.failed_files == {}
 
 
@@ -85,10 +85,8 @@ def test_a_file_the_batch_never_reported_is_collected_individually(repo, monkeyp
     def hide_one(command, cwd, timeout=1800, extra_env=None, label=None):
         seen.append(command)
         code, out, err = real(command, cwd, timeout=timeout, extra_env=extra_env, label=label)
-        if "test_gen1.py" not in command:      # the batch "forgets" this file
-            out = "\n".join(
-                line for line in out.splitlines() if "test_gen1.py" not in line
-            )
+        if "test_gen1.py" not in command:  # the batch "forgets" this file
+            out = "\n".join(line for line in out.splitlines() if "test_gen1.py" not in line)
         return code, out, err
 
     monkeypatch.setattr(adapters.pytest_adapter, "run_command", hide_one)
@@ -142,7 +140,7 @@ def test_override_files_are_collected_by_their_own_suite(repo, monkeypatch):
 
     collected = _adapter(repo).collect()
 
-    assert len(seen) == 2, seen          # default suite + override suite, no per-file
+    assert len(seen) == 2, seen  # default suite + override suite, no per-file
     assert any("contract/test_api.py" in t for t in collected.tests), collected.tests
 
 
@@ -167,7 +165,7 @@ def test_partial_output_from_a_failed_batch_is_not_trusted(repo, monkeypatch):
     collected = adapter.collect()
 
     assert any("test_gen0.py" in c for c in seen[1:]), seen
-    assert len(collected.tests) == 4, collected.tests   # 3 generated + test_smoke
+    assert len(collected.tests) == 4, collected.tests  # 3 generated + test_smoke
 
 
 def test_vitest_partial_output_from_a_failed_batch_is_not_trusted(repo_multi, monkeypatch):
@@ -180,7 +178,7 @@ def test_vitest_partial_output_from_a_failed_batch_is_not_trusted(repo_multi, mo
 
     def failing_batch(command, cwd, timeout=1800, extra_env=None, label=None):
         seen.append(command)
-        if command.endswith("list"):                       # whole-suite invocation
+        if command.endswith("list"):  # whole-suite invocation
             return 1, "a.test.ts > alpha\n", "crashed"
         return 0, f"{command.rsplit(' ', 1)[1]} > rescued", ""
 
@@ -188,7 +186,8 @@ def test_vitest_partial_output_from_a_failed_batch_is_not_trusted(repo_multi, mo
     collected = adapter.collect()
 
     assert collected.tests == {
-        "frontend::a.test.ts > rescued", "frontend::b.test.ts > rescued",
+        "frontend::a.test.ts > rescued",
+        "frontend::b.test.ts > rescued",
     }, collected.tests
 
 
@@ -203,9 +202,12 @@ def test_vitest_batch_attributes_each_id_to_its_own_file(repo_multi, monkeypatch
     )
     adapter = _adapter(repo_multi, "frontend")
     monkeypatch.setattr(
-        adapters.vitest_adapter, "run_command",
+        adapters.vitest_adapter,
+        "run_command",
         lambda command, cwd, timeout=1800, extra_env=None, label=None: (
-            0, "a.test.ts > alpha\nb.test.ts > beta\n", ""
+            0,
+            "a.test.ts > alpha\nb.test.ts > beta\n",
+            "",
         ),
     )
     collected = adapter.collect()
@@ -216,7 +218,9 @@ def test_vitest_batch_attributes_each_id_to_its_own_file(repo_multi, monkeypatch
 def test_run_start_still_reports_the_same_baseline(repo, monkeypatch):
     """End to end, through the command that pays for this."""
     _write_tests(repo, 3)
-    plan = write_plan(repo, """---
+    plan = write_plan(
+        repo,
+        """---
 cycles:
   - n: 1
     project: backend
@@ -226,7 +230,8 @@ cycles:
     commit_green: "feat: add"
 ---
 # Plan
-""")
+""",
+    )
     assert run_cli(repo, "plan", "register", plan)["ok"]
     out = run_cli(repo, "run", "start", "--plan", plan)
     assert out["ok"], out

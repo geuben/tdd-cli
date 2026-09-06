@@ -35,10 +35,10 @@ def start(repo):
 
 def widen_test_paths(repo):
     (repo / "tdd.toml").write_text(
-        '[project.backend]\n'
+        "[project.backend]\n"
         'root       = "backend"\n'
         'adapter    = "pytest"\n'
-        'test_paths = ["**/*.py"]\n'   # everything is now "a test"
+        'test_paths = ["**/*.py"]\n'  # everything is now "a test"
         "lint       = []\n"
         "typecheck  = []\n"
     )

@@ -40,8 +40,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-      - name: Ruff
+      - name: Ruff check
         run: uv run ruff check src tests
+      - name: Ruff format
+        run: uv run ruff format --check src tests
 
   workflows:
     name: Audit workflows (zizmor)

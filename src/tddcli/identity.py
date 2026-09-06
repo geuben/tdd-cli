@@ -26,7 +26,7 @@ TRANSCRIPT_ROOT = Path.home() / ".claude" / "projects"
 class Executor:
     model: str
     session: str | None
-    source: str          # transcript | human | declared | unknown
+    source: str  # transcript | human | declared | unknown
     reason: str | None = None
 
 

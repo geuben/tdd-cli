@@ -20,6 +20,7 @@ def _vitest_adapter(tmp_path: Path) -> VitestAdapter:
     cfg = config_mod.load(tmp_path)
     return VitestAdapter(cfg.project("frontend"), tmp_path)
 
+
 PLAN_SINGLE_CANDIDATE = """---
 cycles:
   - n: 1
@@ -83,7 +84,9 @@ def test_unique_same_file_candidate_is_adopted_and_evaluated(repo):
 
     (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADDING)
     (repo / "backend" / "app" / "calc.py").write_text(CALC_STUB)
-    (repo / "backend" / "tests" / "test_other.py").write_text("def test_other_thing():\n    assert True\n")
+    (repo / "backend" / "tests" / "test_other.py").write_text(
+        "def test_other_thing():\n    assert True\n"
+    )
 
     out = run_cli(repo, "advance")
     assert out["next_action"]["verb"] == "write_implementation", out

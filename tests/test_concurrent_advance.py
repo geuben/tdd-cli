@@ -53,9 +53,7 @@ def test_close_cycle_is_idempotent_when_the_row_is_already_closed(repo):
 
     engine.close_cycle(cycle_row)
 
-    open_rows = ledger.all(
-        "SELECT * FROM cycle WHERE run_id = ? AND closed_at IS NULL", (run_id,)
-    )
+    open_rows = ledger.all("SELECT * FROM cycle WHERE run_id = ? AND closed_at IS NULL", (run_id,))
     assert len(open_rows) == 1
 
     transitions = ledger.all(
@@ -64,9 +62,7 @@ def test_close_cycle_is_idempotent_when_the_row_is_already_closed(repo):
     )
     assert len(transitions) == 1
 
-    ordinal_2_rows = ledger.all(
-        "SELECT * FROM cycle WHERE run_id = ? AND ordinal = 2", (run_id,)
-    )
+    ordinal_2_rows = ledger.all("SELECT * FROM cycle WHERE run_id = ? AND ordinal = 2", (run_id,))
     assert len(ordinal_2_rows) == 1
 
     closed_at_after_second = ledger.one(
@@ -95,9 +91,7 @@ def test_open_cycle_returns_the_existing_open_row_for_an_ordinal(repo):
 
     assert a["id"] == b["id"]
 
-    ordinal_2_rows = ledger.all(
-        "SELECT * FROM cycle WHERE run_id = ? AND ordinal = 2", (run_id,)
-    )
+    ordinal_2_rows = ledger.all("SELECT * FROM cycle WHERE run_id = ? AND ordinal = 2", (run_id,))
     assert len(ordinal_2_rows) == 1
 
 

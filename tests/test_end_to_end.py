@@ -77,9 +77,7 @@ def test_full_red_green_cycle_commits_and_advances(repo):
     assert red["next_action"]["verb"] == "write_implementation", red
     assert red["run"]["phase"] == "AWAITING_IMPL"
     # The RED commit carries the test and the declared stub, and nothing else.
-    assert set(red["result"]["staged"]) == {
-        "backend/tests/test_add.py", "backend/app/calc.py"
-    }
+    assert set(red["result"]["staged"]) == {"backend/tests/test_add.py", "backend/app/calc.py"}
     log = git(repo, "log", "-1", "--pretty=%s%n%b")
     assert "test: adding two numbers" in log
     assert "TDD-Cycle: 1" in log
@@ -170,7 +168,9 @@ def test_sensitivity_check_verifies_restore(repo):
     assert checked["ok"], checked
     ended = run_cli(repo, "sensitivity", "end")
     assert ended["ok"] and ended["result"]["restored_ok"] is True
-    assert (repo / "backend" / "app" / "calc.py").read_text() == "def add(a, b):\n    return a + b\n"
+    assert (
+        repo / "backend" / "app" / "calc.py"
+    ).read_text() == "def add(a, b):\n    return a + b\n"
 
 
 def test_cycle_skip_is_sanctioned_and_records_a_reason(repo):
@@ -261,9 +261,7 @@ def test_a_stub_the_tool_demanded_is_not_implementation_during_red(repo):
     assert red["next_action"]["verb"] == "write_implementation", red
     assert red["result"]["implementation_during_red"] is None
     # It is a stub, so it belongs in the RED commit with the test.
-    assert set(red["result"]["staged"]) == {
-        "backend/tests/test_add.py", "backend/app/calc.py"
-    }
+    assert set(red["result"]["staged"]) == {"backend/tests/test_add.py", "backend/app/calc.py"}
 
     events = run_cli(repo, "metrics")["result"]["runs"][0]["integrity_events"]
     assert events["stub_adopted"] == 1

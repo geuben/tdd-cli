@@ -40,9 +40,7 @@ def capture(worktree: Path, config: Config) -> str:
     entries = {}
     for rel in sorted(authored_dirty(worktree, config)):
         data = _read(worktree, rel)
-        entries[rel] = (
-            None if data is None else base64.b64encode(data).decode("ascii")
-        )
+        entries[rel] = None if data is None else base64.b64encode(data).decode("ascii")
     return json.dumps({"files": entries})
 
 
@@ -65,9 +63,7 @@ def restore(worktree: Path, config: Config, snapshot_json: str) -> list[str]:
             continue
         # Dirty now, clean when captured: revert it, or remove it if it is new.
         path = worktree / rel
-        tracked = bool(
-            gitutil.git(worktree, "ls-files", "--", rel, check=False).strip()
-        )
+        tracked = bool(gitutil.git(worktree, "ls-files", "--", rel, check=False).strip())
         if tracked:
             gitutil.checkout_paths(worktree, [rel])
         elif path.is_file():

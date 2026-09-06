@@ -65,7 +65,8 @@ def test_baseline_reports_run_and_collect_separately(repo, capsys):
     assert out["ok"], out
 
     backend = next(
-        line for line in _lines(capsys.readouterr().err, "baseline_captured")
+        line
+        for line in _lines(capsys.readouterr().err, "baseline_captured")
         if line["project"] == "backend"
     )
     assert isinstance(backend["run_s"], (int, float)), backend
@@ -79,7 +80,8 @@ def test_the_split_still_adds_up_to_the_reported_total(repo, capsys):
     assert out["ok"], out
 
     backend = next(
-        line for line in _lines(capsys.readouterr().err, "baseline_captured")
+        line
+        for line in _lines(capsys.readouterr().err, "baseline_captured")
         if line["project"] == "backend"
     )
     assert backend["run_s"] + backend["collect_s"] <= backend["elapsed_s"] + 0.05
@@ -125,12 +127,11 @@ def test_the_per_file_collect_fallback_is_attributed_per_file(repo_broken, capsy
     attribution earns its keep. `repo_broken`'s uncollectable module fails the
     batch and drops every file in that project to the loop."""
     monkeypatch.setenv(base.TIMING_ENV, "1")
-    adapters.build(
-        config_mod.load(repo_broken).project("verify"), repo_broken
-    ).collect()
+    adapters.build(config_mod.load(repo_broken).project("verify"), repo_broken).collect()
 
     collects = [
-        entry for entry in _lines(capsys.readouterr().err, "command_timing")
+        entry
+        for entry in _lines(capsys.readouterr().err, "command_timing")
         if entry.get("label") == "collect"
     ]
     assert collects, "no collect timings"

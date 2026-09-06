@@ -74,7 +74,7 @@ class DeclaredCycle:
 @dataclass
 class PlanContract:
     plan_path: str
-    status: str                      # declared | undeclared
+    status: str  # declared | undeclared
     cycles: list[DeclaredCycle]
     annotation_keys: list[str]
     ancillary_files: list[str] = field(default_factory=list)
@@ -113,16 +113,16 @@ def parse_cycle(raw: dict, config: Config | None) -> DeclaredCycle:
         raise ContractError(f"cycle ordinal must be an integer, got {ordinal!r}")
 
     flags = [
-        name for name, key in (
+        name
+        for name, key in (
             (PIN, "pin_cycle"),
             (CONTRACT, "contract_cycle"),
             (REFACTOR, "refactor_cycle"),
-        ) if raw.get(key)
+        )
+        if raw.get(key)
     ]
     if len(flags) > 1:
-        raise ContractError(
-            f"cycle {ordinal}: cycle kinds are exclusive, got {flags}"
-        )
+        raise ContractError(f"cycle {ordinal}: cycle kinds are exclusive, got {flags}")
     kind = flags[0] if flags else STANDARD
 
     tests = _as_list(raw.get("tests") or raw.get("test"), "test", ordinal)
@@ -171,7 +171,9 @@ def parse_cycle(raw: dict, config: Config | None) -> DeclaredCycle:
 
     meta_raw = raw.get("meta")
     if meta_raw is not None and not isinstance(meta_raw, dict):
-        raise ContractError(f"cycle {ordinal}: meta must be a mapping, got {type(meta_raw).__name__}")
+        raise ContractError(
+            f"cycle {ordinal}: meta must be a mapping, got {type(meta_raw).__name__}"
+        )
     meta = dict(meta_raw) if meta_raw is not None else {}
 
     return DeclaredCycle(
@@ -235,9 +237,7 @@ def register(worktree: Path, plan_rel: str, config: Config | None) -> PlanContra
         blob, commit = gitutil.blob_sha_at_head(worktree, plan_rel)
         text = gitutil.show_at_head(worktree, plan_rel)
     except gitutil.GitError as exc:
-        raise ContractError(
-            f"{plan_rel} must be committed before registration: {exc}"
-        ) from exc
+        raise ContractError(f"{plan_rel} must be committed before registration: {exc}") from exc
     contract = parse(text, plan_rel, config)
     contract.blob_sha = blob
     contract.commit_sha = commit

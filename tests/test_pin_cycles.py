@@ -84,9 +84,7 @@ def test_pin_cannot_reach_refactor_without_a_verified_sensitivity_check(repo):
     assert blocked["run"]["phase"] == "SENSITIVITY_REQUIRED"
 
     run_cli(repo, "sensitivity", "begin")
-    (repo / "backend" / "app" / "greet.py").write_text(
-        'def greet(name):\n    return "goodbye"\n'
-    )
+    (repo / "backend" / "app" / "greet.py").write_text('def greet(name):\n    return "goodbye"\n')
     assert run_cli(repo, "sensitivity", "check")["ok"]
     assert run_cli(repo, "sensitivity", "end")["result"]["restored_ok"] is True
 

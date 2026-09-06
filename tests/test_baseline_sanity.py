@@ -164,9 +164,7 @@ def test_non_empty_baseline_emits_standing_delta(repo, ledger_home):
     run_cli(repo, "plan", "register", plan)
     run_cli(repo, "run", "start", "--plan", plan)
 
-    rows = ledger.all(
-        "SELECT detail FROM integrity_event WHERE kind = 'baseline_standing_delta'"
-    )
+    rows = ledger.all("SELECT detail FROM integrity_event WHERE kind = 'baseline_standing_delta'")
     assert len(rows) == 1
     delta = json.loads(rows[0]["detail"])
     assert len(delta["new"]) == 1
@@ -220,9 +218,7 @@ def test_first_run_reports_all_standing_failures_new(repo, ledger_home):
     run_cli(repo, "plan", "register", plan)
     run_cli(repo, "run", "start", "--plan", plan)
 
-    rows = ledger.all(
-        "SELECT detail FROM integrity_event WHERE kind = 'baseline_standing_delta'"
-    )
+    rows = ledger.all("SELECT detail FROM integrity_event WHERE kind = 'baseline_standing_delta'")
     assert len(rows) == 1
     delta = json.loads(rows[0]["detail"])
     assert len(delta["new"]) == 2

@@ -39,6 +39,7 @@ def test_add_two_numbers():
 # Cycle 1 — an unchanged undeclared file is flagged once per cycle
 # ---------------------------------------------------------------------------
 
+
 def test_unchanged_outside_file_is_flagged_once_per_cycle(repo):
     """An outside file that persists across all three phases records one event, not three."""
     plan = write_plan(repo, SINGLE_CYCLE_PLAN)
@@ -65,6 +66,7 @@ def test_unchanged_outside_file_is_flagged_once_per_cycle(repo):
 # ---------------------------------------------------------------------------
 # Cycle 2 — a newly-appearing undeclared path re-emits
 # ---------------------------------------------------------------------------
+
 
 def test_a_new_undeclared_path_re_emits(repo):
     """When a second undeclared path appears mid-cycle, a new event is emitted."""
@@ -152,13 +154,11 @@ def test_dedup_is_per_cycle_not_per_run(repo):
     # -- Cycle 2: subtract --
     (repo / "backend" / "tests" / "test_sub.py").write_text(TEST_SUB)
     (repo / "backend" / "app" / "calc.py").write_text(
-        "def add(a, b):\n    return a + b\n\n"
-        "def subtract(a, b):\n    raise NotImplementedError\n"
+        "def add(a, b):\n    return a + b\n\ndef subtract(a, b):\n    raise NotImplementedError\n"
     )
     run_cli(repo, "advance")  # RED → AWAITING_IMPL
     (repo / "backend" / "app" / "calc.py").write_text(
-        "def add(a, b):\n    return a + b\n\n"
-        "def subtract(a, b):\n    return a - b\n"
+        "def add(a, b):\n    return a + b\n\ndef subtract(a, b):\n    return a - b\n"
     )
     run_cli(repo, "advance")  # GREEN → AWAITING_REFACTOR
     run_cli(repo, "advance")  # REFACTOR → complete

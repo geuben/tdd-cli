@@ -45,7 +45,7 @@ def repo(tmp_path, ledger_home):
     (root / "backend" / "app").mkdir(parents=True)
 
     (root / "tdd.toml").write_text(
-        '[project.backend]\n'
+        "[project.backend]\n"
         'root       = "backend"\n'
         'adapter    = "pytest"\n'
         'test_paths = ["tests/"]\n'
@@ -57,8 +57,7 @@ def repo(tmp_path, ledger_home):
         "def test_smoke():\n    assert True\n"
     )
     (root / "backend" / "conftest.py").write_text(
-        "import sys, pathlib\n"
-        "sys.path.insert(0, str(pathlib.Path(__file__).parent))\n"
+        "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parent))\n"
     )
     (root / ".gitignore").write_text(
         ".pytest_cache/\n__pycache__/\n*.pyc\n.coverage\njsonreport*.json\n"
@@ -82,7 +81,7 @@ def repo_multi(repo, ledger_home):
     (repo / "frontend").mkdir()
     (repo / "frontend" / "package.json").write_text('{"name": "frontend", "version": "1.0.0"}\n')
     (repo / "tdd.toml").write_text(
-        '[project.backend]\n'
+        "[project.backend]\n"
         'root       = "backend"\n'
         'adapter    = "pytest"\n'
         'test_paths = ["tests/"]\n'
@@ -111,27 +110,25 @@ def repo_three(repo, ledger_home):
     """
     for name in ("svc", "other"):
         (repo / name / "tests").mkdir(parents=True)
-        (repo / name / "tests" / "test_smoke.py").write_text(
-            "def test_smoke():\n    assert True\n"
-        )
+        (repo / name / "tests" / "test_smoke.py").write_text("def test_smoke():\n    assert True\n")
     (repo / "backend" / "schema.json").write_text("{}")
     (repo / "tdd.toml").write_text(
-        '[project.backend]\n'
+        "[project.backend]\n"
         'root       = "backend"\n'
         'adapter    = "pytest"\n'
         'test_paths = ["tests/"]\n'
-        '\n'
-        '[project.svc]\n'
+        "\n"
+        "[project.svc]\n"
         'root       = "svc"\n'
         'adapter    = "pytest"\n'
         'test_paths = ["tests/"]\n'
-        '\n'
-        '[project.other]\n'
+        "\n"
+        "[project.other]\n"
         'root       = "other"\n'
         'adapter    = "pytest"\n'
         'test_paths = ["tests/"]\n'
-        '\n'
-        '[artifact.schema]\n'
+        "\n"
+        "[artifact.schema]\n"
         'path        = "backend/schema.json"\n'
         'produced_by = "backend"\n'
         'consumed_by = ["svc"]\n'
@@ -153,30 +150,26 @@ def repo_schema_other(repo, ledger_home):
     """
     for name in ("svc", "other"):
         (repo / name / "tests").mkdir(parents=True)
-    (repo / "svc" / "tests" / "test_svc.py").write_text(
-        "def test_svc_fails():\n    assert False\n"
-    )
-    (repo / "other" / "tests" / "test_other.py").write_text(
-        "def test_other():\n    assert True\n"
-    )
+    (repo / "svc" / "tests" / "test_svc.py").write_text("def test_svc_fails():\n    assert False\n")
+    (repo / "other" / "tests" / "test_other.py").write_text("def test_other():\n    assert True\n")
     (repo / "other" / "schema.json").write_text("{}")
     (repo / "tdd.toml").write_text(
-        '[project.backend]\n'
+        "[project.backend]\n"
         'root       = "backend"\n'
         'adapter    = "pytest"\n'
         'test_paths = ["tests/"]\n'
-        '\n'
-        '[project.svc]\n'
+        "\n"
+        "[project.svc]\n"
         'root       = "svc"\n'
         'adapter    = "pytest"\n'
         'test_paths = ["tests/"]\n'
-        '\n'
-        '[project.other]\n'
+        "\n"
+        "[project.other]\n"
         'root       = "other"\n'
         'adapter    = "pytest"\n'
         'test_paths = ["tests/"]\n'
-        '\n'
-        '[artifact.schema]\n'
+        "\n"
+        "[artifact.schema]\n"
         'path        = "other/schema.json"\n'
         'produced_by = "other"\n'
         'consumed_by = ["svc"]\n'
@@ -196,11 +189,10 @@ def repo_broken(repo, ledger_home):
     """
     (repo / "verify" / "tests").mkdir(parents=True)
     (repo / "verify" / "tests" / "test_v.py").write_text(
-        "import yaml_does_not_exist\n\n"
-        "def test_v():\n    assert True\n"
+        "import yaml_does_not_exist\n\ndef test_v():\n    assert True\n"
     )
     (repo / "tdd.toml").write_text(
-        '[project.backend]\n'
+        "[project.backend]\n"
         'root       = "backend"\n'
         'adapter    = "pytest"\n'
         'test_paths = ["tests/"]\n'

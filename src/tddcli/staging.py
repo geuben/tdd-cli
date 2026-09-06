@@ -28,10 +28,10 @@ class Classification:
     stubs: list[str] = field(default_factory=list)
     implementation: list[str] = field(default_factory=list)
     generated: list[str] = field(default_factory=list)
-    outside: list[str] = field(default_factory=list)      # outside every project root
-    excluded: list[str] = field(default_factory=list)     # pre-existing dirt (R9.21)
-    ignored: list[str] = field(default_factory=list)      # build output; never authored
-    ancillary: list[str] = field(default_factory=list)    # plan-declared cross-project paths
+    outside: list[str] = field(default_factory=list)  # outside every project root
+    excluded: list[str] = field(default_factory=list)  # pre-existing dirt (R9.21)
+    ignored: list[str] = field(default_factory=list)  # build output; never authored
+    ancillary: list[str] = field(default_factory=list)  # plan-declared cross-project paths
 
     @property
     def undeclared_impl(self) -> list[str]:
@@ -62,13 +62,13 @@ def classify(
     roots = {config.project(p).root for p in cycle_projects}
 
     for rel in sorted(changed):
-        if config.is_ignored(rel):            # build output is never authored
+        if config.is_ignored(rel):  # build output is never authored
             out.ignored.append(rel)
             continue
         if rel in excluded:
             out.excluded.append(rel)
             continue
-        if config.is_generated(rel):          # R7.7
+        if config.is_generated(rel):  # R7.7
             out.generated.append(rel)
             continue
         if rel in (ancillary or set()):
@@ -94,7 +94,9 @@ def paths_for_phase(phase: str, classification: Classification) -> list[str]:
         return sorted(classification.tests)
     # GREEN and REFACTOR take everything authored inside the cycle's projects.
     return sorted(
-        classification.tests + classification.stubs + classification.implementation
+        classification.tests
+        + classification.stubs
+        + classification.implementation
         + classification.ancillary
     )
 

@@ -1,4 +1,3 @@
-
 import pytest
 
 from tddcli import config as config_mod
@@ -81,8 +80,7 @@ def test_close_sweep_skips_unrelated_projects(cfg):
 
 def test_artifact_referencing_unknown_project_is_rejected(tmp_path):
     (tmp_path / "tdd.toml").write_text(
-        '[project.a]\nroot="a"\nadapter="pytest"\n'
-        '[artifact.x]\npath="p"\nproduced_by="nope"\n'
+        '[project.a]\nroot="a"\nadapter="pytest"\n[artifact.x]\npath="p"\nproduced_by="nope"\n'
     )
     with pytest.raises(config_mod.ConfigError, match="unknown project"):
         config_mod.load(tmp_path)
@@ -207,8 +205,11 @@ def test_red_stages_tests_and_stubs_but_never_implementation(cfg):
         "backend/app/existing.py",
     }
     c = staging.classify(
-        cfg, changed, ["backend"],
-        declared(stub_expected=["app/new_module.py"]), set(),
+        cfg,
+        changed,
+        ["backend"],
+        declared(stub_expected=["app/new_module.py"]),
+        set(),
     )
     assert c.tests == ["backend/tests/test_x.py"]
     assert c.stubs == ["backend/app/new_module.py"]
@@ -221,35 +222,43 @@ def test_red_stages_tests_and_stubs_but_never_implementation(cfg):
 
 def test_green_stages_everything_authored_in_the_cycle(cfg):
     c = staging.classify(
-        cfg, {"backend/tests/test_x.py", "backend/app/existing.py"},
-        ["backend"], declared(), set(),
+        cfg,
+        {"backend/tests/test_x.py", "backend/app/existing.py"},
+        ["backend"],
+        declared(),
+        set(),
     )
     assert set(staging.paths_for_phase(staging.GREEN, c)) == {
-        "backend/tests/test_x.py", "backend/app/existing.py"
+        "backend/tests/test_x.py",
+        "backend/app/existing.py",
     }
 
 
 def test_generated_output_is_never_attributed_to_the_agent(cfg):
     c = staging.classify(
-        cfg, {"frontend/generated/api.ts", "frontend/services/a.ts"},
-        ["frontend"], declared(projects=["frontend"]), set(),
+        cfg,
+        {"frontend/generated/api.ts", "frontend/services/a.ts"},
+        ["frontend"],
+        declared(projects=["frontend"]),
+        set(),
     )
     assert c.generated == ["frontend/generated/api.ts"]
     assert "frontend/generated/api.ts" not in staging.paths_for_phase(staging.GREEN, c)
 
 
 def test_files_outside_cycle_projects_are_flagged_not_staged(cfg):
-    c = staging.classify(
-        cfg, {"backend/app/x.py", "tasks/plan.md"}, ["backend"], declared(), set()
-    )
+    c = staging.classify(cfg, {"backend/app/x.py", "tasks/plan.md"}, ["backend"], declared(), set())
     assert c.outside == ["tasks/plan.md"]
     assert "tasks/plan.md" not in staging.paths_for_phase(staging.GREEN, c)
 
 
 def test_preexisting_dirt_is_excluded_forever(cfg):
     c = staging.classify(
-        cfg, {"backend/app/x.py", "backend/app/dirty.py"}, ["backend"],
-        declared(), {"backend/app/dirty.py"},
+        cfg,
+        {"backend/app/x.py", "backend/app/dirty.py"},
+        ["backend"],
+        declared(),
+        {"backend/app/dirty.py"},
     )
     assert c.excluded == ["backend/app/dirty.py"]
     assert "backend/app/dirty.py" not in staging.paths_for_phase(staging.GREEN, c)
@@ -257,8 +266,11 @@ def test_preexisting_dirt_is_excluded_forever(cfg):
 
 def test_pin_phase_stages_only_the_characterisation_test(cfg):
     c = staging.classify(
-        cfg, {"backend/tests/test_pin.py", "backend/app/x.py"}, ["backend"],
-        declared(kind="pin"), set(),
+        cfg,
+        {"backend/tests/test_pin.py", "backend/app/x.py"},
+        ["backend"],
+        declared(kind="pin"),
+        set(),
     )
     assert staging.paths_for_phase(staging.PIN, c) == ["backend/tests/test_pin.py"]
 
@@ -276,8 +288,12 @@ def test_upstream_producer_roots_includes_self_and_upstream_producers(cfg):
 
 def test_declared_ancillary_file_is_bucketed_and_staged(cfg):
     c = staging.classify(
-        cfg, {"backend/app/x.py", "tasks/plan.md"}, ["backend"],
-        declared(), set(), ancillary={"tasks/plan.md"},
+        cfg,
+        {"backend/app/x.py", "tasks/plan.md"},
+        ["backend"],
+        declared(),
+        set(),
+        ancillary={"tasks/plan.md"},
     )
     assert c.ancillary == ["tasks/plan.md"]
     assert c.outside == []
@@ -286,7 +302,7 @@ def test_declared_ancillary_file_is_bucketed_and_staged(cfg):
 
 def test_health_command_parses_onto_project(tmp_path):
     (tmp_path / "tdd.toml").write_text(
-        '[project.backend]\n'
+        "[project.backend]\n"
         'root         = "backend"\n'
         'adapter      = "pytest"\n'
         'test_paths   = ["tests/"]\n'
@@ -296,11 +312,11 @@ def test_health_command_parses_onto_project(tmp_path):
     assert cfg.projects["backend"].health_command == "true"
 
     (tmp_path / "tdd.toml").write_text(
-        '[project.backend]\n'
+        "[project.backend]\n"
         'root           = "backend"\n'
         'adapter        = "pytest"\n'
         'test_paths     = ["tests/"]\n'
-        'health_command = 5\n'
+        "health_command = 5\n"
     )
     with pytest.raises(config_mod.ConfigError):
         config_mod.load(tmp_path)

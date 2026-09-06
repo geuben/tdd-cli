@@ -71,8 +71,12 @@ def test_newer_ledger_is_refused_not_downgraded(tmp_path, ledger_home):
     future = SCHEMA_VERSION + 7
     ledger._write("UPDATE meta SET value = ? WHERE key = 'schema_version'", (str(future),))
     marker = ledger.insert(
-        "plan_contract", plan_path="p.md", status="undeclared",
-        declared_cycles="[]", annotation_keys="[]", registered_at="t",
+        "plan_contract",
+        plan_path="p.md",
+        status="undeclared",
+        declared_cycles="[]",
+        annotation_keys="[]",
+        registered_at="t",
     )
     ledger.db.close()
 
@@ -82,7 +86,9 @@ def test_newer_ledger_is_refused_not_downgraded(tmp_path, ledger_home):
 
     # Refusal must not have touched the database: version and rows survive.
     db = sqlite3.connect(str(ledger.path))
-    assert db.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0] == str(future)
+    assert db.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0] == str(
+        future
+    )
     assert db.execute("SELECT id FROM plan_contract").fetchone()[0] == marker
     db.close()
 
@@ -115,9 +121,7 @@ def _fake_entry_point(name, cls):
 
 
 def test_plugin_adapter_resolves_via_entry_point(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        adapters, "_entry_points", lambda: [_fake_entry_point("fake", FakeAdapter)]
-    )
+    monkeypatch.setattr(adapters, "_entry_points", lambda: [_fake_entry_point("fake", FakeAdapter)])
     project = SimpleNamespace(adapter="fake")
     built = adapters.build(project, tmp_path)
     assert isinstance(built, FakeAdapter)
@@ -129,17 +133,19 @@ def test_builtin_adapter_cannot_be_shadowed_by_a_plugin(monkeypatch, tmp_path):
         adapters, "_entry_points", lambda: [_fake_entry_point("pytest", FakeAdapter)]
     )
     project = SimpleNamespace(
-        adapter="pytest", root=".", test_paths=["tests/"], test_command=None,
-        lint=[], typecheck=[],
+        adapter="pytest",
+        root=".",
+        test_paths=["tests/"],
+        test_command=None,
+        lint=[],
+        typecheck=[],
     )
     built = adapters.build(project, tmp_path)
     assert not isinstance(built, FakeAdapter)
 
 
 def test_unknown_adapter_lists_plugins_in_the_error(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        adapters, "_entry_points", lambda: [_fake_entry_point("fake", FakeAdapter)]
-    )
+    monkeypatch.setattr(adapters, "_entry_points", lambda: [_fake_entry_point("fake", FakeAdapter)])
     with pytest.raises(RuntimeError) as exc:
         adapters.build(SimpleNamespace(adapter="nope"), tmp_path)
     assert "'nope'" in str(exc.value)

@@ -1,4 +1,5 @@
 """Static lint of declared targets: grammar and root-prefix rules."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -33,7 +34,14 @@ def lint_cycles(cycles, cfg, worktree: Path) -> list[dict]:
             lint_fn = getattr(adapter, "lint_target_id", lambda n: None)
             problem = lint_fn(native)
             if problem:
-                findings.append({"cycle": cycle.ordinal, "project": project_name, "test": test_id, "problem": problem})
+                findings.append(
+                    {
+                        "cycle": cycle.ordinal,
+                        "project": project_name,
+                        "test": test_id,
+                        "problem": problem,
+                    }
+                )
                 continue
 
             path_fn = getattr(adapter, "target_path", lambda n: None)
@@ -41,21 +49,23 @@ def lint_cycles(cycles, cfg, worktree: Path) -> list[dict]:
             if path_part is not None and project.root != ".":
                 root_prefix = project.root + "/"
                 if path_part.startswith(root_prefix):
-                    stripped = path_part[len(root_prefix):]
+                    stripped = path_part[len(root_prefix) :]
                     nested = worktree / project.root / path_part
                     if not nested.exists() and not nested.parent.exists():
-                        suffix = native[len(path_part):]
+                        suffix = native[len(path_part) :]
                         suggestion = stripped + suffix
-                        findings.append({
-                            "cycle": cycle.ordinal,
-                            "project": project_name,
-                            "test": test_id,
-                            "problem": (
-                                f"target path {path_part!r} duplicates the project root {project.root!r}; "
-                                f"the collected id would be {stripped + suffix!r}. "
-                                f"To register a genuinely nested path, create the directory first."
-                            ),
-                            "suggestion": suggestion,
-                        })
+                        findings.append(
+                            {
+                                "cycle": cycle.ordinal,
+                                "project": project_name,
+                                "test": test_id,
+                                "problem": (
+                                    f"target path {path_part!r} duplicates the project root {project.root!r}; "
+                                    f"the collected id would be {stripped + suffix!r}. "
+                                    f"To register a genuinely nested path, create the directory first."
+                                ),
+                                "suggestion": suggestion,
+                            }
+                        )
 
     return findings

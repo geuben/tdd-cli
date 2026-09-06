@@ -383,9 +383,7 @@ class Ledger:
         rows = self.all("SELECT project, failing FROM baseline WHERE run_id = ?", (run_id,))
         return {r["project"]: set(json.loads(r["failing"])) for r in rows}
 
-    def previous_baseline(
-        self, worktree: str, project: str, before_run_id: int
-    ) -> set[str] | None:
+    def previous_baseline(self, worktree: str, project: str, before_run_id: int) -> set[str] | None:
         row = self.one(
             "SELECT b.failing FROM baseline b JOIN run r ON b.run_id = r.id"
             " WHERE r.worktree_path = ? AND b.project = ? AND r.id < ?"
@@ -470,9 +468,15 @@ class Ledger:
                 failed_files = excluded.failed_files,
                 created_at = excluded.created_at
             """,
-            (project, tree_hash, config_sha,
-             json.dumps(failing), json.dumps(tests), json.dumps(failed_files),
-             now()),
+            (
+                project,
+                tree_hash,
+                config_sha,
+                json.dumps(failing),
+                json.dumps(tests),
+                json.dumps(failed_files),
+                now(),
+            ),
         )
         self.db.commit()
 

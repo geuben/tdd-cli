@@ -23,9 +23,11 @@ def test_short_text_passes_through_unclipped():
 
 
 def test_long_text_keeps_both_ends_and_marks_the_elision():
-    text = "assert first line\n" + ("framework frame\n" * 200) + "ConnectionRefusedError: [Errno 61]"
+    text = (
+        "assert first line\n" + ("framework frame\n" * 200) + "ConnectionRefusedError: [Errno 61]"
+    )
     clipped = clip_failure(text, 1500)
-    assert len(clipped) <= 1500 + 20   # the marker is the only overhead
+    assert len(clipped) <= 1500 + 20  # the marker is the only overhead
     assert clipped.startswith("assert first line")
     assert clipped.endswith("ConnectionRefusedError: [Errno 61]")
     assert "…" in clipped
@@ -49,13 +51,19 @@ def test_pytest_target_failure_keeps_the_error_at_the_tail(tmp_path, monkeypatch
     def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         marker = "--json-report-file="
         path = command.split(marker, 1)[1].split(" --", 1)[0]
-        Path(path.strip("'\"")).write_text(json.dumps({
-            "tests": [{
-                "nodeid": "tests/test_db.py::test_connects",
-                "outcome": "failed",
-                "call": {"longrepr": longrepr},
-            }],
-        }))
+        Path(path.strip("'\"")).write_text(
+            json.dumps(
+                {
+                    "tests": [
+                        {
+                            "nodeid": "tests/test_db.py::test_connects",
+                            "outcome": "failed",
+                            "call": {"longrepr": longrepr},
+                        }
+                    ],
+                }
+            )
+        )
         return 1, "", ""
 
     monkeypatch.setattr(adapters.base, "run_command", fake)

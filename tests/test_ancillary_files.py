@@ -31,9 +31,7 @@ def test_plan_register_persists_ancillary_files(repo, ledger_home):
     import json
 
     ledger = Ledger(gitutil.repo_identity(repo))
-    row = ledger.one(
-        "SELECT ancillary_files FROM plan_contract ORDER BY id DESC LIMIT 1"
-    )
+    row = ledger.one("SELECT ancillary_files FROM plan_contract ORDER BY id DESC LIMIT 1")
     assert json.loads(row["ancillary_files"]) == ["notes.md"]
 
 

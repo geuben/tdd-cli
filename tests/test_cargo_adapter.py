@@ -186,7 +186,9 @@ INT_PASS = "kernel::roundtrip::renders_cover_only"
 def make_adapter(tmp_path: Path, toml: str = TOML) -> CargoAdapter:
     (tmp_path / "tdd.toml").write_text(toml)
     (tmp_path / "kernel" / "tests").mkdir(parents=True)
-    (tmp_path / "kernel" / "tests" / "roundtrip.rs").write_text("#[test] fn renders_cover_only() {}\n")
+    (tmp_path / "kernel" / "tests" / "roundtrip.rs").write_text(
+        "#[test] fn renders_cover_only() {}\n"
+    )
     cfg = config_mod.load(tmp_path)
     return CargoAdapter(cfg.project("kernel"), tmp_path)
 

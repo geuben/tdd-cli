@@ -72,9 +72,7 @@ def test_fleet_shows_runs_from_other_worktrees(repo):
     """The ledger is one per repository; a run claimed by any worktree appears."""
     start_run(repo)
     ledger = Ledger(repo)
-    ledger.db.execute(
-        "UPDATE run SET worktree_path = ? WHERE 1", ("/somewhere/else/wt-2",)
-    )
+    ledger.db.execute("UPDATE run SET worktree_path = ? WHERE 1", ("/somewhere/else/wt-2",))
     ledger.db.commit()
     out = run_cli(repo, "fleet", "--json")
     (row,) = out["result"]["runs"]

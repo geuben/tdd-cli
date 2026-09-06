@@ -33,9 +33,7 @@ def project_with(tmp_path: Path, extra: str, adapter: str = "pytest"):
 
 
 def test_project_env_is_parsed_from_the_registry(tmp_path):
-    project = project_with(
-        tmp_path, 'env = { TEST_DB_PORT = "${DB_PORT}" }\n'
-    )
+    project = project_with(tmp_path, 'env = { TEST_DB_PORT = "${DB_PORT}" }\n')
     assert project.env == {"TEST_DB_PORT": "${DB_PORT}"}
 
 
@@ -48,8 +46,7 @@ def test_default_suite_runs_with_the_project_env_expanded(tmp_path, monkeypatch)
     monkeypatch.setenv("DB_PORT", "6032")
     project = project_with(
         tmp_path,
-        'test_command = "pytest tests"\n'
-        'env = { TEST_DB_PORT = "${DB_PORT}" }\n',
+        'test_command = "pytest tests"\nenv = { TEST_DB_PORT = "${DB_PORT}" }\n',
     )
     adapter = adapters.build(project, tmp_path)
     seen: list = []
@@ -84,14 +81,10 @@ def test_override_env_layers_on_top_of_the_project_env(tmp_path, monkeypatch):
     assert invocations[1][1] == {"TEST_DB_PORT": "6032", "SHARED": "from-override"}
 
 
-def test_pytest_collection_of_default_files_carries_the_project_env(
-    tmp_path, monkeypatch
-):
+def test_pytest_collection_of_default_files_carries_the_project_env(tmp_path, monkeypatch):
     project = project_with(tmp_path, 'env = { TEST_DB_PORT = "6032" }\n')
     (tmp_path / "backend" / "tests").mkdir(parents=True)
-    (tmp_path / "backend" / "tests" / "test_a.py").write_text(
-        "def test_a(): pass\n"
-    )
+    (tmp_path / "backend" / "tests" / "test_a.py").write_text("def test_a(): pass\n")
     adapter = adapters.build(project, tmp_path)
     seen: list = []
 
@@ -107,8 +100,7 @@ def test_pytest_collection_of_default_files_carries_the_project_env(
 def test_vitest_default_suite_runs_with_the_project_env(tmp_path, monkeypatch):
     project = project_with(
         tmp_path,
-        'test_command = "npx vitest run"\n'
-        'env = { API_URL = "http://localhost:6032" }\n',
+        'test_command = "npx vitest run"\nenv = { API_URL = "http://localhost:6032" }\n',
         adapter="vitest",
     )
     adapter = adapters.build(project, tmp_path)

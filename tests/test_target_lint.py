@@ -1,4 +1,5 @@
 """Tests for target lint: grammar and root-prefix validation at plan register / run start."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -38,6 +39,7 @@ def vitest_adapter_for(tmp_path: Path) -> VitestAdapter:
     (tmp_path / "frontend").mkdir()
     cfg = config_mod.load(tmp_path)
     return VitestAdapter(cfg.project("frontend"), tmp_path)
+
 
 _PLAN_NO_SEP = """---
 cycles:
@@ -95,6 +97,7 @@ def test_run_start_refuses_lint_findings_from_config_drift(repo):
         "typecheck  = []\n"
     )
     import subprocess
+
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "root=."], check=True)
     plan = write_plan(
@@ -131,6 +134,7 @@ def test_register_refuses_a_root_duplicated_vitest_target(tmp_path, ledger_home)
     )
     (tmp_path / "scripts").mkdir()
     import subprocess
+
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "t@t.com"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "T"], check=True)
@@ -157,11 +161,12 @@ def test_register_accepts_a_genuinely_nested_root_path(repo):
     (repo / "backend" / "backend" / "tests").mkdir(parents=True)
     (repo / "backend" / "backend" / "tests" / "test_add.py").write_text("def test_add(): pass\n")
     import subprocess
+
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "nested root"], check=True)
     plan = write_plan(
         repo,
-        "---\ncycles:\n  - n: 1\n    project: proj\n    test: \"backend/tests/test_add.py::test_add\"\n    files: []\n---\n",
+        '---\ncycles:\n  - n: 1\n    project: proj\n    test: "backend/tests/test_add.py::test_add"\n    files: []\n---\n',
     )
     out = run_cli(repo, "plan", "register", plan)
     assert out["ok"] is True
@@ -177,11 +182,12 @@ def test_register_refuses_a_root_duplicated_pytest_target(repo):
         "typecheck  = []\n"
     )
     import subprocess
+
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "swap project name"], check=True)
     plan = write_plan(
         repo,
-        "---\ncycles:\n  - n: 1\n    project: proj\n    test: \"backend/tests/test_add.py::test_add\"\n    files: []\n---\n",
+        '---\ncycles:\n  - n: 1\n    project: proj\n    test: "backend/tests/test_add.py::test_add"\n    files: []\n---\n',
     )
     out = run_cli(repo, "plan", "register", plan)
     assert out["ok"] is False
