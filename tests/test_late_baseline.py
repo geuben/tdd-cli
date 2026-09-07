@@ -26,6 +26,17 @@ def _pull_svc_into_the_sweep(repo):
     (repo / "other" / "generated.json").write_text("{}")
 
 
+def test_temporary_worktree_checks_out_the_sha_and_is_removed_on_exit(repo):
+    first = gitutil.head(repo)
+    (repo / "backend" / "app" / "new.py").write_text("x = 1\n")
+    from conftest import git as _git
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "second commit")
+    with gitutil.temporary_worktree(repo, first) as tmp:
+        inside = gitutil.head(tmp)
+    assert (inside, tmp.exists()) == (first, False)
+
+
 def test_run_start_records_the_start_sha_on_the_run_row(repo):
     write_plan(repo, PLAN)
     sha = gitutil.head(repo)

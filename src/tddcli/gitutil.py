@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import subprocess
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 
@@ -136,3 +138,10 @@ def checkout_paths(worktree: Path, paths: list[str]) -> None:
 def staged_paths(worktree: Path) -> list[str]:
     out = git(worktree, "diff", "--cached", "--name-only")
     return [p for p in out.splitlines() if p.strip()]
+
+
+@contextlib.contextmanager
+def temporary_worktree(
+    worktree: Path, sha: str, link_ignored_under: Sequence[str] = ()
+) -> Iterator[Path]:
+    raise NotImplementedError
