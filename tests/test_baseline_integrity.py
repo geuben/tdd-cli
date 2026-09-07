@@ -127,8 +127,8 @@ def test_a_failure_the_baseline_missed_has_its_own_blocker_kind(repo):
 
 
 def test_unblocking_can_accept_the_failures_into_the_baseline(repo):
-    """Without this the run cannot recover: unblock returns to AWAITING_REFACTOR, the
-    next advance re-runs the same sweep, finds the same failure, and blocks again."""
+    """The escape hatch cannot launder a run-introduced failure: a test that passes at
+    the start sha is refused, and the next advance still replies fix_regression."""
     reach_refactor(repo)
     (repo / "backend" / "tests" / "test_smoke.py").write_text(
         "def test_smoke():\n    assert False\n"
@@ -140,11 +140,10 @@ def test_unblocking_can_accept_the_failures_into_the_baseline(repo):
         repo, "resume", "--unblock", "--note", "verified against main", "--accept-failures"
     )
     assert resumed["ok"], resumed
-    accepted = resumed["result"]["accepted_into_baseline"]
-    assert accepted == {"backend": ["backend::tests/test_smoke.py::test_smoke"]}, resumed
+    assert resumed["result"].get("accepted_into_baseline") is None
 
-    closed = run_cli(repo, "advance")
-    assert closed["next_action"]["verb"] == "complete", closed
+    next_advance = run_cli(repo, "advance")
+    assert next_advance["next_action"]["verb"] == "fix_regression", next_advance
 
 
 def test_unblocking_without_accept_failures_leaves_the_baseline_alone(repo):
@@ -480,10 +479,10 @@ def test_stale_reused_baseline_recovers_via_accept_failures(repo):
         repo, "resume", "--unblock", "--note", "verified against main", "--accept-failures"
     )
     assert resumed["ok"], resumed
-    assert "backend" in resumed["result"]["accepted_into_baseline"]
+    assert "backend" in resumed["result"].get("refused_from_baseline", {})
 
-    closed = run_cli(repo, "advance")
-    assert closed["next_action"]["verb"] == "complete", closed
+    next_advance = run_cli(repo, "advance")
+    assert next_advance["next_action"]["verb"] == "fix_regression", next_advance
 
 
 def test_reused_baseline_records_provenance_and_event(repo_three):

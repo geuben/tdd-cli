@@ -100,6 +100,22 @@ def test_a_failure_absent_at_the_start_sha_is_a_regression_in_a_late_baselined_p
     assert out["next_action"]["verb"] == "fix_regression"
 
 
+def test_accept_failures_refuses_a_test_that_passes_at_the_start_sha(repo):
+    from test_baseline_integrity import reach_refactor
+    reach_refactor(repo)
+    (repo / "backend" / "tests" / "test_smoke.py").write_text("def test_smoke():\n    assert False\n")
+    run_cli(repo, "advance")
+    run_cli(repo, "blocker", "--kind", "pre_existing_failure", "--detail", "x")
+    resumed = run_cli(repo, "resume", "--unblock", "--note", "n", "--accept-failures")
+    ledger = Ledger(gitutil.repo_identity(repo))
+    run_id = resumed["run"]["id"]
+    row = ledger.one("SELECT failing FROM baseline WHERE run_id = ? AND project = 'backend'", (run_id,))
+    assert (
+        json.loads(row["failing"]),
+        resumed["result"].get("refused_from_baseline"),
+    ) == ([], {"backend": ["backend::tests/test_smoke.py::test_smoke"]})
+
+
 def test_an_unobservable_late_probe_blocks_without_a_baseline_row(repo_schema_other):
     repo = repo_schema_other
     from conftest import git as _git
