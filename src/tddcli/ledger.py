@@ -232,6 +232,7 @@ CREATE TABLE IF NOT EXISTS artifact_check (
     artifact TEXT NOT NULL,
     stale INTEGER NOT NULL,
     regenerated INTEGER NOT NULL DEFAULT 0,
+    regenerate_failed INTEGER NOT NULL DEFAULT 0,
     at TEXT NOT NULL
 );
 

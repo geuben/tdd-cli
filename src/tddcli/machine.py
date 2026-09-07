@@ -241,7 +241,7 @@ class Engine:
         for art in self.config.artifacts.values():
             if not art.check and not art.regenerate:
                 continue
-            stale = self._artifact_stale(art)
+            stale, failure = self._artifact_stale(art)
             check_id = self.ledger.insert(
                 "artifact_check",
                 run_id=self.run["id"],
@@ -249,6 +249,7 @@ class Engine:
                 artifact=art.name,
                 stale=int(stale),
                 regenerated=0,
+                regenerate_failed=int(bool(failure)),
                 at=now(),
             )
             if not stale:
@@ -296,15 +297,17 @@ class Engine:
                 )
         return regenerated
 
-    def _artifact_stale(self, art) -> bool:
+    def _artifact_stale(self, art) -> tuple[bool, dict | None]:
         if art.check:
             code, _, _ = adapters.base.run_command(art.check, self.worktree)
-            return code != 0
+            return code != 0, None
         if not art.regenerate:
-            return False
+            return False, None
         before = gitutil.tree_hash(self.worktree, [art.path])
-        adapters.base.run_command(art.regenerate, self.worktree)
-        return gitutil.tree_hash(self.worktree, [art.path]) != before
+        code, _out, err = adapters.base.run_command(art.regenerate, self.worktree)
+        if code != 0:
+            return False, {"artifact": art.name, "code": code, "stderr": err[-2000:]}
+        return gitutil.tree_hash(self.worktree, [art.path]) != before, None
 
     # -- cycle lifecycle -------------------------------------------------
 
