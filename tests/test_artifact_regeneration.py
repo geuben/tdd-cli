@@ -150,6 +150,31 @@ def test_unresolved_stale_artifact_still_emits_event(repo):
     assert event is not None, "expected a stale_artifact event for spec"
 
 
+def test_failed_regenerate_hook_at_run_start_refuses(repo, tmp_path):
+    marker = tmp_path / "fail"
+    marker.touch()  # marker exists BEFORE run start
+    (repo / "wasm").mkdir()
+    (repo / "wasm" / "bundle.js").write_text("v1\n")
+    with (repo / "tdd.toml").open("a") as f:
+        f.write(
+            "\n[artifact.wasm]\n"
+            'path        = "wasm/bundle.js"\n'
+            'produced_by = "backend"\n'
+            f'regenerate  = "test ! -f {marker} || {{ echo boom >&2; exit 1; }}"\n'
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "declare wasm artifact")
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    status = run_cli(repo, "status")
+    assert (out["ok"], "wasm" in (out.get("error") or ""), status["result"].get("active")) == (
+        False,
+        True,
+        False,
+    )
+
+
 def test_failed_regenerate_after_stale_check_reports_hook_failure_not_stale(repo, tmp_path):
     marker = tmp_path / "fail"
     (repo / "wasm").mkdir()
