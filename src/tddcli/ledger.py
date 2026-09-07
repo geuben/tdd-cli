@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 class LedgerVersionError(RuntimeError):
@@ -43,6 +43,8 @@ MIGRATIONS: dict[int, str] = {
     7: "",
     # v8 -> v9 added regenerate_failed column to artifact_check; ALTER TABLE covers old ledgers.
     8: "ALTER TABLE artifact_check ADD COLUMN regenerate_failed INTEGER NOT NULL DEFAULT 0;",
+    # v9 -> v10 added start_sha column to run; ALTER TABLE covers old ledgers.
+    9: "ALTER TABLE run ADD COLUMN start_sha TEXT;",
 }
 
 SCHEMA = """
