@@ -150,6 +150,37 @@ def test_unresolved_stale_artifact_still_emits_event(repo):
     assert event is not None, "expected a stale_artifact event for spec"
 
 
+def test_friction_log_lists_failed_regeneration_under_its_cycle(repo, tmp_path):
+    marker = tmp_path / "fail"
+    (repo / "wasm").mkdir()
+    (repo / "wasm" / "bundle.js").write_text("v1\n")
+    with (repo / "tdd.toml").open("a") as f:
+        f.write(
+            "\n[artifact.wasm]\n"
+            'path        = "wasm/bundle.js"\n'
+            'produced_by = "backend"\n'
+            f'regenerate  = "test ! -f {marker} || {{ echo boom >&2; exit 1; }}"\n'
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "declare wasm artifact")
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+
+    # Trigger a failed hook → run is left open at fix_regression
+    marker.touch()
+    adv = run_cli(repo, "advance")
+    assert adv["next_action"]["verb"] == "fix_regression", adv
+
+    friction_path = repo / "friction.md"
+    render_out = run_cli(repo, "log", "render", "--out", str(friction_path))
+    assert render_out["ok"], render_out
+
+    text = friction_path.read_text()
+    assert "Event — artifact_regenerate_failed" in text
+
+
 def test_failed_regenerate_hook_at_run_start_refuses(repo, tmp_path):
     marker = tmp_path / "fail"
     marker.touch()  # marker exists BEFORE run start
