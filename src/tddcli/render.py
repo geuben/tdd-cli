@@ -57,6 +57,17 @@ def friction_log(ledger: Ledger, run) -> str:
     a(f"- Human interventions: {len(interventions)}")
     for i in interventions:
         a(f"  - {i['at']}: {i['note']}")
+    amended_events = ledger.all(
+        "SELECT detail FROM integrity_event WHERE run_id = ? AND kind = 'baseline_amended'",
+        (run["id"],),
+    )
+    for ev in amended_events:
+        detail = json.loads(ev["detail"])
+        for project, entry in sorted(detail.items()):
+            for test_id, verdict in sorted(entry.get("accepted", {}).items()):
+                a(f"    - accepted: `{test_id}` ({verdict})")
+            for test_id, verdict in sorted(entry.get("refused", {}).items()):
+                a(f"    - refused: `{test_id}` ({verdict})")
     a("")
 
     events = defaultdict(list)
