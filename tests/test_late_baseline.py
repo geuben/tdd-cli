@@ -100,6 +100,26 @@ def test_a_failure_absent_at_the_start_sha_is_a_regression_in_a_late_baselined_p
     assert out["next_action"]["verb"] == "fix_regression"
 
 
+def test_accept_failures_refuses_an_unobserved_project_and_inserts_no_row(repo_schema_other):
+    from test_baseline_integrity import reach_unbaselined_blocker
+    repo = repo_schema_other
+    reach_unbaselined_blocker(repo)
+    ledger = Ledger(gitutil.repo_identity(repo))
+    run_row = ledger.one(
+        "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1", (str(repo),)
+    )
+    run_id = run_row["id"]
+    run_cli(repo, "blocker", "--kind", "no_baseline_for_project", "--detail", "x")
+    resumed = run_cli(repo, "resume", "--unblock", "--note", "n", "--accept-failures")
+    row = ledger.one(
+        "SELECT * FROM baseline WHERE run_id = ? AND project = 'svc'", (run_id,)
+    )
+    assert (
+        row is None,
+        resumed["result"].get("refused_from_baseline"),
+    ) == (True, {"svc": ["svc::tests/test_svc.py::test_svc_fails"]})
+
+
 def test_baseline_amended_records_a_verdict_per_test(repo):
     from conftest import git as _git
     from test_baseline_integrity import reach_refactor

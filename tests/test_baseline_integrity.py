@@ -277,6 +277,8 @@ def test_close_sweep_with_unbaselined_failures_directs_resolve_blocker(repo_sche
 
 
 def test_accept_failures_inserts_baseline_row_for_unbaselined_project(repo_schema_other):
+    """Historical misnomer: accept-failures never inserts a row for an unobserved project.
+    The svc baseline row stays absent; the amended event records an empty accepted map."""
     import json as json_mod
 
     reach_unbaselined_blocker(repo_schema_other)
@@ -296,9 +298,7 @@ def test_accept_failures_inserts_baseline_row_for_unbaselined_project(repo_schem
     ledger = Ledger(gitutil.repo_identity(repo_schema_other))
     run_id = resumed["run"]["id"]
     row = ledger.one("SELECT failing FROM baseline WHERE run_id = ? AND project = 'svc'", (run_id,))
-    assert row is not None, "no baseline row created for svc"
-    failing = json_mod.loads(row["failing"])
-    assert any("test_svc_fails" in f for f in failing), failing
+    assert row is None, "baseline row must not be inserted for unobserved project"
 
     event = ledger.one(
         "SELECT detail FROM integrity_event WHERE run_id = ? AND kind = 'baseline_amended'",
@@ -306,7 +306,7 @@ def test_accept_failures_inserts_baseline_row_for_unbaselined_project(repo_schem
     )
     assert event is not None, "no baseline_amended event"
     amended = json_mod.loads(event["detail"])
-    assert "svc" in amended, amended
+    assert "svc" in amended and amended["svc"].get("accepted") == {}, amended
 
 
 def test_sweep_reports_unbaselined_failures_separately(repo_three):

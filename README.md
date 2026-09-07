@@ -473,8 +473,8 @@ no suite is run — and a `baseline_reused` heartbeat appears on stderr. The bas
 `source = "reused"` for auditability, and a `baseline_reused` integrity event lists which
 projects were skipped. Without the flag, the cache is neither read nor written.
 
-A stale or wrong reused baseline is always recoverable via `resume --unblock --accept-failures`
-(see below) — reuse is loud by design, never silent.
+A stale or wrong reused baseline is recoverable via `resume --unblock --accept-failures`
+(see below) for tests that fail at the start sha — reuse is loud by design, never silent.
 
 To limit how old a cached entry may be, pass `--reuse-max-age <seconds>`:
 

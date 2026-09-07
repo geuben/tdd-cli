@@ -1119,14 +1119,12 @@ def _accept_failures_into_baseline(
         if row is None:
             if not sweep_failed:
                 continue
-            ledger.insert(
-                "baseline",
-                run_id=run_id,
-                project=project,
-                failing=json.dumps(sweep_failed),
-                captured_at=now(),
-            )
-            accepted[project] = sweep_failed
+            probe = engine.probe_at_start_sha(project)
+            if probe.observed:
+                ref_reason = "re-advance so the sweep can late-probe and baseline it"
+            else:
+                ref_reason = f"unobserved at start sha: {probe.reason}"
+            refused[project] = sweep_failed
         else:
             known = set(json.loads(row["failing"]))
             new = sorted(set(sweep_failed) - known)
@@ -1150,9 +1148,10 @@ def _accept_failures_into_baseline(
     start_sha = run_row["start_sha"] if run_row else None
     verdicts: dict[str, dict] = {}
     for project in set(list(accepted.keys()) + list(refused.keys())):
-        entry: dict = {"start_sha": start_sha}
-        if project in accepted:
-            entry["accepted"] = {t: "fails at start sha" for t in accepted[project]}
+        entry: dict = {
+            "start_sha": start_sha,
+            "accepted": {t: "fails at start sha" for t in accepted.get(project, [])},
+        }
         if project in refused:
             entry["refused"] = {t: "passes at start sha" for t in refused[project]}
         verdicts[project] = entry
@@ -1538,8 +1537,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument(
         "--accept-failures",
         action="store_true",
-        help="fold the failures the last close sweep saw into the baseline, so a run"
-        " whose baseline missed them can proceed; recorded as baseline_amended",
+        help="fold pre-existing failures into the baseline: accepts only tests that also fail"
+        " at run.start_sha; tests that pass there are refused; never inserts a new row;"
+        " recorded as baseline_amended",
     )
     s.set_defaults(fn=cmd_resume)
 

@@ -566,13 +566,15 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   regression, at every close sweep, for the life of the run. The check runs before the run row
   is written, so a refusal leaves nothing behind to block the next attempt. A project with no
   test files and no collection errors is not an error; it simply has no suite yet.
-- **R9.5b** `resume --unblock --accept-failures` folds the failures the last close sweep saw into
-  the baseline, recorded as `baseline_amended` alongside the mandatory `--note`. A run whose
-  baseline missed a failure cannot otherwise recover: unblocking returns it to the phase it
-  blocked in, and the next sweep finds the same failure and blocks again. The flag is explicit
-  and human-only precisely because it launders a failure into the accepted set — an unblock must
-  never do it silently. If a close sweep reached a project that was never baselined, `--accept-failures`
-  inserts a fresh baseline row for it rather than skipping it.
+- **R9.5b** `resume --unblock --accept-failures` folds pre-existing failures into the baseline,
+  recorded as a `baseline_amended` integrity event alongside the mandatory `--note`. For each
+  candidate failure (present in the last close sweep but absent from the current baseline row),
+  the tool probes the project at `run.start_sha`: a test that **fails** at `start_sha` is
+  accepted (added to the row, verdict `"fails at start sha"`); a test that **passes** at
+  `start_sha` is refused (verdict `"passes at start sha"`) and listed in the reply under
+  `refused_from_baseline`. The `baseline_amended` event carries `{project: {start_sha, accepted:
+  {test_id: verdict}, refused: {test_id: verdict}}}`. `--accept-failures` never inserts a new
+  baseline row; projects with no row (unobservable or missing) are always refused.
 - **R9.5c** `run start` scopes baseline capture to plan-reachable projects. The reachable set is
   the union of declared cycle projects plus the transitive `consumed_by` closure of artifacts
   whose root producer is in that set (respecting `in_close_sweep = false` on closure-added
@@ -615,8 +617,8 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   projects. The default (`--reuse-baselines` absent) neither reads nor writes the cache, leaving
   behaviour byte-identical to before. An optional TTL (`--reuse-max-age <seconds>`) ignores
   entries older than that many seconds, bounding how stale a reused baseline may be. A stale or
-  wrong reused baseline is always recoverable via `resume --unblock --accept-failures`
-  (R9.5b), which treats a reused baseline row as an ordinary row.
+  wrong reused baseline is recoverable via `resume --unblock --accept-failures` (R9.5b),
+  which treats a reused baseline row as an ordinary row, for tests that fail at the start sha.
 - **R9.6** Baseline failures are subtracted from `other_failures` in every subsequent invocation.
   A baseline row is only ever captured from `run.start_sha`, never from the current tree.
 - **R9.7** A baseline failure that starts passing is recorded, not ignored.
