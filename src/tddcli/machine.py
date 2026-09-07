@@ -39,6 +39,12 @@ OPENING_PHASE = {PIN: AWAITING_PIN, REFACTOR: AWAITING_REFACTOR}
 
 
 @dataclass
+class ArtifactOutcome:
+    regenerated: list[str]
+    failed: list[dict]
+
+
+@dataclass
 class SweepOutcome:
     failures: list[str]
     gates: list[tuple[str, str, str]]  # (project, kind, output)
@@ -235,9 +241,10 @@ class Engine:
 
     # -- artifacts -------------------------------------------------------
 
-    def check_artifacts(self, cycle_row) -> list[str]:
+    def check_artifacts(self, cycle_row) -> ArtifactOutcome:
         """R9.12/R9.20 — the tool regenerates; the agent is informed, not asked."""
         regenerated: list[str] = []
+        failed: list[dict] = []
         for art in self.config.artifacts.values():
             if not art.check and not art.regenerate:
                 continue
@@ -259,6 +266,7 @@ class Engine:
                     "artifact_regenerate_failed",
                     json.dumps(failure),
                 )
+                failed.append(failure)
                 continue
             if not stale:
                 continue
@@ -303,7 +311,7 @@ class Engine:
                     "stale_artifact",
                     art.name,
                 )
-        return regenerated
+        return ArtifactOutcome(regenerated=regenerated, failed=failed)
 
     def _artifact_stale(self, art) -> tuple[bool, dict | None]:
         if art.check:
