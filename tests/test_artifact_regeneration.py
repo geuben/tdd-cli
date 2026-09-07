@@ -150,6 +150,41 @@ def test_unresolved_stale_artifact_still_emits_event(repo):
     assert event is not None, "expected a stale_artifact event for spec"
 
 
+def test_failed_regenerate_after_stale_check_reports_hook_failure_not_stale(repo, tmp_path):
+    marker = tmp_path / "fail"
+    (repo / "wasm").mkdir()
+    (repo / "wasm" / "bundle.js").write_text("v1\n")
+    with (repo / "tdd.toml").open("a") as f:
+        f.write(
+            "\n[artifact.wasm]\n"
+            'path        = "wasm/bundle.js"\n'
+            'produced_by = "backend"\n'
+            'check       = "false"\n'
+            f'regenerate  = "test ! -f {marker} || {{ echo boom >&2; exit 1; }}"\n'
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "declare wasm artifact")
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    # run start: check=false → stale, hook succeeds (no marker) → run-level stale_artifact
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+    run_id = out["run"]["id"]
+
+    marker.touch()
+    run_cli(repo, "advance")
+
+    ledger = Ledger(gitutil.repo_identity(repo))
+    kinds = [
+        row["kind"]
+        for row in ledger.all(
+            "SELECT kind FROM integrity_event WHERE run_id = ? AND cycle_id IS NOT NULL ORDER BY id",
+            (run_id,),
+        )
+    ]
+    assert kinds == ["artifact_regenerate_failed"]
+
+
 def test_cycle_closes_once_the_regenerate_hook_recovers(repo, tmp_path):
     marker = tmp_path / "fail"
     (repo / "wasm").mkdir()
