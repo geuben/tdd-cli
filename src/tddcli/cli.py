@@ -1119,11 +1119,7 @@ def _accept_failures_into_baseline(
         if row is None:
             if not sweep_failed:
                 continue
-            probe = engine.probe_at_start_sha(project)
-            if probe.observed:
-                ref_reason = "re-advance so the sweep can late-probe and baseline it"
-            else:
-                ref_reason = f"unobserved at start sha: {probe.reason}"
+            engine.probe_at_start_sha(project)
             refused[project] = sweep_failed
         else:
             known = set(json.loads(row["failing"]))
