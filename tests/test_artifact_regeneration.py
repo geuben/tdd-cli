@@ -150,6 +150,43 @@ def test_unresolved_stale_artifact_still_emits_event(repo):
     assert event is not None, "expected a stale_artifact event for spec"
 
 
+def test_failed_regenerate_hook_emits_artifact_regenerate_failed_event(repo, tmp_path):
+    import json
+
+    marker = tmp_path / "fail"
+    (repo / "wasm").mkdir()
+    (repo / "wasm" / "bundle.js").write_text("v1\n")
+    with (repo / "tdd.toml").open("a") as f:
+        f.write(
+            "\n[artifact.wasm]\n"
+            'path        = "wasm/bundle.js"\n'
+            'produced_by = "backend"\n'
+            f'regenerate  = "test ! -f {marker} || {{ echo boom >&2; exit 1; }}"\n'
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "declare wasm artifact")
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+    run_id = out["run"]["id"]
+
+    marker.touch()
+    run_cli(repo, "advance")
+
+    ledger = Ledger(gitutil.repo_identity(repo))
+    event = ledger.one(
+        "SELECT detail FROM integrity_event WHERE run_id = ? AND kind = 'artifact_regenerate_failed'",
+        (run_id,),
+    )
+    detail = json.loads(event["detail"]) if event else {}
+    assert (detail.get("artifact"), detail.get("code"), "boom" in detail.get("stderr", "")) == (
+        "wasm",
+        1,
+        True,
+    )
+
+
 def test_failed_regenerate_hook_marks_artifact_check_regenerate_failed(repo, tmp_path):
     marker = tmp_path / "fail"
     (repo / "wasm").mkdir()
