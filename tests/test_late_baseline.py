@@ -120,6 +120,35 @@ def test_accept_failures_refuses_an_unobserved_project_and_inserts_no_row(repo_s
     ) == (True, {"svc": ["svc::tests/test_svc.py::test_svc_fails"]})
 
 
+def test_friction_log_lists_amended_baseline_verdicts_under_human_interventions(repo):
+    from conftest import git as _git
+    from test_baseline_integrity import reach_refactor
+
+    (repo / "backend" / "tests" / "test_flaky.py").write_text("def test_flaky():\n    assert False\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "add pre-existing flaky test")
+    reach_refactor(repo)
+    ledger = Ledger(gitutil.repo_identity(repo))
+    run_row = ledger.one(
+        "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1", (str(repo),)
+    )
+    run_id = run_row["id"]
+    ledger.db.execute(
+        "UPDATE baseline SET failing = '[]' WHERE run_id = ? AND project = 'backend'", (run_id,)
+    )
+    ledger.db.commit()
+    (repo / "backend" / "tests" / "test_smoke.py").write_text("def test_smoke():\n    assert False\n")
+    run_cli(repo, "advance")
+    run_cli(repo, "blocker", "--kind", "pre_existing_failure", "--detail", "x")
+    run_cli(repo, "resume", "--unblock", "--note", "n", "--accept-failures")
+    run_cli(repo, "log", "render", "--out", str(repo / "friction.md"))
+    text = (repo / "friction.md").read_text()
+    assert (
+        "    - accepted: `backend::tests/test_flaky.py::test_flaky` (fails at start sha)" in text,
+        "    - refused: `backend::tests/test_smoke.py::test_smoke` (passes at start sha)" in text,
+    ) == (True, True)
+
+
 def test_baseline_amended_records_a_verdict_per_test(repo):
     from conftest import git as _git
     from test_baseline_integrity import reach_refactor
