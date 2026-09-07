@@ -26,6 +26,21 @@ def _pull_svc_into_the_sweep(repo):
     (repo / "other" / "generated.json").write_text("{}")
 
 
+def test_temporary_worktree_links_ignored_directories_under_the_project_root(repo):
+    from conftest import git as _git
+    gitignore = repo / ".gitignore"
+    gitignore.write_text(gitignore.read_text() + "node_modules/\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "add node_modules to gitignore")
+    sha = gitutil.head(repo)
+    (repo / "backend" / "node_modules" / "pkg").mkdir(parents=True)
+    (repo / "backend" / "node_modules" / "pkg" / "index.js").write_text("x")
+    with gitutil.temporary_worktree(repo, sha, link_ignored_under=["backend"]) as tmp:
+        target = tmp / "backend" / "node_modules" / "pkg" / "index.js"
+        seen = target.read_text() if target.exists() else None
+    assert seen == "x"
+
+
 def test_temporary_worktree_checks_out_the_sha_and_is_removed_on_exit(repo):
     first = gitutil.head(repo)
     (repo / "backend" / "app" / "new.py").write_text("x = 1\n")
