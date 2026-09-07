@@ -506,16 +506,22 @@ created, so the worktree is immediately retryable.
 ### When a sweep reaches an un-baselined project (R9.5d)
 
 If an edit during a run touches a file owned by an artifact that was outside the predicted
-reachable set, the close sweep may pull in a project that was never baselined. Its failures are
-unattributable — no baseline exists to subtract — so the sweep replies `resolve_blocker` with
-kind `no_baseline_for_project` rather than mislabelling them as regressions. Recovery:
+reachable set, the close sweep may pull in a project that was never baselined. The engine
+automatically probes that project at `run.start_sha` (the HEAD captured when the run began) in
+a temporary worktree.
 
-    tdd blocker --kind no_baseline_for_project --detail "svc pulled in unexpectedly"
-    tdd resume --unblock --accept-failures --note "folding svc sweep failures into baseline"
+**Observed probe (suite collects and runs):** the failing set at `start_sha` becomes a
+`late_probe` baseline row. Failures from the current sweep are subtracted from it exactly as if
+the project had been baselined up front. A `baseline_late_probe` integrity event records
+`{project, start_sha, failing, collected}`. The cycle closes normally if no regressions remain.
 
-`--accept-failures` inserts a fresh baseline row for the un-baselined project (recording those
-failures as pre-existing) and records a `baseline_amended` event. The next advance proceeds
-with the project properly baselined.
+**Unobserved probe (collection error, or `run.start_sha` is NULL):** no baseline row is
+written, a `baseline_late_probe_unobserved` integrity event records `{project, start_sha,
+reason}`, and the sweep replies `resolve_blocker` with kind `no_baseline_for_project`. The
+detail describes the unobservable reason and instructs the agent to make the suite observable at
+the start sha (ensure dependencies are present, or restart the run so the project is baselined
+up front) and then `tdd resume --unblock --note ...`. Accepting failures is not available for
+unobserved projects.
 
 ### Baseline sanity gate (R9.5g)
 
