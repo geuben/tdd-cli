@@ -658,6 +658,7 @@ def cmd_run_start(args) -> Envelope:
         pass
 
     dirty = sorted(gitutil.dirty_paths(worktree))
+    start_sha = gitutil.head(worktree)
     if dirty and not args.allow_dirty:
         return failure(
             "working tree is dirty; commit first or pass --allow-dirty"
@@ -819,6 +820,7 @@ def cmd_run_start(args) -> Envelope:
             allow_dirty=int(bool(args.allow_dirty)),
             preexisting_dirty=json.dumps(dirty),
             config_sha=config_mod.config_sha(worktree),
+            start_sha=start_sha,
         )
         run = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
         if blob_changed:

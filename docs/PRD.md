@@ -102,6 +102,7 @@ One execution of one contract by one executor.
 | `executor_model`, `executor_session` | **resolved by the tool, never accepted as an argument** (§5.1) |
 | `worktree_path` | runs are scoped to a worktree, not a repo |
 | `started_at`, `ended_at`, `outcome` | `complete` / `blocked` / `abandoned` |
+| `start_sha` | HEAD at run start; the tree every late baseline probe and `--accept-failures` verdict is taken from |
 
 Many runs may reference one contract. This is what makes A/B comparison across models possible.
 

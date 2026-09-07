@@ -91,7 +91,8 @@ CREATE TABLE IF NOT EXISTS run (
     outcome TEXT,                       -- complete | blocked | abandoned
     allow_dirty INTEGER NOT NULL DEFAULT 0,
     preexisting_dirty TEXT NOT NULL,    -- json: excluded from authorship forever (R9.21)
-    config_sha TEXT                     -- tdd.toml as of run start; drift is an event
+    config_sha TEXT,                    -- tdd.toml as of run start; drift is an event
+    start_sha TEXT                      -- HEAD at run start; late probes and accept-failures run suites here
 );
 
 CREATE TABLE IF NOT EXISTS baseline (
