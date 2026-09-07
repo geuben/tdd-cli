@@ -272,7 +272,18 @@ class Engine:
                 continue
             resolved = False
             if art.regenerate:
-                adapters.base.run_command(art.regenerate, self.worktree)
+                rcode, _rout, rerr = adapters.base.run_command(art.regenerate, self.worktree)
+                if rcode != 0:
+                    hook_failure = {"artifact": art.name, "code": rcode, "stderr": rerr[-2000:]}
+                    self.ledger.update("artifact_check", check_id, regenerate_failed=1)
+                    self.ledger.event(
+                        self.run["id"],
+                        cycle_row["id"] if cycle_row else None,
+                        "artifact_regenerate_failed",
+                        json.dumps(hook_failure),
+                    )
+                    failed.append(hook_failure)
+                    continue
                 # The artifact's own path is staged even without `generated = true`,
                 # and so is its upstream chain: one hook often refreshes the spec and
                 # the client together, and a spec left dirty here is never committed
