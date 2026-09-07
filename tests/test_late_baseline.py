@@ -120,6 +120,25 @@ def test_accept_failures_refuses_an_unobserved_project_and_inserts_no_row(repo_s
     ) == (True, {"svc": ["svc::tests/test_svc.py::test_svc_fails"]})
 
 
+def test_friction_log_names_late_baselines_in_the_run_header(repo_schema_other):
+    repo = repo_schema_other
+    _drive_to_close(repo)
+    ledger = Ledger(gitutil.repo_identity(repo))
+    run_row = ledger.one(
+        "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1", (str(repo),)
+    )
+    start_sha = run_row["start_sha"]
+    _pull_svc_into_the_sweep(repo)
+    run_cli(repo, "advance")
+    run_cli(repo, "log", "render", "--out", str(repo / "friction.md"))
+    text = (repo / "friction.md").read_text()
+    sha7 = start_sha[:7]
+    assert (
+        "- Baseline failures at start: backend=0" in text,
+        f"- Late baselines: svc=1 (at {sha7})" in text,
+    ) == (True, True)
+
+
 def test_friction_log_lists_amended_baseline_verdicts_under_human_interventions(repo):
     from conftest import git as _git
     from test_baseline_integrity import reach_refactor
