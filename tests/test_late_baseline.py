@@ -11,7 +11,16 @@ from test_baseline_integrity import BACKEND_ONLY_PLAN, PLAN, TEST_ADD
 
 
 def _drive_to_close(repo):
-    """Register BACKEND_ONLY_PLAN, start, RED, GREEN; leave cycle 1 in AWAITING_REFACTOR."""
+    """Register BACKEND_ONLY_PLAN, start, RED, GREEN; leave cycle 1 in AWAITING_REFACTOR.
+
+    Marks the schema artifact as generated so that touching it in the close sweep
+    advance does not trigger undeclared_file_touched on the backend-only cycle.
+    """
+    from conftest import git as _git
+    toml = (repo / "tdd.toml").read_text()
+    (repo / "tdd.toml").write_text(toml.replace('regenerate  = "true"', 'regenerate  = "true"\ngenerated   = true'))
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "mark schema artifact as generated")
     plan = write_plan(repo, BACKEND_ONLY_PLAN)
     run_cli(repo, "plan", "register", plan)
     out = run_cli(repo, "run", "start", "--plan", plan)
@@ -25,8 +34,8 @@ def _drive_to_close(repo):
 
 
 def _pull_svc_into_the_sweep(repo):
-    """Touching other/'s root pulls artifact `schema`'s consumer svc into the close sweep."""
-    (repo / "other" / "generated.json").write_text("{}")
+    """Touching the schema artifact path pulls svc (its consumer) into the close sweep."""
+    (repo / "other" / "schema.json").write_text('{"touched": true}')
 
 
 def test_temporary_worktree_links_ignored_directories_under_the_project_root(repo):
@@ -65,6 +74,14 @@ def test_run_start_records_the_start_sha_on_the_run_row(repo):
     run_id = out["run"]["id"]
     row = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
     assert dict(row).get("start_sha") == sha
+
+
+def test_a_failure_present_at_the_start_sha_lets_the_cycle_close(repo_schema_other):
+    repo = repo_schema_other
+    _drive_to_close(repo)
+    _pull_svc_into_the_sweep(repo)
+    out = run_cli(repo, "advance")
+    assert out["next_action"]["verb"] == "complete"
 
 
 def test_close_sweep_late_probes_an_unbaselined_project_at_the_start_sha(repo_schema_other):
