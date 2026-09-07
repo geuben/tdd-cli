@@ -6,6 +6,26 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`check_artifacts`: a failed regenerate hook is now a hard close-sweep failure.**
+  Previously, a `regenerate` hook that exited non-zero left the artifact path untouched
+  (tree hash unchanged), so the staleness probe reported "fresh" and `tdd advance` replied
+  `complete`. The exit code is now captured; a non-zero exit surfaces `fix_regression` with
+  `result.artifact_failures` listing the affected artifact(s) and their stderr.
+- **`run start` refuses when a regenerate hook fails before the first cycle.** The run row
+  is ended with `outcome = "refused"` so `tdd status` reports no active run.
+
+### Added
+
+- **`artifact_regenerate_failed` integrity event.** When a `regenerate` hook exits non-zero,
+  an `artifact_regenerate_failed` event is emitted on the cycle (or run, for `run start`)
+  with the artifact name, exit code, and last 2000 chars of stderr. It is listed in the
+  friction log under its cycle via the existing per-cycle event renderer.
+- **`artifact_check.regenerate_failed` column (ledger schema v9).** A non-zero hook exit
+  sets this flag on the `artifact_check` row. Existing ledgers are migrated on open via
+  `MIGRATIONS[8]`.
+
 ## [0.10.1] - 2026-09-06
 
 ### Fixed

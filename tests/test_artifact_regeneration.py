@@ -150,6 +150,219 @@ def test_unresolved_stale_artifact_still_emits_event(repo):
     assert event is not None, "expected a stale_artifact event for spec"
 
 
+def test_friction_log_lists_failed_regeneration_under_its_cycle(repo, tmp_path):
+    marker = tmp_path / "fail"
+    (repo / "wasm").mkdir()
+    (repo / "wasm" / "bundle.js").write_text("v1\n")
+    with (repo / "tdd.toml").open("a") as f:
+        f.write(
+            "\n[artifact.wasm]\n"
+            'path        = "wasm/bundle.js"\n'
+            'produced_by = "backend"\n'
+            f'regenerate  = "test ! -f {marker} || {{ echo boom >&2; exit 1; }}"\n'
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "declare wasm artifact")
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+
+    # Trigger a failed hook → run is left open at fix_regression
+    marker.touch()
+    adv = run_cli(repo, "advance")
+    assert adv["next_action"]["verb"] == "fix_regression", adv
+
+    friction_path = repo / "friction.md"
+    render_out = run_cli(repo, "log", "render", "--out", str(friction_path))
+    assert render_out["ok"], render_out
+
+    text = friction_path.read_text()
+    assert "Event — artifact_regenerate_failed" in text
+
+
+def test_failed_regenerate_hook_at_run_start_refuses(repo, tmp_path):
+    marker = tmp_path / "fail"
+    marker.touch()  # marker exists BEFORE run start
+    (repo / "wasm").mkdir()
+    (repo / "wasm" / "bundle.js").write_text("v1\n")
+    with (repo / "tdd.toml").open("a") as f:
+        f.write(
+            "\n[artifact.wasm]\n"
+            'path        = "wasm/bundle.js"\n'
+            'produced_by = "backend"\n'
+            f'regenerate  = "test ! -f {marker} || {{ echo boom >&2; exit 1; }}"\n'
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "declare wasm artifact")
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    status = run_cli(repo, "status")
+    assert (out["ok"], "wasm" in (out.get("error") or ""), status["result"].get("active")) == (
+        False,
+        True,
+        False,
+    )
+
+
+def test_failed_regenerate_after_stale_check_reports_hook_failure_not_stale(repo, tmp_path):
+    marker = tmp_path / "fail"
+    (repo / "wasm").mkdir()
+    (repo / "wasm" / "bundle.js").write_text("v1\n")
+    with (repo / "tdd.toml").open("a") as f:
+        f.write(
+            "\n[artifact.wasm]\n"
+            'path        = "wasm/bundle.js"\n'
+            'produced_by = "backend"\n'
+            'check       = "false"\n'
+            f'regenerate  = "test ! -f {marker} || {{ echo boom >&2; exit 1; }}"\n'
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "declare wasm artifact")
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    # run start: check=false → stale, hook succeeds (no marker) → run-level stale_artifact
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+    run_id = out["run"]["id"]
+
+    marker.touch()
+    run_cli(repo, "advance")
+
+    ledger = Ledger(gitutil.repo_identity(repo))
+    kinds = [
+        row["kind"]
+        for row in ledger.all(
+            "SELECT kind FROM integrity_event WHERE run_id = ? AND cycle_id IS NOT NULL ORDER BY id",
+            (run_id,),
+        )
+    ]
+    assert kinds == ["artifact_regenerate_failed"]
+
+
+def test_cycle_closes_once_the_regenerate_hook_recovers(repo, tmp_path):
+    marker = tmp_path / "fail"
+    (repo / "wasm").mkdir()
+    (repo / "wasm" / "bundle.js").write_text("v1\n")
+    with (repo / "tdd.toml").open("a") as f:
+        f.write(
+            "\n[artifact.wasm]\n"
+            'path        = "wasm/bundle.js"\n'
+            'produced_by = "backend"\n'
+            f'regenerate  = "test ! -f {marker} || {{ echo boom >&2; exit 1; }}"\n'
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "declare wasm artifact")
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+
+    # First advance: hook fails → fix_regression
+    marker.touch()
+    first = run_cli(repo, "advance")
+    assert first["next_action"]["verb"] == "fix_regression", first
+
+    # Remove marker so hook recovers, advance again → complete
+    marker.unlink()
+    second = run_cli(repo, "advance")
+    assert second["next_action"]["verb"] == "complete"
+
+
+def test_failed_regenerate_hook_at_close_replies_fix_regression(repo, tmp_path):
+    marker = tmp_path / "fail"
+    (repo / "wasm").mkdir()
+    (repo / "wasm" / "bundle.js").write_text("v1\n")
+    with (repo / "tdd.toml").open("a") as f:
+        f.write(
+            "\n[artifact.wasm]\n"
+            'path        = "wasm/bundle.js"\n'
+            'produced_by = "backend"\n'
+            f'regenerate  = "test ! -f {marker} || {{ echo boom >&2; exit 1; }}"\n'
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "declare wasm artifact")
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+
+    marker.touch()
+    adv = run_cli(repo, "advance")
+    assert (
+        adv["next_action"]["verb"],
+        [f["artifact"] for f in adv["result"].get("artifact_failures", [])],
+    ) == ("fix_regression", ["wasm"])
+
+
+def test_failed_regenerate_hook_emits_artifact_regenerate_failed_event(repo, tmp_path):
+    import json
+
+    marker = tmp_path / "fail"
+    (repo / "wasm").mkdir()
+    (repo / "wasm" / "bundle.js").write_text("v1\n")
+    with (repo / "tdd.toml").open("a") as f:
+        f.write(
+            "\n[artifact.wasm]\n"
+            'path        = "wasm/bundle.js"\n'
+            'produced_by = "backend"\n'
+            f'regenerate  = "test ! -f {marker} || {{ echo boom >&2; exit 1; }}"\n'
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "declare wasm artifact")
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+    run_id = out["run"]["id"]
+
+    marker.touch()
+    run_cli(repo, "advance")
+
+    ledger = Ledger(gitutil.repo_identity(repo))
+    event = ledger.one(
+        "SELECT detail FROM integrity_event WHERE run_id = ? AND kind = 'artifact_regenerate_failed'",
+        (run_id,),
+    )
+    detail = json.loads(event["detail"]) if event else {}
+    assert (detail.get("artifact"), detail.get("code"), "boom" in detail.get("stderr", "")) == (
+        "wasm",
+        1,
+        True,
+    )
+
+
+def test_failed_regenerate_hook_marks_artifact_check_regenerate_failed(repo, tmp_path):
+    marker = tmp_path / "fail"
+    (repo / "wasm").mkdir()
+    (repo / "wasm" / "bundle.js").write_text("v1\n")
+    with (repo / "tdd.toml").open("a") as f:
+        f.write(
+            "\n[artifact.wasm]\n"
+            'path        = "wasm/bundle.js"\n'
+            'produced_by = "backend"\n'
+            f'regenerate  = "test ! -f {marker} || {{ echo boom >&2; exit 1; }}"\n'
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "declare wasm artifact")
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    assert out["ok"], out
+    run_id = out["run"]["id"]
+
+    marker.touch()
+    run_cli(repo, "advance")
+
+    ledger = Ledger(gitutil.repo_identity(repo))
+    row = ledger.one(
+        "SELECT * FROM artifact_check WHERE run_id = ? AND cycle_id IS NOT NULL AND artifact = 'wasm'",
+        (run_id,),
+    )
+    assert dict(row).get("regenerate_failed") == 1
+
+
 def test_friction_log_reports_regenerated_artifacts_benignly(repo):
     """The friction log must list auto-regenerated artifacts without using stale_artifact."""
     _start_run(repo, OPENAPI_ARTIFACT_TOML)

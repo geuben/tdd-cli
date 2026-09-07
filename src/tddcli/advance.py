@@ -446,7 +446,20 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     if sha:
         touched = set(staged) | touched
 
-    regenerated = engine.check_artifacts(cycle)
+    artifact_outcome = engine.check_artifacts(cycle)
+
+    if artifact_outcome.failed:
+        names = ", ".join(f["artifact"] for f in artifact_outcome.failed)
+        return _reply(
+            engine,
+            cycle,
+            Verb.FIX_REGRESSION,
+            f"Artifact regenerate hook failed for: {names}. Fix the producer and re-run `tdd advance`.",
+            artifact_failures=artifact_outcome.failed,
+            commit=sha,
+        )
+
+    regenerated = artifact_outcome.regenerated
 
     # §6.1 — when nothing changed since GREEN, the cycle's own suites just passed on an
     # identical tree. A refactor cycle never skips: its suite is the only guard.

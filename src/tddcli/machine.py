@@ -39,6 +39,12 @@ OPENING_PHASE = {PIN: AWAITING_PIN, REFACTOR: AWAITING_REFACTOR}
 
 
 @dataclass
+class ArtifactOutcome:
+    regenerated: list[str]
+    failed: list[dict]
+
+
+@dataclass
 class SweepOutcome:
     failures: list[str]
     gates: list[tuple[str, str, str]]  # (project, kind, output)
@@ -235,13 +241,14 @@ class Engine:
 
     # -- artifacts -------------------------------------------------------
 
-    def check_artifacts(self, cycle_row) -> list[str]:
+    def check_artifacts(self, cycle_row) -> ArtifactOutcome:
         """R9.12/R9.20 — the tool regenerates; the agent is informed, not asked."""
         regenerated: list[str] = []
+        failed: list[dict] = []
         for art in self.config.artifacts.values():
             if not art.check and not art.regenerate:
                 continue
-            stale = self._artifact_stale(art)
+            stale, failure = self._artifact_stale(art)
             check_id = self.ledger.insert(
                 "artifact_check",
                 run_id=self.run["id"],
@@ -249,13 +256,34 @@ class Engine:
                 artifact=art.name,
                 stale=int(stale),
                 regenerated=0,
+                regenerate_failed=int(bool(failure)),
                 at=now(),
             )
+            if failure:
+                self.ledger.event(
+                    self.run["id"],
+                    cycle_row["id"] if cycle_row else None,
+                    "artifact_regenerate_failed",
+                    json.dumps(failure),
+                )
+                failed.append(failure)
+                continue
             if not stale:
                 continue
             resolved = False
             if art.regenerate:
-                adapters.base.run_command(art.regenerate, self.worktree)
+                rcode, _rout, rerr = adapters.base.run_command(art.regenerate, self.worktree)
+                if rcode != 0:
+                    hook_failure = {"artifact": art.name, "code": rcode, "stderr": rerr[-2000:]}
+                    self.ledger.update("artifact_check", check_id, regenerate_failed=1)
+                    self.ledger.event(
+                        self.run["id"],
+                        cycle_row["id"] if cycle_row else None,
+                        "artifact_regenerate_failed",
+                        json.dumps(hook_failure),
+                    )
+                    failed.append(hook_failure)
+                    continue
                 # The artifact's own path is staged even without `generated = true`,
                 # and so is its upstream chain: one hook often refreshes the spec and
                 # the client together, and a spec left dirty here is never committed
@@ -294,17 +322,19 @@ class Engine:
                     "stale_artifact",
                     art.name,
                 )
-        return regenerated
+        return ArtifactOutcome(regenerated=regenerated, failed=failed)
 
-    def _artifact_stale(self, art) -> bool:
+    def _artifact_stale(self, art) -> tuple[bool, dict | None]:
         if art.check:
             code, _, _ = adapters.base.run_command(art.check, self.worktree)
-            return code != 0
+            return code != 0, None
         if not art.regenerate:
-            return False
+            return False, None
         before = gitutil.tree_hash(self.worktree, [art.path])
-        adapters.base.run_command(art.regenerate, self.worktree)
-        return gitutil.tree_hash(self.worktree, [art.path]) != before
+        code, _out, err = adapters.base.run_command(art.regenerate, self.worktree)
+        if code != 0:
+            return False, {"artifact": art.name, "code": code, "stderr": err[-2000:]}
+        return gitutil.tree_hash(self.worktree, [art.path]) != before, None
 
     # -- cycle lifecycle -------------------------------------------------
 

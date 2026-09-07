@@ -183,7 +183,8 @@ an auditor compares them against reality.
 
 ### IntegrityEvent
 Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mismatch`,
-`off_protocol_invocation`, `stale_artifact`, `plan_blob_changed`, `executor_unknown`.
+`off_protocol_invocation`, `stale_artifact`, `plan_blob_changed`, `executor_unknown`,
+`artifact_regenerate_failed`.
 
 ### Blocker
 Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `context_exhausted`,
@@ -648,7 +649,12 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   close — this is one of the few hard gates (§12), because a stale contract produces a *green*
   wrong answer. When the tool resolves staleness by regenerating and committing, it records
   resolution in `artifact_check.regenerated` and the friction log surfaces it as a benign
-  "Artifacts auto-regenerated" header line; no `stale_artifact` event is emitted.
+  "Artifacts auto-regenerated" header line; no `stale_artifact` event is emitted. A non-zero exit
+  from a `regenerate` hook is a hard close-sweep failure: the tool cannot answer "is it stale?"
+  when the hook did not run to completion, so it emits `artifact_regenerate_failed` (carrying the
+  artifact name, exit code, and last 2000 chars of stderr), sets `artifact_check.regenerate_failed
+  = 1`, and surfaces `fix_regression` — the cycle stays open. `run start` refuses when a
+  regenerate hook fails before the first cycle; the run row is ended with outcome `refused`.
 
 ### 9.5 Staging and commits
 
@@ -690,6 +696,8 @@ The CLI stages; it never delegates staging to the agent, and it never runs `git 
   truthy); the friction log reads this column and renders a benign run-level line — "Artifacts
   auto-regenerated: `<name>`" — rather than an integrity event. Hand-written and generated changes
   stay independently reviewable, which matters most on exactly the contract cycles that touch both.
+  A non-zero exit from the `regenerate` command is treated as a close-sweep failure (see R9.12),
+  not as a "fresh" artifact: the exit code is never silently discarded.
 - **R9.21** `run start` refuses a dirty working tree unless `--allow-dirty` is given. When allowed,
   the pre-existing modified and untracked set is recorded and permanently excluded from authorship
   attribution, so pre-existing edits are never absorbed into the first cycle's commits.
