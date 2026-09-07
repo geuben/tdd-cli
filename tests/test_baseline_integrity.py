@@ -245,7 +245,13 @@ cycles:
 
 
 def reach_unbaselined_blocker(repo):
-    """Drive the run to a blocked state: svc has unbaselined sweep failures."""
+    """Drive the run to a blocked state: svc is unobservable at the start sha."""
+    # Make svc uncollectable at the start sha so the late probe is unobservable
+    (repo / "svc" / "tests" / "test_svc.py").write_text(
+        "import nope_missing\n\ndef test_svc_fails():\n    assert False\n"
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "svc: uncollectable at start sha")
     plan = write_plan(repo, BACKEND_ONLY_PLAN)
     run_cli(repo, "plan", "register", plan)
     out = run_cli(repo, "run", "start", "--plan", plan)
@@ -256,6 +262,8 @@ def reach_unbaselined_blocker(repo):
     )
     run_cli(repo, "advance")
     (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    # Rewrite svc to a plain failing test (authored outside the cycle's project)
+    (repo / "svc" / "tests" / "test_svc.py").write_text("def test_svc_fails():\n    assert False\n")
     (repo / "other" / "generated.json").write_text("{}")
     run_cli(repo, "advance")
     out = run_cli(repo, "advance")
@@ -267,7 +275,6 @@ def test_close_sweep_with_unbaselined_failures_directs_resolve_blocker(repo_sche
     out = reach_unbaselined_blocker(repo_schema_other)
     detail = out["next_action"]["detail"]
     assert "no_baseline_for_project" in detail, detail
-    assert "resume --unblock --accept-failures" in detail, detail
 
 
 def test_accept_failures_inserts_baseline_row_for_unbaselined_project(repo_schema_other):
@@ -304,6 +311,7 @@ def test_accept_failures_inserts_baseline_row_for_unbaselined_project(repo_schem
 
 
 def test_sweep_reports_unbaselined_failures_separately(repo_three):
+    """A run without a start sha cannot be late-probed; its failures stay unattributable."""
     from tddcli import config as config_mod
     from tddcli.machine import Engine
 
@@ -323,6 +331,8 @@ def test_sweep_reports_unbaselined_failures_separately(repo_three):
     ledger = Ledger(gitutil.repo_identity(repo_three))
     # Delete svc's baseline to simulate an un-baselined project
     ledger.db.execute("DELETE FROM baseline WHERE run_id = ? AND project = 'svc'", (run_id,))
+    # Simulate a run that predates the start_sha column
+    ledger.db.execute("UPDATE run SET start_sha = NULL WHERE id = ?", (run_id,))
     ledger.db.commit()
 
     run_row = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))

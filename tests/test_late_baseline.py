@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from conftest import run_cli, write_plan
 from tddcli import gitutil
 from tddcli.ledger import Ledger
@@ -62,3 +64,29 @@ def test_run_start_records_the_start_sha_on_the_run_row(repo):
     run_id = out["run"]["id"]
     row = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
     assert dict(row).get("start_sha") == sha
+
+
+def test_close_sweep_late_probes_an_unbaselined_project_at_the_start_sha(repo_schema_other):
+    repo = repo_schema_other
+    _drive_to_close(repo)
+    ledger = Ledger(gitutil.repo_identity(repo))
+    run_row = ledger.one(
+        "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1", (str(repo),)
+    )
+    run_id = run_row["id"]
+    start_sha = run_row["start_sha"]
+    _pull_svc_into_the_sweep(repo)
+    run_cli(repo, "advance")
+    row = ledger.one(
+        "SELECT source, failing FROM baseline WHERE run_id = ? AND project = 'svc'", (run_id,)
+    )
+    event = ledger.one(
+        "SELECT detail FROM integrity_event WHERE run_id = ? AND kind = 'baseline_late_probe'",
+        (run_id,),
+    )
+    detail = json.loads(event["detail"]) if event else {}
+    assert (
+        row["source"] if row else None,
+        json.loads(row["failing"]) if row else None,
+        detail.get("start_sha"),
+    ) == ("late_probe", ["svc::tests/test_svc.py::test_svc_fails"], start_sha)
