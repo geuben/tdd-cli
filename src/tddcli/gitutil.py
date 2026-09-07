@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import shutil
 import subprocess
-from collections.abc import Iterator, Sequence
+import tempfile
+from collections.abc import Generator, Sequence
 from pathlib import Path
 
 
@@ -143,5 +145,14 @@ def staged_paths(worktree: Path) -> list[str]:
 @contextlib.contextmanager
 def temporary_worktree(
     worktree: Path, sha: str, link_ignored_under: Sequence[str] = ()
-) -> Iterator[Path]:
-    raise NotImplementedError
+) -> Generator[Path, None, None]:
+    tmp_dir = Path(tempfile.mkdtemp(prefix="tdd-probe-"))
+    try:
+        git(worktree, "worktree", "add", "--detach", str(tmp_dir), sha)
+        yield tmp_dir
+    finally:
+        try:
+            git(worktree, "worktree", "remove", "--force", str(tmp_dir))
+        except GitError:
+            pass
+        shutil.rmtree(tmp_dir, ignore_errors=True)
