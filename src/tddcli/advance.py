@@ -475,6 +475,26 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     if not outcome.ok:
         if outcome.unbaselined:
             projects_list = ", ".join(sorted(outcome.unbaselined))
+            unobserved = {
+                n: outcome.unobserved[n] for n in outcome.unbaselined if n in outcome.unobserved
+            }
+            if unobserved:
+                reasons = "; ".join(f"{n}: {v}" for n, v in sorted(unobserved.items()))
+                return _reply(
+                    engine,
+                    cycle,
+                    Verb.RESOLVE_BLOCKER,
+                    f"Close sweep found failures in un-baselined project(s): {projects_list}. "
+                    f"The tool tried to baseline them at the run's start sha and could not observe: {reasons}. "
+                    "These are unattributable. "
+                    "File: `tdd blocker --kind no_baseline_for_project --detail '...'`. "
+                    "A human must make the suite observable at the start sha (dependencies present, "
+                    "or restart the run so it is baselined up front) and then `tdd resume --unblock --note ...`. "
+                    "Accepting failures is not available for unobserved projects.",
+                    unbaselined=outcome.unbaselined,
+                    late_probe_unobserved=outcome.unobserved,
+                    commit=sha,
+                )
             return _reply(
                 engine,
                 cycle,

@@ -181,3 +181,19 @@ def test_artifact_check_gains_regenerate_failed_column(tmp_path, ledger_home):
     reopened = Ledger(tmp_path / "somerepo")
     cols2 = {r[1] for r in reopened.db.execute("PRAGMA table_info(artifact_check)").fetchall()}
     assert "regenerate_failed" in cols2
+
+
+def test_run_gains_start_sha_column(tmp_path, ledger_home):
+    # Fresh ledger: column must exist in CREATE TABLE
+    ledger = Ledger(tmp_path / "somerepo")
+    cols = {r[1] for r in ledger.db.execute("PRAGMA table_info(run)").fetchall()}
+    assert "start_sha" in cols
+
+    # Migration path: force back to v9 (before this column was added), drop it, reopen
+    ledger._write("UPDATE meta SET value = '9' WHERE key = 'schema_version'", ())
+    ledger.db.execute("ALTER TABLE run DROP COLUMN start_sha")
+    ledger.db.close()
+
+    reopened = Ledger(tmp_path / "somerepo")
+    cols2 = {r[1] for r in reopened.db.execute("PRAGMA table_info(run)").fetchall()}
+    assert "start_sha" in cols2
