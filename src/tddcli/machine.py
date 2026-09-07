@@ -252,6 +252,14 @@ class Engine:
                 regenerate_failed=int(bool(failure)),
                 at=now(),
             )
+            if failure:
+                self.ledger.event(
+                    self.run["id"],
+                    cycle_row["id"] if cycle_row else None,
+                    "artifact_regenerate_failed",
+                    json.dumps(failure),
+                )
+                continue
             if not stale:
                 continue
             resolved = False
