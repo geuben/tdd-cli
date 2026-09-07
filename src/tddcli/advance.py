@@ -475,7 +475,9 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     if not outcome.ok:
         if outcome.unbaselined:
             projects_list = ", ".join(sorted(outcome.unbaselined))
-            unobserved = {n: outcome.unobserved[n] for n in outcome.unbaselined if n in outcome.unobserved}
+            unobserved = {
+                n: outcome.unobserved[n] for n in outcome.unbaselined if n in outcome.unobserved
+            }
             if unobserved:
                 reasons = "; ".join(f"{n}: {v}" for n, v in sorted(unobserved.items()))
                 return _reply(

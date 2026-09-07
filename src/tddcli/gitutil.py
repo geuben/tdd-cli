@@ -156,7 +156,7 @@ def temporary_worktree(
             )
             for entry in listing.splitlines():
                 entry = entry.rstrip("/")
-                rel = entry[len(root) + 1:] if entry.startswith(root + "/") else entry
+                rel = entry[len(root) + 1 :] if entry.startswith(root + "/") else entry
                 if not rel or "/" in rel:
                     continue
                 src = root_path / rel

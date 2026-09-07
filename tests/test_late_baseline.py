@@ -17,8 +17,11 @@ def _drive_to_close(repo):
     advance does not trigger undeclared_file_touched on the backend-only cycle.
     """
     from conftest import git as _git
+
     toml = (repo / "tdd.toml").read_text()
-    (repo / "tdd.toml").write_text(toml.replace('regenerate  = "true"', 'regenerate  = "true"\ngenerated   = true'))
+    (repo / "tdd.toml").write_text(
+        toml.replace('regenerate  = "true"', 'regenerate  = "true"\ngenerated   = true')
+    )
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "mark schema artifact as generated")
     plan = write_plan(repo, BACKEND_ONLY_PLAN)
@@ -26,7 +29,9 @@ def _drive_to_close(repo):
     out = run_cli(repo, "run", "start", "--plan", plan)
     assert out["ok"], out
     (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
-    (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    raise NotImplementedError\n")
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    raise NotImplementedError\n"
+    )
     run_cli(repo, "advance")  # RED -> AWAITING_IMPL
     (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
     run_cli(repo, "advance")  # GREEN -> AWAITING_REFACTOR
@@ -40,6 +45,7 @@ def _pull_svc_into_the_sweep(repo):
 
 def test_temporary_worktree_links_ignored_directories_under_the_project_root(repo):
     from conftest import git as _git
+
     gitignore = repo / ".gitignore"
     gitignore.write_text(gitignore.read_text() + "node_modules/\n")
     _git(repo, "add", "-A")
@@ -57,6 +63,7 @@ def test_temporary_worktree_checks_out_the_sha_and_is_removed_on_exit(repo):
     first = gitutil.head(repo)
     (repo / "backend" / "app" / "new.py").write_text("x = 1\n")
     from conftest import git as _git
+
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "second commit")
     with gitutil.temporary_worktree(repo, first) as tmp:
@@ -94,7 +101,9 @@ def test_a_failure_absent_at_the_start_sha_is_a_regression_in_a_late_baselined_p
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "make svc green at start sha")
     _drive_to_close(repo)
-    (repo / "svc" / "tests" / "test_svc.py").write_text("def test_svc_passes():\n    assert False\n")
+    (repo / "svc" / "tests" / "test_svc.py").write_text(
+        "def test_svc_passes():\n    assert False\n"
+    )
     _pull_svc_into_the_sweep(repo)
     out = run_cli(repo, "advance")
     assert out["next_action"]["verb"] == "fix_regression"
@@ -102,6 +111,7 @@ def test_a_failure_absent_at_the_start_sha_is_a_regression_in_a_late_baselined_p
 
 def test_accept_failures_refuses_an_unobserved_project_and_inserts_no_row(repo_schema_other):
     from test_baseline_integrity import reach_unbaselined_blocker
+
     repo = repo_schema_other
     reach_unbaselined_blocker(repo)
     ledger = Ledger(gitutil.repo_identity(repo))
@@ -111,9 +121,7 @@ def test_accept_failures_refuses_an_unobserved_project_and_inserts_no_row(repo_s
     run_id = run_row["id"]
     run_cli(repo, "blocker", "--kind", "no_baseline_for_project", "--detail", "x")
     resumed = run_cli(repo, "resume", "--unblock", "--note", "n", "--accept-failures")
-    row = ledger.one(
-        "SELECT * FROM baseline WHERE run_id = ? AND project = 'svc'", (run_id,)
-    )
+    row = ledger.one("SELECT * FROM baseline WHERE run_id = ? AND project = 'svc'", (run_id,))
     assert (
         row is None,
         resumed["result"].get("refused_from_baseline"),
@@ -143,7 +151,9 @@ def test_friction_log_lists_amended_baseline_verdicts_under_human_interventions(
     from conftest import git as _git
     from test_baseline_integrity import reach_refactor
 
-    (repo / "backend" / "tests" / "test_flaky.py").write_text("def test_flaky():\n    assert False\n")
+    (repo / "backend" / "tests" / "test_flaky.py").write_text(
+        "def test_flaky():\n    assert False\n"
+    )
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "add pre-existing flaky test")
     reach_refactor(repo)
@@ -156,7 +166,9 @@ def test_friction_log_lists_amended_baseline_verdicts_under_human_interventions(
         "UPDATE baseline SET failing = '[]' WHERE run_id = ? AND project = 'backend'", (run_id,)
     )
     ledger.db.commit()
-    (repo / "backend" / "tests" / "test_smoke.py").write_text("def test_smoke():\n    assert False\n")
+    (repo / "backend" / "tests" / "test_smoke.py").write_text(
+        "def test_smoke():\n    assert False\n"
+    )
     run_cli(repo, "advance")
     run_cli(repo, "blocker", "--kind", "pre_existing_failure", "--detail", "x")
     run_cli(repo, "resume", "--unblock", "--note", "n", "--accept-failures")
@@ -172,7 +184,9 @@ def test_baseline_amended_records_a_verdict_per_test(repo):
     from conftest import git as _git
     from test_baseline_integrity import reach_refactor
 
-    (repo / "backend" / "tests" / "test_flaky.py").write_text("def test_flaky():\n    assert False\n")
+    (repo / "backend" / "tests" / "test_flaky.py").write_text(
+        "def test_flaky():\n    assert False\n"
+    )
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "add pre-existing flaky test")
     reach_refactor(repo)
@@ -186,7 +200,9 @@ def test_baseline_amended_records_a_verdict_per_test(repo):
         "UPDATE baseline SET failing = '[]' WHERE run_id = ? AND project = 'backend'", (run_id,)
     )
     ledger.db.commit()
-    (repo / "backend" / "tests" / "test_smoke.py").write_text("def test_smoke():\n    assert False\n")
+    (repo / "backend" / "tests" / "test_smoke.py").write_text(
+        "def test_smoke():\n    assert False\n"
+    )
     run_cli(repo, "advance")
     run_cli(repo, "blocker", "--kind", "pre_existing_failure", "--detail", "x")
     run_cli(repo, "resume", "--unblock", "--note", "n", "--accept-failures")
@@ -207,7 +223,9 @@ def test_accept_failures_accepts_a_test_that_fails_at_the_start_sha(repo):
     from conftest import git as _git
     from test_baseline_integrity import reach_refactor
 
-    (repo / "backend" / "tests" / "test_flaky.py").write_text("def test_flaky():\n    assert False\n")
+    (repo / "backend" / "tests" / "test_flaky.py").write_text(
+        "def test_flaky():\n    assert False\n"
+    )
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "add pre-existing flaky test")
     reach_refactor(repo)
@@ -230,14 +248,19 @@ def test_accept_failures_accepts_a_test_that_fails_at_the_start_sha(repo):
 
 def test_accept_failures_refuses_a_test_that_passes_at_the_start_sha(repo):
     from test_baseline_integrity import reach_refactor
+
     reach_refactor(repo)
-    (repo / "backend" / "tests" / "test_smoke.py").write_text("def test_smoke():\n    assert False\n")
+    (repo / "backend" / "tests" / "test_smoke.py").write_text(
+        "def test_smoke():\n    assert False\n"
+    )
     run_cli(repo, "advance")
     run_cli(repo, "blocker", "--kind", "pre_existing_failure", "--detail", "x")
     resumed = run_cli(repo, "resume", "--unblock", "--note", "n", "--accept-failures")
     ledger = Ledger(gitutil.repo_identity(repo))
     run_id = resumed["run"]["id"]
-    row = ledger.one("SELECT failing FROM baseline WHERE run_id = ? AND project = 'backend'", (run_id,))
+    row = ledger.one(
+        "SELECT failing FROM baseline WHERE run_id = ? AND project = 'backend'", (run_id,)
+    )
     assert (
         json.loads(row["failing"]),
         resumed["result"].get("refused_from_baseline"),
@@ -262,9 +285,7 @@ def test_an_unobservable_late_probe_blocks_without_a_baseline_row(repo_schema_ot
     )
     run_id = run_row["id"]
     out = run_cli(repo, "advance")
-    row = ledger.one(
-        "SELECT * FROM baseline WHERE run_id = ? AND project = 'svc'", (run_id,)
-    )
+    row = ledger.one("SELECT * FROM baseline WHERE run_id = ? AND project = 'svc'", (run_id,))
     event = ledger.one(
         "SELECT * FROM integrity_event WHERE run_id = ? AND kind = 'baseline_late_probe_unobserved'",
         (run_id,),

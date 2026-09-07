@@ -1134,9 +1134,7 @@ def _accept_failures_into_baseline(
                 acc = []
                 ref = list(new)
             if acc:
-                ledger.update(
-                    "baseline", row["id"], failing=json.dumps(sorted(known | set(acc)))
-                )
+                ledger.update("baseline", row["id"], failing=json.dumps(sorted(known | set(acc))))
                 accepted[project] = acc
             if ref:
                 refused[project] = ref
