@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import json
-
-from conftest import git, run_cli, run_cli_text, write_plan
-from test_baseline_integrity import BACKEND_ONLY_PLAN, PLAN, TEST_ADD, reach_refactor
+from conftest import run_cli, write_plan
 from tddcli import gitutil
 from tddcli.ledger import Ledger
+from test_baseline_integrity import BACKEND_ONLY_PLAN, PLAN, TEST_ADD
 
 
 def _drive_to_close(repo):
