@@ -876,7 +876,19 @@ def cmd_run_start(args) -> Envelope:
             )
 
         engine = Engine(ledger, cfg, worktree, run)
-        engine.check_artifacts(None)
+        artifact_outcome = engine.check_artifacts(None)
+        if artifact_outcome.failed:
+            f = artifact_outcome.failed[0]
+            stderr_tail = (f.get("stderr") or "").strip()[-200:]
+            ledger.update("run", run_id, ended_at=now(), outcome="refused")
+            return failure(
+                f"artifact {f['artifact']}: regenerate hook exited {f['code']}"
+                + (f" — {stderr_tail}" if stderr_tail else "")
+                + ". The artifact cannot be kept fresh on this machine;"
+                " fix the hook or the toolchain and retry.",
+                reason="artifact_regenerate_failed",
+                artifacts=artifact_outcome.failed,
+            )
         first = engine.declared[0] if engine.declared else None
         if first is None:
             return failure("contract declares no cycles")
