@@ -84,6 +84,22 @@ def test_a_failure_present_at_the_start_sha_lets_the_cycle_close(repo_schema_oth
     assert out["next_action"]["verb"] == "complete"
 
 
+def test_a_failure_absent_at_the_start_sha_is_a_regression_in_a_late_baselined_project(
+    repo_schema_other,
+):
+    repo = repo_schema_other
+    from conftest import git as _git
+
+    (repo / "svc" / "tests" / "test_svc.py").write_text("def test_svc_passes():\n    assert True\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "make svc green at start sha")
+    _drive_to_close(repo)
+    (repo / "svc" / "tests" / "test_svc.py").write_text("def test_svc_passes():\n    assert False\n")
+    _pull_svc_into_the_sweep(repo)
+    out = run_cli(repo, "advance")
+    assert out["next_action"]["verb"] == "fix_regression"
+
+
 def test_close_sweep_late_probes_an_unbaselined_project_at_the_start_sha(repo_schema_other):
     repo = repo_schema_other
     _drive_to_close(repo)
