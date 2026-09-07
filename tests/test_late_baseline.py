@@ -100,6 +100,27 @@ def test_a_failure_absent_at_the_start_sha_is_a_regression_in_a_late_baselined_p
     assert out["next_action"]["verb"] == "fix_regression"
 
 
+def test_an_unobservable_late_probe_blocks_without_a_baseline_row(repo_schema_other):
+    repo = repo_schema_other
+    _drive_to_close(repo)
+    ledger = Ledger(gitutil.repo_identity(repo))
+    run_row = ledger.one(
+        "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1", (str(repo),)
+    )
+    run_id = run_row["id"]
+    ledger.db.execute("UPDATE run SET start_sha = NULL WHERE id = ?", (run_id,))
+    ledger.db.commit()
+    _pull_svc_into_the_sweep(repo)
+    out = run_cli(repo, "advance")
+    baseline_row = ledger.one(
+        "SELECT * FROM baseline WHERE run_id = ? AND project = 'svc'", (run_id,)
+    )
+    detail = out["next_action"].get("detail", "")
+    assert out["next_action"]["verb"] == "blocked"
+    assert baseline_row is None
+    assert "--accept-failures" not in detail
+
+
 def test_close_sweep_late_probes_an_unbaselined_project_at_the_start_sha(repo_schema_other):
     repo = repo_schema_other
     _drive_to_close(repo)
