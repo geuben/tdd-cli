@@ -1146,8 +1146,18 @@ def _accept_failures_into_baseline(
                 accepted[project] = acc
             if ref:
                 refused[project] = ref
-    if accepted:
-        ledger.event(run_id, None, "baseline_amended", json.dumps(accepted))
+    run_row = ledger.one("SELECT start_sha FROM run WHERE id = ?", (run_id,))
+    start_sha = run_row["start_sha"] if run_row else None
+    verdicts: dict[str, dict] = {}
+    for project in set(list(accepted.keys()) + list(refused.keys())):
+        entry: dict = {"start_sha": start_sha}
+        if project in accepted:
+            entry["accepted"] = {t: "fails at start sha" for t in accepted[project]}
+        if project in refused:
+            entry["refused"] = {t: "passes at start sha" for t in refused[project]}
+        verdicts[project] = entry
+    if verdicts:
+        ledger.event(run_id, None, "baseline_amended", json.dumps(verdicts))
     return accepted, refused
 
 
