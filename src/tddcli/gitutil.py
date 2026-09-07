@@ -149,6 +149,25 @@ def temporary_worktree(
     tmp_dir = Path(tempfile.mkdtemp(prefix="tdd-probe-"))
     try:
         git(worktree, "worktree", "add", "--detach", str(tmp_dir), sha)
+        for root in link_ignored_under:
+            root_path = worktree / root
+            listing = git(
+                worktree, "ls-files", "-o", "-i", "--exclude-standard", "--directory", "--", root
+            )
+            for entry in listing.splitlines():
+                entry = entry.rstrip("/")
+                rel = entry[len(root) + 1:] if entry.startswith(root + "/") else entry
+                if not rel or "/" in rel:
+                    continue
+                src = root_path / rel
+                dst = tmp_dir / root / rel
+                if dst.exists() or dst.is_symlink():
+                    continue
+                try:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    dst.symlink_to(src)
+                except OSError:
+                    pass
         yield tmp_dir
     finally:
         try:
