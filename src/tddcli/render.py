@@ -31,11 +31,26 @@ def friction_log(ledger: Ledger, run) -> str:
         f"- Started: {run['started_at']}  Ended: {run['ended_at'] or '—'}"
         f"  Outcome: {run['outcome'] or 'live'}"
     )
-    baselines = ledger.baselines(run["id"])
+    all_baseline_rows = ledger.all(
+        "SELECT project, failing, source FROM baseline WHERE run_id = ?", (run["id"],)
+    )
+    run_start_baselines = {
+        r["project"]: json.loads(r["failing"])
+        for r in all_baseline_rows
+        if r["source"] != "late_probe"
+    }
+    late_probe_rows = [r for r in all_baseline_rows if r["source"] == "late_probe"]
     a(
         "- Baseline failures at start: "
-        + (", ".join(f"{k}={len(v)}" for k, v in baselines.items()) or "none")
+        + (", ".join(f"{k}={len(v)}" for k, v in run_start_baselines.items()) or "none")
     )
+    if late_probe_rows:
+        run_start_sha = run["start_sha"] or ""
+        sha7 = run_start_sha[:7] if run_start_sha else "unknown"
+        parts = ", ".join(
+            f"{r['project']}={len(json.loads(r['failing']))}" for r in late_probe_rows
+        )
+        a(f"- Late baselines: {parts} (at {sha7})")
     regen_rows = ledger.all(
         "SELECT DISTINCT artifact FROM artifact_check WHERE run_id = ? AND regenerated = 1",
         (run["id"],),
