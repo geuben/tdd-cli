@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from conftest import git, run_cli, write_plan
 from tddcli import gitutil
-from tddcli.ledger import Ledger
+from tddcli.ledger import SCHEMA_VERSION, Ledger
 
 PLAN = """---
 cycles:
@@ -71,7 +71,7 @@ def test_v7_ledger_is_upgraded_in_place_to_v8(ledger_home, tmp_path):
     rows = led2.all("SELECT * FROM note")
     assert rows == []
     version = led2.one("SELECT value FROM meta WHERE key='schema_version'")
-    assert version["value"] == "8"
+    assert version["value"] == str(SCHEMA_VERSION)
 
 
 def test_note_after_run_end_is_run_level_on_the_latest_run(repo):
