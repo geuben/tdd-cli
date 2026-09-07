@@ -45,10 +45,20 @@ class ArtifactOutcome:
 
 
 @dataclass
+class StartShaProbe:
+    observed: bool
+    reason: str
+    failing: set[str]
+    collected: int
+    start_sha: str | None
+
+
+@dataclass
 class SweepOutcome:
     failures: list[str]
     gates: list[tuple[str, str, str]]  # (project, kind, output)
     unbaselined: dict[str, list[str]] = field(default_factory=dict)
+    unobserved: dict[str, str] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -101,6 +111,75 @@ class Engine:
             "projects": json.loads(cycle_row["projects"]) if cycle_row else [],
             "executor": self.run["executor_model"],
         }
+
+    # -- late probe ----------------------------------------------------------
+
+    def probe_at_start_sha(self, name: str) -> StartShaProbe:
+        start_sha = self.run["start_sha"]
+        if not start_sha:
+            return StartShaProbe(
+                observed=False,
+                reason="run predates start_sha; restart the run",
+                failing=set(),
+                collected=0,
+                start_sha=None,
+            )
+        project = self.config.project(name)
+        try:
+            with gitutil.temporary_worktree(
+                self.worktree, start_sha, link_ignored_under=[project.root]
+            ) as tmp:
+                adapter = adapters.build(project, tmp)
+                started = time.monotonic()
+                verdict = adapter.run(None)
+                collection = adapter.collect()
+                heartbeat(
+                    event="project_completed",
+                    project=name,
+                    phase="LATE_PROBE",
+                    elapsed_s=round(time.monotonic() - started, 2),
+                )
+        except gitutil.GitError as exc:
+            return StartShaProbe(
+                observed=False,
+                reason=str(exc),
+                failing=set(),
+                collected=0,
+                start_sha=start_sha,
+            )
+        if verdict.error:
+            return StartShaProbe(
+                observed=False,
+                reason=verdict.error,
+                failing=set(),
+                collected=0,
+                start_sha=start_sha,
+            )
+        if not collection.tests and collection.failed_files:
+            reason = f"R9.5a: {len(collection.failed_files)} file(s) failed to collect"
+            return StartShaProbe(
+                observed=False,
+                reason=reason,
+                failing=set(),
+                collected=0,
+                start_sha=start_sha,
+            )
+        if collection.tests and not verdict.passed and not verdict.failed:
+            reason = "R9.5a: collected but ran nothing"
+            return StartShaProbe(
+                observed=False,
+                reason=reason,
+                failing=set(),
+                collected=len(collection.tests),
+                start_sha=start_sha,
+            )
+        return StartShaProbe(
+            observed=True,
+            reason="",
+            failing=set(verdict.failed),
+            collected=len(collection.tests),
+            start_sha=start_sha,
+        )
 
     # -- suite execution -------------------------------------------------
 
@@ -189,6 +268,7 @@ class Engine:
         failures: list[str] = []
         gates: list[tuple[str, str, str]] = []
         unbaselined: dict[str, list[str]] = {}
+        unobserved: dict[str, str] = {}
 
         for name in names:
             project = self.config.project(name)
@@ -202,8 +282,54 @@ class Engine:
                 elapsed_s=round(time.monotonic() - started, 2),
             )
             if name not in baselines:
-                if verdict.failed:
+                probe = self.probe_at_start_sha(name)
+                if probe.observed:
+                    self.ledger.insert(
+                        "baseline",
+                        run_id=self.run["id"],
+                        project=name,
+                        failing=json.dumps(sorted(probe.failing)),
+                        captured_at=now(),
+                        source="late_probe",
+                    )
+                    self.ledger.insert(
+                        "collection_snapshot",
+                        run_id=self.run["id"],
+                        project=name,
+                        tests=json.dumps([]),
+                        failed_files=json.dumps([]),
+                        captured_at=now(),
+                    )
+                    self.ledger.event(
+                        self.run["id"],
+                        cycle_row["id"],
+                        "baseline_late_probe",
+                        json.dumps(
+                            {
+                                "project": name,
+                                "start_sha": probe.start_sha,
+                                "failing": sorted(probe.failing),
+                                "collected": probe.collected,
+                            }
+                        ),
+                    )
+                    baselines[name] = probe.failing
+                    failures.extend(f for f in verdict.failed if f not in probe.failing)
+                else:
+                    self.ledger.event(
+                        self.run["id"],
+                        cycle_row["id"],
+                        "baseline_late_probe_unobserved",
+                        json.dumps(
+                            {
+                                "project": name,
+                                "start_sha": probe.start_sha,
+                                "reason": probe.reason,
+                            }
+                        ),
+                    )
                     unbaselined[name] = sorted(verdict.failed)
+                    unobserved[name] = probe.reason
             else:
                 base = baselines[name]
                 failures.extend(f for f in verdict.failed if f not in base)
@@ -237,7 +363,9 @@ class Engine:
                 )
                 if not gate.ok:
                     gates.append((name, kind, gate.output))
-        return SweepOutcome(failures=failures, gates=gates, unbaselined=unbaselined)
+        return SweepOutcome(
+            failures=failures, gates=gates, unbaselined=unbaselined, unobserved=unobserved
+        )
 
     # -- artifacts -------------------------------------------------------
 

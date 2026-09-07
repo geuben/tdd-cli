@@ -18,8 +18,9 @@ def _drive_to_close(repo):
     assert out["ok"], out
     (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
     (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    raise NotImplementedError\n")
-    run_cli(repo, "advance")
+    run_cli(repo, "advance")  # RED -> AWAITING_IMPL
     (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    run_cli(repo, "advance")  # GREEN -> AWAITING_REFACTOR
     return out
 
 
