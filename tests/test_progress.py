@@ -151,3 +151,25 @@ def test_status_reports_collecting_baseline(repo):
     out = run_cli(repo, "status")
     assert out["result"]["status"] == "collecting_baseline"
     assert out["next_action"]["verb"] == "await_baseline"
+
+
+def open_stale_claim(repo):
+    """Create a baseline claim whose collector pid is guaranteed dead."""
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    led = Ledger(gitutil.repo_identity(repo))
+    led.claim(
+        str(repo),
+        hostname=socket.gethostname(),
+        pid=999_999_999,
+        projects_total=1,
+    )
+    return plan
+
+
+def test_status_on_a_stale_claim_does_not_tell_the_agent_to_wait(repo):
+    open_stale_claim(repo)
+    out = run_cli(repo, "status")
+    assert out["next_action"]["verb"] != "await_baseline", (
+        "status must not tell the agent to poll when the baseline collector is dead"
+    )
