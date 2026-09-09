@@ -102,6 +102,8 @@ def _collecting_envelope(claim: dict) -> Envelope:
             "projects_total": claim["projects_total"],
             "current_project": claim["current_project"],
             "elapsed_s": _claim_elapsed_s(claim),
+            "stale": claim["stale"],
+            "pid": claim["pid"],
         },
         next_action=NextAction(
             Verb.AWAIT_BASELINE,
