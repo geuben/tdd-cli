@@ -297,8 +297,10 @@ raise the PR — see Done-criteria below.
   line for `tddcli`: `491 passed` (0 baseline failures); anything else means the branch moved.
 - The referee is the **released** tdd-cli (see the comment at the top of `tdd.toml`), not this
   working tree. The `tdd` on PATH here is the venv's *editable* install of the tree you are
-  editing, so run every `tdd` command in this plan as `uvx tdd-cli@0.10.1 <args>` (or
-  `uv tool install tdd-cli==0.10.1` once and use that binary).
+  editing, so run every `tdd` command in this plan as `uvx --from tdd-cli==0.10.1 tdd <args>` (or
+  `uv tool install tdd-cli==0.10.1` once and use that binary). Note the `--from` form: the
+  package is `tdd-cli` but the executable is `tdd`, so `uvx tdd-cli@0.10.1` fails with
+  "An executable named `tdd-cli` is not provided by package `tdd-cli`" — verified at plan time.
 - Verbs this plan will hit: `write_test` / `write_implementation` / `refactor_or_advance` on
   cycles 1, 2, 4; `write_test` then `refactor_or_advance` on the pin (cycle 3), where the tool
   expects the test to pass on arrival; `refactor_or_advance` alone on cycle 5 (refactor cycle, no
