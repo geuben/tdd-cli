@@ -1437,13 +1437,19 @@ def cmd_progress(args) -> Envelope:
             if args.json:
                 return envelope
             result = envelope.result
-            current = (
-                f" (current: {result['current_project']})" if result["current_project"] else ""
-            )
-            sys.stdout.write(
-                f"collecting baseline: {result['projects_done']}/{result['projects_total']}"
-                f" projects{current} — {result['elapsed_s']}s elapsed\n"
-            )
+            if result["stale"]:
+                sys.stdout.write(
+                    f"baseline collector (pid {result['pid']}) is dead —"
+                    " run `tdd run start --plan <path>` to recover\n"
+                )
+            else:
+                current = (
+                    f" (current: {result['current_project']})" if result["current_project"] else ""
+                )
+                sys.stdout.write(
+                    f"collecting baseline: {result['projects_done']}/{result['projects_total']}"
+                    f" projects{current} — {result['elapsed_s']}s elapsed\n"
+                )
             envelope.silent = True
             return envelope
         return failure("no runs recorded for this worktree")
