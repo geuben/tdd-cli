@@ -947,6 +947,16 @@ def cmd_status(args) -> Envelope:
     if run is None:
         claim = ledger.active_claim(str(worktree))
         if claim is not None:
+            if claim["stale"]:
+                return Envelope(
+                    result={"status": "collecting_baseline", "stale": True, "pid": claim["pid"]},
+                    next_action=NextAction(
+                        Verb.CONFIRM_CYCLE_APPLICABLE,
+                        "Baseline collector (pid {}) is dead; re-run `tdd run start --plan <path>` to recover.".format(
+                            claim["pid"]
+                        ),
+                    ),
+                )
             return _collecting_envelope(claim)
         return Envelope(
             result={"active": False},
