@@ -73,6 +73,20 @@ def test_topic_paths_exist_in_the_repository():
         assert (REPO_ROOT / topic.path).is_file(), topic.path
 
 
+def test_the_packaged_copy_wins_over_the_repository_one(repo, monkeypatch, tmp_path):
+    """An installed wheel must never read a checkout that happens to sit above it.
+
+    Only the packaged copy is guaranteed to match the binary — which is the whole
+    reason the docs are shipped rather than fetched.
+    """
+    packaged = tmp_path / "_docs" / "docs"
+    packaged.mkdir(parents=True)
+    (packaged / "harness-integration.md").write_text("packaged copy\n")
+    monkeypatch.setattr(docs, "_PACKAGED", tmp_path / "_docs")
+
+    assert run_cli_text(repo, "docs", "harness") == "packaged copy\n"
+
+
 def test_a_missing_packaged_file_reports_a_packaging_fault(repo, monkeypatch):
     """Not a user error: there is no flag they could have passed instead."""
     monkeypatch.setattr(docs, "_SOURCE", Path("/nonexistent"))
