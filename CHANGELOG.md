@@ -36,6 +36,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   and no longer recommends `--accept-failures`.
 - **The `no_baseline_for_project` reply no longer recommends `--accept-failures`** for
   unobservable projects.
+- **A dead baseline collector no longer bricks the worktree.** When a `tdd run start`
+  process is killed during baseline collection, the stale `baseline_claim` row was left
+  behind. `tdd status` and `tdd progress` computed `stale: true` correctly but emitted
+  `await_baseline` anyway — a non-terminal verb that instructed autonomous executors to
+  poll forever. Both commands now emit `confirm_cycle_applicable` with `result.stale == true`
+  and `result.pid` when the collector pid is dead, and the `detail` names the recovery
+  action: re-run `tdd run start --plan <path>`. The `collecting_baseline` result body always
+  carries `stale` and `pid` so callers can inspect liveness without a separate `tdd fleet`
+  call. (Fixes #115.)
 - **`check_artifacts`: a failed regenerate hook is now a hard close-sweep failure.**
   Previously, a `regenerate` hook that exited non-zero left the artifact path untouched
   (tree hash unchanged), so the staleness probe reported "fresh" and `tdd advance` replied

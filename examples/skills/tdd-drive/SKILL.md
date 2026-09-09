@@ -57,8 +57,11 @@ repository.
   `tdd annotate --key <k> --value "<your judgement>"`. Then `tdd advance`.
 - **resolve_blocker** — you are wedged. If you can see the cause, fix it; otherwise
   `tdd blocker --kind <kind> --detail "<what and why>"` and report it.
-- **await_baseline** — poll `tdd progress` until the baseline completes. Never re-run
-  `tdd run start`.
+- **await_baseline** — the collector pid is alive; poll `tdd progress` until the
+  baseline completes. Never re-run `tdd run start` against a live claim.
+- **confirm_cycle_applicable** (from a stale claim) — `result.stale == true` means the
+  baseline collector is dead. Re-run `tdd run start --plan <path>` to release the dead
+  claim and restart collection.
 - **complete** / **blocked** — terminal. Report the outcome; if `detail` asks for it,
   run `tdd log render` first.
 

@@ -467,8 +467,10 @@ site names itself.
 **`verb_set_version: 2`** — added `await_baseline` (issue #2): a baseline can take minutes on a
 real project (R10.3/R10.4's per-file collection), and a polling agent that inherited a run it did
 not start had no verb telling it to wait rather than re-run. `await_baseline` is non-terminal;
-`tdd progress` and `tdd status` emit it while a `baseline_claim` is open and no run row exists yet
-(§8.3).
+`tdd progress` and `tdd status` emit it while a `baseline_claim` is open, no run row exists yet,
+and the collector pid is **alive** (§8.3). When the pid is dead (`result.stale == true`), both
+commands emit `confirm_cycle_applicable` instead — the recovery action is `tdd run start --plan
+<path>`, which releases the stale claim and reclaims (issue #115).
 
 ### 8.1 Setup
 | Command | Behaviour |
