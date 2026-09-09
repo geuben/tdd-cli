@@ -183,3 +183,12 @@ def test_collecting_baseline_result_reports_claim_liveness(repo):
     assert "pid" in out["result"], "collecting_baseline result must include pid field"
     assert out["result"]["stale"] is False
     assert out["result"]["pid"] == os.getpid()
+
+
+def test_progress_json_and_status_agree_on_a_stale_claim(repo):
+    open_stale_claim(repo)
+    progress_out = run_cli(repo, "progress", "--json")
+    status_out = run_cli(repo, "status")
+    assert progress_out["result"].get("stale") is True
+    assert status_out["result"].get("stale") is True
+    assert progress_out["result"].get("pid") == status_out["result"].get("pid")
