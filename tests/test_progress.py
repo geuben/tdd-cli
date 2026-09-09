@@ -173,3 +173,13 @@ def test_status_on_a_stale_claim_does_not_tell_the_agent_to_wait(repo):
     assert out["next_action"]["verb"] != "await_baseline", (
         "status must not tell the agent to poll when the baseline collector is dead"
     )
+
+
+def test_collecting_baseline_result_reports_claim_liveness(repo):
+    open_claim(repo)
+    out = run_cli(repo, "progress", "--json")
+    assert out["result"]["status"] == "collecting_baseline"
+    assert "stale" in out["result"], "collecting_baseline result must include stale field"
+    assert "pid" in out["result"], "collecting_baseline result must include pid field"
+    assert out["result"]["stale"] is False
+    assert out["result"]["pid"] == os.getpid()
