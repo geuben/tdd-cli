@@ -192,3 +192,10 @@ def test_progress_json_and_status_agree_on_a_stale_claim(repo):
     assert progress_out["result"].get("stale") is True
     assert status_out["result"].get("stale") is True
     assert progress_out["result"].get("pid") == status_out["result"].get("pid")
+
+
+def test_bare_progress_names_the_dead_collector_and_the_recovery_command(repo):
+    open_stale_claim(repo)
+    text = run_cli_text(repo, "progress")
+    assert "999999999" in text, "bare progress must include the dead pid"
+    assert "run start" in text, "bare progress must name the recovery command"
