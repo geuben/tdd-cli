@@ -33,6 +33,9 @@ from . import (
 from . import (
     contract as contract_mod,
 )
+from . import (
+    docs as docs_mod,
+)
 from . import target_lint as target_lint_mod
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
@@ -189,6 +192,7 @@ def cmd_init(args) -> Envelope:
         next_action=NextAction(
             Verb.CONFIRM_CYCLE_APPLICABLE,
             "Review tdd.toml: confirm roots, add lint/typecheck commands and artifact edges."
+            " Then read `tdd docs harness` before driving a run."
             + (
                 f" No supported adapter detected for: {', '.join(unmatched)} —"
                 " declare one manually (third-party adapters register under the"
@@ -1415,13 +1419,59 @@ def cmd_metrics(args) -> Envelope:
     )
 
 
+def cmd_docs(args) -> Envelope:
+    """The shipped documentation, printed. No network, and versioned with the binary.
+
+    With no topic this is a machine-readable index — an agent that has just met
+    `tdd` needs to know what it can read before it reads any of it.
+    """
+    if args.topic is None:
+        return Envelope(
+            result={
+                "topics": [
+                    {"name": t.name, "summary": t.summary, "path": t.path} for t in docs_mod.TOPICS
+                ]
+            },
+            next_action=NextAction(
+                Verb.CONFIRM_CYCLE_APPLICABLE,
+                "Read `tdd docs harness` before driving a run: it specifies the envelope,"
+                " the verb set, and the rules a driving skill must obey.",
+            ),
+        )
+    if args.topic not in docs_mod.BY_NAME:
+        known = ", ".join(t.name for t in docs_mod.TOPICS)
+        return failure(f"unknown docs topic {args.topic!r}; known topics: {known}")
+    try:
+        sys.stdout.write(docs_mod.read(args.topic))
+    except FileNotFoundError as exc:
+        return failure(str(exc))
+    return Envelope(
+        result={"topic": args.topic},
+        next_action=NextAction(Verb.COMPLETE, "Documentation rendered."),
+        silent=True,
+    )
+
+
 # -- parser --------------------------------------------------------------
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="tdd", description=__doc__)
+    p = argparse.ArgumentParser(
+        prog="tdd",
+        description=__doc__,
+        # An agent reads --help unprompted and will never guess `tdd docs` exists.
+        # This line is the whole discovery hop to the shipped protocol spec.
+        epilog=(
+            "Driving this tool from an agent? Run `tdd docs` for the shipped"
+            " documentation — `tdd docs harness` specifies the envelope and verb set."
+        ),
+    )
     p.add_argument("--version", action="version", version=f"tdd-cli {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
+
+    s = sub.add_parser("docs", help="print the documentation shipped with this version")
+    s.add_argument("topic", nargs="?", help="omit to list the available topics")
+    s.set_defaults(fn=cmd_docs)
 
     s = sub.add_parser("init", help="scaffold tdd.toml for review")
     s.add_argument("--force", action="store_true")

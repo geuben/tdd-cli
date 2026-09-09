@@ -18,6 +18,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`tdd docs [topic]` prints the documentation shipped with this version.** The wheel now
+  carries `docs/harness-integration.md`, both example skills, the hooks README, the example
+  plan, and the README under `tddcli/_docs/`. An agent meeting the tool in an unfamiliar
+  project can read the protocol without network access — and without the version hazard of
+  fetching a skill from `main` that targets a different `verb_set_version` than the installed
+  binary emits. `tdd docs` with no topic returns a machine-readable index; `tdd --help` and
+  `tdd init` now point at it.
 - **`artifact_regenerate_failed` integrity event.** When a `regenerate` hook exits non-zero,
   an `artifact_regenerate_failed` event is emitted on the cycle (or run, for `run start`)
   with the artifact name, exit code, and last 2000 chars of stderr. It is listed in the
