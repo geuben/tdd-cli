@@ -321,3 +321,44 @@ def test_a_passing_gate_is_not_reexecuted_at_an_unchanged_tree(repo, tmp_path):
     # (could be fix_regression again due to suite failure, but lint must NOT re-run)
 
     assert counter.read_text().count("\n") == 1
+
+
+# ── cycle 12 ── a skipped gate still records a gate_result row, marked skipped
+
+
+def test_a_skipped_gate_records_a_skipped_row(repo, tmp_path):
+    """Same scenario as cycle 11: lint passes first close, skipped second close.
+    The second gate_result row must have skipped=1."""
+    counter = tmp_path / "lint-count"
+    lint_cmds = [f"sh -c 'echo x >> {counter}'"]
+
+    (repo / "tdd.toml").write_text(_toml(lint_cmds))
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "configure gates")
+
+    plan = write_plan(repo, SIMPLE_PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    assert run_cli(repo, "run", "start", "--plan", plan)["ok"]
+
+    # RED/GREEN
+    (repo / "backend" / "tests" / "test_gate_probe.py").write_text(_TEST)
+    (repo / "backend" / "app" / "probe.py").write_text(_STUB)
+    assert run_cli(repo, "advance")["next_action"]["verb"] == "write_implementation"
+    (repo / "backend" / "app" / "probe.py").write_text(_IMPL)
+    assert run_cli(repo, "advance")["next_action"]["verb"] == "refactor_or_advance"
+
+    # First close: failing test (dirty) → lint passes
+    (repo / "backend" / "tests" / "test_fail.py").write_text("def test_fail():\n    assert False\n")
+    out1 = run_cli(repo, "advance")
+    run_id = out1["run"]["id"]
+    assert out1["next_action"]["verb"] == "fix_regression", out1
+
+    # Second close: no tree change → lint skipped
+    run_cli(repo, "advance")
+
+    led = Ledger(gitutil.repo_identity(repo))
+    rows = led.all(
+        "SELECT skipped FROM gate_result WHERE run_id = ? AND project = 'backend' AND kind = 'lint' ORDER BY id",
+        (run_id,),
+    )
+    assert [r["skipped"] for r in rows] == [0, 1]
