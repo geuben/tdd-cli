@@ -63,7 +63,9 @@ def test_gradle_scans_sources_to_map_an_id_to_its_file(tmp_path):
     )
     result = adapter.scan_target_paths()
     assert result == {
-        "com.example.feature.BarTest/rejectsAnEmptyName": "src/test/kotlin/com/example/feature/BarTest.kt"
+        "com.example.feature.BarTest/rejectsAnEmptyName": [
+            "src/test/kotlin/com/example/feature/BarTest.kt"
+        ]
     }
 
 
@@ -93,7 +95,7 @@ def test_xctest_scans_sources_to_map_an_id_to_its_file(tmp_path):
         [("AppTests/RecTests.swift", _REC_TESTS_SWIFT)],
     )
     result = adapter.scan_target_paths()
-    assert result == {"AppTests/RecTests/testStopsRecording": "AppTests/RecTests.swift"}
+    assert result == {"AppTests/RecTests/testStopsRecording": ["AppTests/RecTests.swift"]}
 
 
 def test_a_scan_that_matches_other_than_one_file_says_why(tmp_path):
@@ -101,7 +103,7 @@ def test_a_scan_that_matches_other_than_one_file_says_why(tmp_path):
 
     # Case 1: id absent from all source files → not_found_in_sources
     (tmp_path / "case1").mkdir()
-    adapter1 = _gradle_adapter_for(tmp_path / "case1")  # no test files with that id
+    _gradle_adapter_for(tmp_path / "case1")  # creates dirs only; no test files with that id
     plan_text1 = (
         "---\ncycles:\n"
         "  - n: 1\n    project: app\n    refactor_cycle: true\n"
@@ -116,14 +118,13 @@ def test_a_scan_that_matches_other_than_one_file_says_why(tmp_path):
     # Case 2: id appears in two files → ambiguous_id
     dup_kt = _BAR_TEST_KT  # same package + class in both files
     (tmp_path / "case2").mkdir()
-    adapter2 = _gradle_adapter_for(
+    _gradle_adapter_for(
         tmp_path / "case2",
         [
             ("src/test/kotlin/com/example/feature/BarTest.kt", dup_kt),
             ("src/test/kotlin/dup/BarTest.kt", dup_kt),
         ],
-    )
-    _ = adapter2  # adapter created for side effects (files written)
+    )  # creates dirs and test files for the resolver to scan
     plan_text2 = plan_text1
     (tmp_path / "case2" / "tdd.toml").write_text(_GRADLE_TOML)
     cfg2 = config_mod.load(tmp_path / "case2")

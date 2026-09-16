@@ -200,14 +200,14 @@ class XCTestAdapter(Adapter):
                 ids.add(self.qualify(f"{bundle}/{class_}/{method}"))
         return ids
 
-    def scan_target_paths(self) -> dict[str, str]:
+    def scan_target_paths(self) -> dict[str, list[str]]:
         bundle = self._bundle_from_test_command()
-        result: dict[str, str] = {}
+        result: dict[str, list[str]] = {}
         for path in self._test_files():
             try:
                 for qualified_id in self._grep_swift_tests(path, bundle):
                     native = self.strip(qualified_id)
-                    result[native] = str(path.relative_to(self.root))
+                    result.setdefault(native, []).append(str(path.relative_to(self.root)))
             except OSError:
                 pass
         return result
