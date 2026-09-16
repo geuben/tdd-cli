@@ -197,3 +197,22 @@ def test_run_gains_start_sha_column(tmp_path, ledger_home):
     reopened = Ledger(tmp_path / "somerepo")
     cols2 = {r[1] for r in reopened.db.execute("PRAGMA table_info(run)").fetchall()}
     assert "start_sha" in cols2
+
+
+def test_gate_result_gains_tree_hash_and_skipped_columns(tmp_path, ledger_home):
+    # Fresh ledger: both columns must exist in CREATE TABLE
+    ledger = Ledger(tmp_path / "somerepo")
+    cols = {r[1] for r in ledger.db.execute("PRAGMA table_info(gate_result)").fetchall()}
+    assert "tree_hash" in cols
+    assert "skipped" in cols
+
+    # Migration path: force back to v10 (before these columns), drop them, reopen
+    ledger._write("UPDATE meta SET value = '10' WHERE key = 'schema_version'", ())
+    ledger.db.execute("ALTER TABLE gate_result DROP COLUMN tree_hash")
+    ledger.db.execute("ALTER TABLE gate_result DROP COLUMN skipped")
+    ledger.db.close()
+
+    reopened = Ledger(tmp_path / "somerepo")
+    cols2 = {r[1] for r in reopened.db.execute("PRAGMA table_info(gate_result)").fetchall()}
+    assert "tree_hash" in cols2
+    assert "skipped" in cols2
