@@ -65,3 +65,16 @@ def resolve(contract, cfg, worktree: Path) -> dict:
                     )
 
     return {"plan": contract.plan_path, "paths": paths, "unresolved": unresolved}
+
+
+def render(result: dict) -> str:
+    paths = result.get("paths", [])
+    unresolved = result.get("unresolved", [])
+    total = len(paths) + len(unresolved)
+    lines = ["cycle  field  project  path"]
+    for row in paths:
+        lines.append(f"{row['cycle']}  {row['field']}  {row['project']}  {row['path']}")
+    for row in unresolved:
+        lines.append(f"— unresolved ({row['reason']}): {row['id']}")
+    lines.append(f"{total} ids · {len(paths)} resolved · {len(unresolved)} unresolved")
+    return "\n".join(lines) + "\n"

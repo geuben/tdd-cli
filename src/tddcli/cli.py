@@ -532,9 +532,13 @@ def cmd_plan_paths(args) -> Envelope:
     except contract_mod.ContractError as exc:
         return failure(f"malformed plan contract: {exc}", plan=str(args.plan))
     result = plan_paths_mod.resolve(contract, cfg, worktree)
+    if args.json:
+        return Envelope(result=result, next_action=NextAction(Verb.COMPLETE, "Paths resolved."))
+    sys.stdout.write(plan_paths_mod.render(result))
     return Envelope(
         result=result,
-        next_action=NextAction(Verb.COMPLETE, "Paths resolved."),
+        next_action=NextAction(Verb.COMPLETE, "Paths rendered."),
+        silent=True,
     )
 
 
