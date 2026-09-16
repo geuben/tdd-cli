@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import leases
+from .ledger import claim_is_stale
 
 
 def open_readonly(path: Path) -> sqlite3.Connection | None:
@@ -84,6 +85,8 @@ def _claims(conn: sqlite3.Connection) -> list[dict]:
             "projects_total": r["projects_total"],
             "current_project": r["current_project"],
             "elapsed_s": _age_s(r["started_at"]),
+            "pid": r["pid"],
+            "stale": claim_is_stale(r["hostname"], r["pid"], r["started_at"]),
         }
         for r in rows
     ]

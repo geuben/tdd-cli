@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import sqlite3
 import subprocess
 import time
@@ -174,9 +175,10 @@ def test_fleet_claim_rows_report_collector_liveness(repo):
     dead_wt = str(repo)
     live_wt = str(repo) + "-wt2"
 
+    hostname = socket.gethostname()
     ledger = Ledger(repo)
-    ledger.claim(dead_wt, "localhost", dead_pid, projects_total=3)
-    ledger.claim(live_wt, "localhost", live_pid, projects_total=2)
+    ledger.claim(dead_wt, hostname, dead_pid, projects_total=3)
+    ledger.claim(live_wt, hostname, live_pid, projects_total=2)
 
     out = run_cli(repo, "fleet", "--json")
     rows = {r["worktree"]: (r.get("stale"), r.get("pid")) for r in out["result"]["collecting"]}
