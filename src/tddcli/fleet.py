@@ -139,11 +139,16 @@ def render(summary: dict) -> str:
         if c.get("stale"):
             line += f" — collector (pid {c['pid']}) is dead"
         lines.append(line)
+    for a in summary["advancing"]:
+        line = f"{a['worktree']}  advance in flight — {a['elapsed_s']}s elapsed"
+        if a.get("stale"):
+            line += f" — holder (pid {a['pid']}) is dead"
+        lines.append(line)
     s = summary["suites"]
     lines.append(
         f"suites executing now: {s['active']}"
         f" — {s['workers_each']} worker(s) each of {s['total_cores']} cores"
     )
-    if not summary["runs"] and not summary["collecting"]:
+    if not summary["runs"] and not summary["collecting"] and not summary["advancing"]:
         lines.insert(0, "no active runs")
     return "\n".join(lines) + "\n"
