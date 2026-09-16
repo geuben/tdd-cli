@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from conftest import git, run_cli, write_plan
+from conftest import git, run_cli, run_cli_text, write_plan
 from tddcli import config as config_mod
 from tddcli import contract as contract_mod
 from tddcli import plan_paths as plan_paths_mod
@@ -330,6 +330,13 @@ def test_resolves_modifies_tests_ids_labelled_with_their_field(repo):
             "path": "backend/tests/test_helper.py",
         }
     ]
+
+
+def test_the_bare_command_renders_a_human_table(repo):
+    plan = write_plan(repo, PYTEST_PLAN)
+    out = run_cli_text(repo, "plan", "paths", plan)
+    assert "cycle  field  project  path" in out
+    assert "backend/tests/test_add.py" in out
 
 
 def test_resolves_a_pytest_target_to_a_repository_path(repo):
