@@ -223,6 +223,15 @@ class Adapter:
         """Return the file-path portion of `native`, or None for non-path-bearing ids."""
         return None
 
+    def scan_target_paths(self) -> dict[str, str]:
+        """Return a map of native id → project-root-relative path by scanning sources.
+
+        Only implemented by adapters whose ids name a class rather than a file.
+        Base default is empty — adapters that can derive paths from target_path
+        alone do not need to scan.
+        """
+        return {}
+
     def stub_hint(self) -> str:
         """The language idiom for a stub body, quoted into the create_stub directive."""
         return "a body that fails loudly, never working logic"
