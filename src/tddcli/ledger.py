@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 
 class LedgerVersionError(RuntimeError):
@@ -45,6 +45,11 @@ MIGRATIONS: dict[int, str] = {
     8: "ALTER TABLE artifact_check ADD COLUMN regenerate_failed INTEGER NOT NULL DEFAULT 0;",
     # v9 -> v10 added start_sha column to run; ALTER TABLE covers old ledgers.
     9: "ALTER TABLE run ADD COLUMN start_sha TEXT;",
+    # v10 -> v11 added tree_hash and skipped columns to gate_result; ALTER TABLE covers old ledgers.
+    10: (
+        "ALTER TABLE gate_result ADD COLUMN tree_hash TEXT;"
+        " ALTER TABLE gate_result ADD COLUMN skipped INTEGER NOT NULL DEFAULT 0;"
+    ),
 }
 
 SCHEMA = """
@@ -158,6 +163,8 @@ CREATE TABLE IF NOT EXISTS gate_result (
     kind TEXT NOT NULL,                 -- lint | typecheck
     ok INTEGER NOT NULL,
     output TEXT,
+    tree_hash TEXT,
+    skipped INTEGER NOT NULL DEFAULT 0,
     at TEXT NOT NULL
 );
 
