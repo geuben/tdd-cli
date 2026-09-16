@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from conftest import run_cli, write_plan
+from tddcli import config as config_mod
+from tddcli import contract as contract_mod
+from tddcli import plan_paths as plan_paths_mod
 
 PYTEST_PLAN = """---
 cycles:
@@ -23,6 +26,33 @@ cycles:
     commit_green: "feat: add"
 ---
 """
+
+
+def _make_cfg(tmp_path, toml: str):
+    (tmp_path / "tdd.toml").write_text(toml)
+    return config_mod.load(tmp_path)
+
+
+def _resolve(tmp_path, toml: str, plan_text: str):
+    cfg = _make_cfg(tmp_path, toml)
+    c = contract_mod.parse(plan_text, "tasks/p.md", cfg)
+    return plan_paths_mod.resolve(c, cfg, tmp_path)
+
+
+def test_a_root_project_yields_an_unprefixed_path(tmp_path):
+    toml = (
+        "[project.flat]\n"
+        'root       = "."\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+    )
+    plan_text = (
+        "---\ncycles:\n"
+        "  - n: 1\n    project: flat\n    test: \"tests/test_add.py::test_add\"\n"
+        "    commit_red: x\n    commit_green: x\n---\n"
+    )
+    result = _resolve(tmp_path, toml, plan_text)
+    assert result["paths"][0]["path"] == "tests/test_add.py"
 
 
 def test_every_qualification_form_resolves_to_the_same_path(repo):
