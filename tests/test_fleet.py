@@ -211,7 +211,9 @@ def test_fleet_lists_advance_claims_with_holder_liveness(repo):
     ledger.claim_advance(live_wt, hostname, live_pid)
 
     out = run_cli(repo, "fleet", "--json")
-    rows = {r["worktree"]: (r.get("stale"), r.get("pid")) for r in out["result"].get("advancing") or []}
+    rows = {
+        r["worktree"]: (r.get("stale"), r.get("pid")) for r in out["result"].get("advancing") or []
+    }
     assert rows == {dead_wt: (True, dead_pid), live_wt: (False, live_pid)}
 
 
@@ -229,7 +231,10 @@ def test_fleet_and_progress_agree_on_a_dead_collector(repo):
 
     (fleet_row,) = fleet_out["result"]["collecting"]
     progress_result = progress_out["result"]
-    assert (fleet_row["stale"], fleet_row["pid"]) == (progress_result["stale"], progress_result["pid"])
+    assert (fleet_row["stale"], fleet_row["pid"]) == (
+        progress_result["stale"],
+        progress_result["pid"],
+    )
 
 
 def test_render_marks_a_dead_collector_and_leaves_a_live_one_alone():
@@ -237,10 +242,26 @@ def test_render_marks_a_dead_collector_and_leaves_a_live_one_alone():
         "runs": [],
         "advancing": [],
         "collecting": [
-            {"worktree": "/wt-1", "hostname": "h", "projects_done": 1, "projects_total": 3,
-             "current_project": "backend", "elapsed_s": 12.4, "pid": 4242, "stale": True},
-            {"worktree": "/wt-2", "hostname": "h", "projects_done": 0, "projects_total": 2,
-             "current_project": None, "elapsed_s": 3.0, "pid": 4243, "stale": False},
+            {
+                "worktree": "/wt-1",
+                "hostname": "h",
+                "projects_done": 1,
+                "projects_total": 3,
+                "current_project": "backend",
+                "elapsed_s": 12.4,
+                "pid": 4242,
+                "stale": True,
+            },
+            {
+                "worktree": "/wt-2",
+                "hostname": "h",
+                "projects_done": 0,
+                "projects_total": 2,
+                "current_project": None,
+                "elapsed_s": 3.0,
+                "pid": 4243,
+                "stale": False,
+            },
         ],
         "suites": {"active": 0, "total_cores": 8, "workers_each": 8},
     }
