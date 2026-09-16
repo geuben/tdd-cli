@@ -107,7 +107,7 @@ def test_a_scan_that_matches_other_than_one_file_says_why(tmp_path):
     plan_text1 = (
         "---\ncycles:\n"
         "  - n: 1\n    project: app\n    refactor_cycle: true\n"
-        f"    modifies_tests:\n      - \"{id_}\"\n"
+        f'    modifies_tests:\n      - "{id_}"\n'
         "    commit_refactor: x\n---\n"
     )
     (tmp_path / "case1" / "tdd.toml").write_text(_GRADLE_TOML)
@@ -140,14 +140,14 @@ def test_a_gradle_id_resolves_through_the_source_scan(tmp_path):
     (tmp_path / "app" / "src" / "test" / "kotlin" / "com" / "example" / "feature").mkdir(
         parents=True
     )
-    (tmp_path / "app" / "src" / "test" / "kotlin" / "com" / "example" / "feature" / "BarTest.kt").write_text(
-        _BAR_TEST_KT
-    )
+    (
+        tmp_path / "app" / "src" / "test" / "kotlin" / "com" / "example" / "feature" / "BarTest.kt"
+    ).write_text(_BAR_TEST_KT)
     plan_text = (
         "---\ncycles:\n"
         "  - n: 1\n    project: app\n    refactor_cycle: true\n"
         "    modifies_tests:\n"
-        "      - \"com.example.feature.BarTest/rejectsAnEmptyName\"\n"
+        '      - "com.example.feature.BarTest/rejectsAnEmptyName"\n'
         "    commit_refactor: x\n---\n"
     )
     cfg = config_mod.load(tmp_path)
@@ -208,11 +208,11 @@ def test_a_refactor_cycles_modifies_tests_are_resolved(tmp_path):
         "---\ncycles:\n"
         "  - n: 1\n    project: dd-bridge\n    refactor_cycle: true\n"
         "    modifies_tests:\n"
-        "      - \"adapter_host_catalog::host_catalog_lists_each_running\"\n"
+        '      - "adapter_host_catalog::host_catalog_lists_each_running"\n'
         "    commit_refactor: x\n"
         "  - n: 2\n    project: dd-bridge\n    refactor_cycle: true\n"
         "    modifies_tests:\n"
-        "      - \"other_file::some_test\"\n"
+        '      - "other_file::some_test"\n'
         "    commit_refactor: x\n---\n"
     )
     result = _resolve(tmp_path, _CARGO_TOML, plan_text)
@@ -226,7 +226,7 @@ def test_a_cargo_integration_test_id_resolves_under_the_project_root(tmp_path):
         "---\ncycles:\n"
         "  - n: 1\n    project: dd-bridge\n    refactor_cycle: true\n"
         "    modifies_tests:\n"
-        "      - \"adapter_host_catalog::host_catalog_lists_each_running\"\n"
+        '      - "adapter_host_catalog::host_catalog_lists_each_running"\n'
         "    commit_refactor: x\n---\n"
     )
     result = _resolve(tmp_path, _CARGO_TOML, plan_text)
@@ -237,7 +237,7 @@ def test_a_plan_that_is_not_a_contract_refuses_cleanly(repo):
     # Case 1: plan whose cycle names an unknown project
     plan_text1 = (
         "---\ncycles:\n"
-        "  - n: 1\n    project: nosuch\n    test: \"tests/test_add.py::test_add\"\n"
+        '  - n: 1\n    project: nosuch\n    test: "tests/test_add.py::test_add"\n'
         "    commit_red: x\n    commit_green: x\n---\n"
     )
     plan1 = write_plan(repo, plan_text1, "tasks/bad_project.md")
@@ -255,7 +255,7 @@ def test_unresolved_ids_do_not_fail_the_command(tmp_path, ledger_home):
     plan_text = (
         "---\ncycles:\n"
         "  - n: 1\n    project: dd-bridge\n    refactor_cycle: true\n"
-        "    modifies_tests:\n      - \"lib::inner::tests::unit_thing\"\n"
+        '    modifies_tests:\n      - "lib::inner::tests::unit_thing"\n'
         "    commit_refactor: x\n---\n"
     )
     plan = write_plan(repo, plan_text)
@@ -267,7 +267,7 @@ def test_a_cargo_lib_id_is_unresolved_with_no_path_in_id(tmp_path):
     plan_text = (
         "---\ncycles:\n"
         "  - n: 1\n    project: dd-bridge\n    refactor_cycle: true\n"
-        "    modifies_tests:\n      - \"lib::inner::tests::unit_thing\"\n"
+        '    modifies_tests:\n      - "lib::inner::tests::unit_thing"\n'
         "    commit_refactor: x\n---\n"
     )
     result = _resolve(tmp_path, _CARGO_TOML, plan_text)
@@ -283,15 +283,10 @@ def test_a_cargo_lib_id_is_unresolved_with_no_path_in_id(tmp_path):
 
 
 def test_a_root_project_yields_an_unprefixed_path(tmp_path):
-    toml = (
-        "[project.flat]\n"
-        'root       = "."\n'
-        'adapter    = "pytest"\n'
-        'test_paths = ["tests/"]\n'
-    )
+    toml = '[project.flat]\nroot       = "."\nadapter    = "pytest"\ntest_paths = ["tests/"]\n'
     plan_text = (
         "---\ncycles:\n"
-        "  - n: 1\n    project: flat\n    test: \"tests/test_add.py::test_add\"\n"
+        '  - n: 1\n    project: flat\n    test: "tests/test_add.py::test_add"\n'
         "    commit_red: x\n    commit_green: x\n---\n"
     )
     result = _resolve(tmp_path, toml, plan_text)
@@ -308,7 +303,7 @@ def test_every_qualification_form_resolves_to_the_same_path(repo):
     for form in forms:
         plan_text = (
             "---\ncycles:\n"
-            f"  - n: 1\n    project: backend\n    test: \"{form}\"\n"
+            f'  - n: 1\n    project: backend\n    test: "{form}"\n'
             "    commit_red: x\n    commit_green: x\n---\n"
         )
         plan = write_plan(repo, plan_text, f"tasks/plan_{len(results)}.md")
