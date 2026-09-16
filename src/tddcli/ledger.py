@@ -277,7 +277,32 @@ def ledger_path(repo_path: Path) -> Path:
     return root / f"{slug}.sqlite3"
 
 
+def claim_is_stale(hostname: str, pid: int, started_at: str) -> bool:
+    """Staleness rule shared by all claim kinds.
+
+    Same host → liveness via os.kill(pid, 0). Cross-host → age > 60 min
+    (a pid is meaningless from another host; reused pids would make a
+    liveness check actively wrong, so we fall back to age).
+    """
+    if hostname == socket.gethostname():
+        try:
+            os.kill(pid, 0)
+            return False
+        except ProcessLookupError:
+            # Same host, pid no longer running.
+            return True
+        except PermissionError:
+            # Pid exists but owned by someone else — alive.
+            return False
+    started = datetime.fromisoformat(started_at)
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - started > timedelta(minutes=60)
+
+
 class Ledger:
+    _claim_is_stale = staticmethod(claim_is_stale)
+
     def __init__(self, repo_path: Path):
         self.repo_path = repo_path
         self.path = ledger_path(repo_path)
@@ -550,29 +575,6 @@ class Ledger:
     def release_advance_claim(self, worktree: str) -> None:
         self.db.execute("DELETE FROM advance_claim WHERE worktree_path = ?", (worktree,))
         self.db.commit()
-
-    @staticmethod
-    def _claim_is_stale(hostname: str, pid: int, started_at: str) -> bool:
-        """Staleness rule shared by all claim kinds.
-
-        Same host → liveness via os.kill(pid, 0). Cross-host → age > 60 min
-        (a pid is meaningless from another host; reused pids would make a
-        liveness check actively wrong, so we fall back to age).
-        """
-        if hostname == socket.gethostname():
-            try:
-                os.kill(pid, 0)
-                return False
-            except ProcessLookupError:
-                # Same host, pid no longer running.
-                return True
-            except PermissionError:
-                # Pid exists but owned by someone else — alive.
-                return False
-        started = datetime.fromisoformat(started_at)
-        if started.tzinfo is None:
-            started = started.replace(tzinfo=timezone.utc)
-        return datetime.now(timezone.utc) - started > timedelta(minutes=60)
 
     def active_advance_claim(self, worktree: str) -> dict | None:
         """Read-only observer — staleness computed but no row deleted."""
