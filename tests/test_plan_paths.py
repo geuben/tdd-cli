@@ -339,6 +339,12 @@ def test_the_bare_command_renders_a_human_table(repo):
     assert "backend/tests/test_add.py" in out
 
 
+def test_the_bare_command_emits_no_json_envelope(repo):
+    plan = write_plan(repo, PYTEST_PLAN)
+    out = run_cli_text(repo, "plan", "paths", plan)
+    assert "envelope_version" not in out
+
+
 def test_resolves_a_pytest_target_to_a_repository_path(repo):
     plan = write_plan(repo, PYTEST_PLAN)
     result = run_cli(repo, "plan", "paths", plan, "--json")["result"]["paths"]
