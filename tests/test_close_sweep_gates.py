@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from conftest import git, run_cli, write_plan
+from tddcli import gitutil
+from tddcli.ledger import Ledger
 
 # ── inner plan used by every test to reach the close sweep ────────────────────
 
@@ -79,6 +81,7 @@ def _drive_to_close(
 # ── cycle 1 ── pin: a failing gate replies fix_regression with that gate's entry
 
 
+
 def test_failing_lint_replies_fix_regression_with_the_lint_gate(repo):
     out = _drive_to_close(repo, lint_cmds=["sh -c 'exit 1'"])
     verb = out["next_action"]["verb"]
@@ -87,3 +90,17 @@ def test_failing_lint_replies_fix_regression_with_the_lint_gate(repo):
         "fix_regression",
         [("backend", "lint")],
     )
+
+
+# ── cycle 2 ── pin: a gate that ran records a gate_result row
+
+
+def test_a_failing_lint_records_its_gate_result_row(repo):
+    out = _drive_to_close(repo, lint_cmds=["sh -c 'exit 1'"])
+    run_id = out["run"]["id"]
+    led = Ledger(gitutil.repo_identity(repo))
+    rows = led.all(
+        "SELECT * FROM gate_result WHERE run_id = ? AND project = 'backend' AND kind = 'lint'",
+        (run_id,),
+    )
+    assert any(r["ok"] == 0 for r in rows)
