@@ -81,7 +81,6 @@ def _drive_to_close(
 # ── cycle 1 ── pin: a failing gate replies fix_regression with that gate's entry
 
 
-
 def test_failing_lint_replies_fix_regression_with_the_lint_gate(repo):
     out = _drive_to_close(repo, lint_cmds=["sh -c 'exit 1'"])
     verb = out["next_action"]["verb"]
@@ -271,18 +270,16 @@ def test_a_gate_is_rerun_when_the_tree_changed(repo, tmp_path):
     assert adv["next_action"]["verb"] == "refactor_or_advance", adv
 
     # First close: add a failing test → lint passes but suite fails
-    (repo / "backend" / "tests" / "test_fail.py").write_text(
-        "def test_fail():\n    assert False\n"
-    )
+    (repo / "backend" / "tests" / "test_fail.py").write_text("def test_fail():\n    assert False\n")
     out1 = run_cli(repo, "advance")
     assert out1["next_action"]["verb"] == "fix_regression", out1
 
     # Fix the failing test → tree changes → second close: lint re-runs
-    (repo / "backend" / "tests" / "test_fail.py").write_text(
-        "def test_fail():\n    assert True\n"
-    )
+    (repo / "backend" / "tests" / "test_fail.py").write_text("def test_fail():\n    assert True\n")
     out2 = run_cli(repo, "advance")
-    assert out2["next_action"]["verb"] != "fix_regression" or out2.get("result", {}).get("gates"), out2
+    assert out2["next_action"]["verb"] != "fix_regression" or out2.get("result", {}).get("gates"), (
+        out2
+    )
 
     assert counter.read_text().count("\n") == 2
 
