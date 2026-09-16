@@ -228,3 +228,15 @@ def test_the_gate_failure_reply_does_not_claim_the_sweep_is_green(repo):
     assert out["next_action"]["detail"] == (
         "Close sweep stopped before the suite: lint/typecheck gates failed."
     )
+
+
+# ── cycle 8 ── pin: a gate that failed is re-run at the same tree
+
+
+def test_a_failed_gate_is_rerun_at_the_same_tree(repo, tmp_path):
+    counter = tmp_path / "lint-count"
+    lint_cmds = [f"sh -c 'echo x >> {counter}; exit 1'"]
+    _drive_to_close(repo, lint_cmds=lint_cmds)
+    # Advance again at AWAITING_REFACTOR with nothing edited (same tree) → gate re-runs
+    run_cli(repo, "advance")
+    assert counter.read_text().count("\n") == 2
