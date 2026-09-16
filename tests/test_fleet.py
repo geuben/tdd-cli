@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import subprocess
 import time
 
 from conftest import run_cli, write_plan
@@ -160,3 +161,23 @@ def test_lease_snapshot_with_no_directory(tmp_path, monkeypatch):
     monkeypatch.setenv("TDD_LEASE_DIR", str(tmp_path / "never-created"))
     snap = leases.snapshot()
     assert snap["active"] == 0
+
+
+# -- claim liveness ----------------------------------------------------------
+
+
+def test_fleet_claim_rows_report_collector_liveness(repo):
+    proc = subprocess.Popen(["true"])
+    proc.wait()
+    dead_pid = proc.pid
+    live_pid = os.getpid()
+    dead_wt = str(repo)
+    live_wt = str(repo) + "-wt2"
+
+    ledger = Ledger(repo)
+    ledger.claim(dead_wt, "localhost", dead_pid, projects_total=3)
+    ledger.claim(live_wt, "localhost", live_pid, projects_total=2)
+
+    out = run_cli(repo, "fleet", "--json")
+    rows = {r["worktree"]: (r.get("stale"), r.get("pid")) for r in out["result"]["collecting"]}
+    assert rows == {dead_wt: (True, dead_pid), live_wt: (False, live_pid)}
