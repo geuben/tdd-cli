@@ -39,6 +39,33 @@ def _resolve(tmp_path, toml: str, plan_text: str):
     return plan_paths_mod.resolve(c, cfg, tmp_path)
 
 
+_CARGO_TOML = (
+    "[project.dd-bridge]\n"
+    'root       = "crates/dd-bridge"\n'
+    'adapter    = "cargo"\n'
+    'test_paths = ["tests/"]\n'
+)
+
+
+def test_a_cargo_lib_id_is_unresolved_with_no_path_in_id(tmp_path):
+    plan_text = (
+        "---\ncycles:\n"
+        "  - n: 1\n    project: dd-bridge\n    refactor_cycle: true\n"
+        "    modifies_tests:\n      - \"lib::inner::tests::unit_thing\"\n"
+        "    commit_refactor: x\n---\n"
+    )
+    result = _resolve(tmp_path, _CARGO_TOML, plan_text)
+    assert result["unresolved"] == [
+        {
+            "cycle": 1,
+            "field": "modifies_tests",
+            "id": "lib::inner::tests::unit_thing",
+            "project": "dd-bridge",
+            "reason": "no_path_in_id",
+        }
+    ]
+
+
 def test_a_root_project_yields_an_unprefixed_path(tmp_path):
     toml = (
         "[project.flat]\n"
