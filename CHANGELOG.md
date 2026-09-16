@@ -6,6 +6,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-16
+
 ### Added
 
 - **`tdd fleet` reports baseline-collector and advance-holder liveness** (follow-up to #115,
@@ -31,6 +33,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **Friction-log lines for amended baselines**: accepted/refused tests appear under Human
   interventions; the run header gains a "Late baselines" line separate from "Baseline failures
   at start".
+
+- **`tdd docs [topic]` prints the documentation shipped with this version.** The wheel now
+  carries `docs/harness-integration.md`, both example skills, the hooks README, the example
+  plan, and the README under `tddcli/_docs/`. An agent meeting the tool in an unfamiliar
+  project can read the protocol without network access — and without the version hazard of
+  fetching a skill from `main` that targets a different `verb_set_version` than the installed
+  binary emits. `tdd docs` with no topic returns a machine-readable index; `tdd --help` and
+  `tdd init` now point at it.
+- **`artifact_regenerate_failed` integrity event.** When a `regenerate` hook exits non-zero,
+  an `artifact_regenerate_failed` event is emitted on the cycle (or run, for `run start`)
+  with the artifact name, exit code, and last 2000 chars of stderr. It is listed in the
+  friction log under its cycle via the existing per-cycle event renderer.
+- **`artifact_check.regenerate_failed` column (ledger schema v9).** A non-zero hook exit
+  sets this flag on the `artifact_check` row. Existing ledgers are migrated on open via
+  `MIGRATIONS[8]`.
 
 ### Fixed
 
@@ -59,23 +76,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   `result.artifact_failures` listing the affected artifact(s) and their stderr.
 - **`run start` refuses when a regenerate hook fails before the first cycle.** The run row
   is ended with `outcome = "refused"` so `tdd status` reports no active run.
-
-### Added
-
-- **`tdd docs [topic]` prints the documentation shipped with this version.** The wheel now
-  carries `docs/harness-integration.md`, both example skills, the hooks README, the example
-  plan, and the README under `tddcli/_docs/`. An agent meeting the tool in an unfamiliar
-  project can read the protocol without network access — and without the version hazard of
-  fetching a skill from `main` that targets a different `verb_set_version` than the installed
-  binary emits. `tdd docs` with no topic returns a machine-readable index; `tdd --help` and
-  `tdd init` now point at it.
-- **`artifact_regenerate_failed` integrity event.** When a `regenerate` hook exits non-zero,
-  an `artifact_regenerate_failed` event is emitted on the cycle (or run, for `run start`)
-  with the artifact name, exit code, and last 2000 chars of stderr. It is listed in the
-  friction log under its cycle via the existing per-cycle event renderer.
-- **`artifact_check.regenerate_failed` column (ledger schema v9).** A non-zero hook exit
-  sets this flag on the `artifact_check` row. Existing ledgers are migrated on open via
-  `MIGRATIONS[8]`.
 
 ## [0.10.1] - 2026-09-06
 
