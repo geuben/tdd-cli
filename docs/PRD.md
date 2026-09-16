@@ -342,6 +342,14 @@ Requirements:
   `test_paths`; first declared match wins; `env` values may reference `${VAR}`, expanded at
   invocation. A suite that produces no report fails the run loudly — a silent gap would
   resolve a target in that suite as `not_found`.
+- **R7.14** `tdd plan paths` resolves every test id declared in a plan's `test:` and
+  `modifies_tests:` fields to a repository-relative file path, without starting a run. For
+  adapters whose id grammar carries a file component (pytest, cargo integration tests, exec),
+  the path is extracted directly. For adapters whose id grammar does not (gradle, xctest), the
+  adapter scans its source files and maps each id to the file(s) that declare it. An id that
+  maps to zero files is `not_found_in_sources`; one that maps to two or more is `ambiguous_id`;
+  an id in a grammar that never carries a path and whose adapter has no source scan is
+  `no_path_in_id`. Unresolved ids do not fail the command.
 
 ### 7.2 Plan front-matter
 
@@ -484,6 +492,7 @@ one has no move left but to re-run doctor and read the same output again.
 | Command | Behaviour |
 |---|---|
 | `tdd plan register <path>` | parse front-matter, resolve plan blob at HEAD, lint declared targets (grammar + root-prefix rules), store contract. Refuses with `reason: "target_lint"` and a `findings` list when any target can't match a collected id — e.g. pytest target missing `::`, vitest missing ` > `, gradle/xctest wrong separator, or target path that duplicates the project's `root`. Recovery: fix the spelling (the finding often carries a `suggestion`), or for a genuinely nested root path, create the directory first (the filesystem-existence check then exempts it). |
+| `tdd plan paths <path>` | resolve every test id in the plan (from `test:` and `modifies_tests:` fields) to a repository-relative file path. Prints a human table by default; `--json` returns the envelope. Ids that cannot be resolved (no path in id grammar, id absent from scanned sources, or ambiguous across multiple files) appear in an `unresolved` list with a `reason`; the command still exits successfully so callers can act on partial results. |
 | `tdd run start --plan <path\|id>` | re-lints the stored contract's declared targets against the *current* `tdd.toml` (catching root/adapter drift since registration) before claiming the worktree — refuses with `reason: "target_lint"` if findings appear; then creates run, captures executor identity from environment, captures per-project baselines, verifies artifact freshness, opens cycle 1 |
 
 ### 8.3 The loop
@@ -780,6 +789,14 @@ Adapter.typecheck(project)               -> GateResult
   as `<nodeid>@<g>`, and the adapter strips that trailing suffix when reading report and
   `--collect-only` ids (only an `@` after the last `]` qualifies, so parametrised values that
   contain `@` are untouched), so grouped targets match their declared and collected spelling.
+- **R10.9** Adapters expose `scan_target_paths() -> dict[str, list[str]] | None`. The return
+  value is `None` when the adapter's id grammar always carries a file component (cargo lib::,
+  exec) — in that case `tdd plan paths` marks the id `no_path_in_id` rather than scanning.
+  Adapters whose grammar does not carry a path (gradle `pkg.Class/method`, xctest
+  `Bundle/Class/method`) return a dict mapping each native id to the list of project-root-relative
+  source files that declare it; an empty dict means the source directories were scanned but no
+  matching tests were found. The base `Adapter` returns `None`; only adapters that scan sources
+  override this hook.
 - **R10.7** `collectable()` is a single **whole-suite** `--collect-only` (pytest) / `vitest list`
   (vitest) probe used only by `tdd doctor` (§8.1, issues #3/#5). `collect()` now opens with the
   same *shape* (R10.3) but remains a distinct path: `collectable()` reports whether a suite can be

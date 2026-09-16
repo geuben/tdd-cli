@@ -436,6 +436,7 @@ and is never reclassified as a pin.
 | `tdd docs [topic]` | print the documentation shipped with this version; no network |
 | `tdd init` / `tdd doctor` | scaffold config; environment preflight |
 | `tdd plan register <path>` | parse and hash the contract |
+| `tdd plan paths <path>` | resolve a plan's test ids to repository file paths |
 | `tdd run start --plan <path>` | capture baselines, resolve executor, open cycle 1 |
 | `tdd status` | position and `next_action`; safe any time |
 | `tdd advance [--retry]` | run suites, compute the transition, commit |
