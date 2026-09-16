@@ -127,8 +127,8 @@ def test_a_failure_the_baseline_missed_has_its_own_blocker_kind(repo):
 
 
 def test_unblocking_can_accept_the_failures_into_the_baseline(repo):
-    """Without this the run cannot recover: unblock returns to AWAITING_REFACTOR, the
-    next advance re-runs the same sweep, finds the same failure, and blocks again."""
+    """The escape hatch cannot launder a run-introduced failure: a test that passes at
+    the start sha is refused, and the next advance still replies fix_regression."""
     reach_refactor(repo)
     (repo / "backend" / "tests" / "test_smoke.py").write_text(
         "def test_smoke():\n    assert False\n"
@@ -140,11 +140,10 @@ def test_unblocking_can_accept_the_failures_into_the_baseline(repo):
         repo, "resume", "--unblock", "--note", "verified against main", "--accept-failures"
     )
     assert resumed["ok"], resumed
-    accepted = resumed["result"]["accepted_into_baseline"]
-    assert accepted == {"backend": ["backend::tests/test_smoke.py::test_smoke"]}, resumed
+    assert resumed["result"].get("accepted_into_baseline") is None
 
-    closed = run_cli(repo, "advance")
-    assert closed["next_action"]["verb"] == "complete", closed
+    next_advance = run_cli(repo, "advance")
+    assert next_advance["next_action"]["verb"] == "fix_regression", next_advance
 
 
 def test_unblocking_without_accept_failures_leaves_the_baseline_alone(repo):
@@ -245,7 +244,13 @@ cycles:
 
 
 def reach_unbaselined_blocker(repo):
-    """Drive the run to a blocked state: svc has unbaselined sweep failures."""
+    """Drive the run to a blocked state: svc is unobservable at the start sha."""
+    # Make svc uncollectable at the start sha so the late probe is unobservable
+    (repo / "svc" / "tests" / "test_svc.py").write_text(
+        "import nope_missing\n\ndef test_svc_fails():\n    assert False\n"
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "svc: uncollectable at start sha")
     plan = write_plan(repo, BACKEND_ONLY_PLAN)
     run_cli(repo, "plan", "register", plan)
     out = run_cli(repo, "run", "start", "--plan", plan)
@@ -256,6 +261,8 @@ def reach_unbaselined_blocker(repo):
     )
     run_cli(repo, "advance")
     (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    # Rewrite svc to a plain failing test (authored outside the cycle's project)
+    (repo / "svc" / "tests" / "test_svc.py").write_text("def test_svc_fails():\n    assert False\n")
     (repo / "other" / "generated.json").write_text("{}")
     run_cli(repo, "advance")
     out = run_cli(repo, "advance")
@@ -267,10 +274,11 @@ def test_close_sweep_with_unbaselined_failures_directs_resolve_blocker(repo_sche
     out = reach_unbaselined_blocker(repo_schema_other)
     detail = out["next_action"]["detail"]
     assert "no_baseline_for_project" in detail, detail
-    assert "resume --unblock --accept-failures" in detail, detail
 
 
 def test_accept_failures_inserts_baseline_row_for_unbaselined_project(repo_schema_other):
+    """Historical misnomer: accept-failures never inserts a row for an unobserved project.
+    The svc baseline row stays absent; the amended event records an empty accepted map."""
     import json as json_mod
 
     reach_unbaselined_blocker(repo_schema_other)
@@ -290,9 +298,7 @@ def test_accept_failures_inserts_baseline_row_for_unbaselined_project(repo_schem
     ledger = Ledger(gitutil.repo_identity(repo_schema_other))
     run_id = resumed["run"]["id"]
     row = ledger.one("SELECT failing FROM baseline WHERE run_id = ? AND project = 'svc'", (run_id,))
-    assert row is not None, "no baseline row created for svc"
-    failing = json_mod.loads(row["failing"])
-    assert any("test_svc_fails" in f for f in failing), failing
+    assert row is None, "baseline row must not be inserted for unobserved project"
 
     event = ledger.one(
         "SELECT detail FROM integrity_event WHERE run_id = ? AND kind = 'baseline_amended'",
@@ -300,10 +306,11 @@ def test_accept_failures_inserts_baseline_row_for_unbaselined_project(repo_schem
     )
     assert event is not None, "no baseline_amended event"
     amended = json_mod.loads(event["detail"])
-    assert "svc" in amended, amended
+    assert "svc" in amended and amended["svc"].get("accepted") == {}, amended
 
 
 def test_sweep_reports_unbaselined_failures_separately(repo_three):
+    """A run without a start sha cannot be late-probed; its failures stay unattributable."""
     from tddcli import config as config_mod
     from tddcli.machine import Engine
 
@@ -323,6 +330,8 @@ def test_sweep_reports_unbaselined_failures_separately(repo_three):
     ledger = Ledger(gitutil.repo_identity(repo_three))
     # Delete svc's baseline to simulate an un-baselined project
     ledger.db.execute("DELETE FROM baseline WHERE run_id = ? AND project = 'svc'", (run_id,))
+    # Simulate a run that predates the start_sha column
+    ledger.db.execute("UPDATE run SET start_sha = NULL WHERE id = ?", (run_id,))
     ledger.db.commit()
 
     run_row = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
@@ -470,10 +479,10 @@ def test_stale_reused_baseline_recovers_via_accept_failures(repo):
         repo, "resume", "--unblock", "--note", "verified against main", "--accept-failures"
     )
     assert resumed["ok"], resumed
-    assert "backend" in resumed["result"]["accepted_into_baseline"]
+    assert "backend" in resumed["result"].get("refused_from_baseline", {})
 
-    closed = run_cli(repo, "advance")
-    assert closed["next_action"]["verb"] == "complete", closed
+    next_advance = run_cli(repo, "advance")
+    assert next_advance["next_action"]["verb"] == "fix_regression", next_advance
 
 
 def test_reused_baseline_records_provenance_and_event(repo_three):

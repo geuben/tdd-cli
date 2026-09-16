@@ -6,8 +6,36 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`run.start_sha`** (schema v10, `MIGRATIONS[9]`): the HEAD commit at run start is now
+  recorded on the run row and used as the reference point for late probes and
+  `--accept-failures` gating.
+- **`gitutil.temporary_worktree`**: context manager that checks out a given sha into a
+  detached temporary worktree and removes it on exit; used by the late-probe and
+  `--accept-failures` implementations.
+- **`baseline_late_probe` / `baseline_late_probe_unobserved` integrity events**: emitted
+  when the close sweep late-probes an un-baselined project at `start_sha` (observed) or
+  cannot observe it (unobserved).
+- **`resume` result `refused_from_baseline`**: lists per-project tests that `--accept-failures`
+  refused because they pass at `start_sha`.
+- **New `baseline_amended` event detail shape**: `{project: {start_sha, accepted: {id: verdict},
+  refused: {id: verdict}}}` with per-test verdicts.
+- **Friction-log lines for amended baselines**: accepted/refused tests appear under Human
+  interventions; the run header gains a "Late baselines" line separate from "Baseline failures
+  at start".
+
 ### Fixed
 
+- **`--accept-failures` is now gated on `run.start_sha`**: only tests that also fail at the
+  start sha are accepted into the baseline; tests that pass there are refused and listed in
+  `result.refused_from_baseline`. This prevents laundering run-introduced regressions.
+- **Un-baselined projects are late-probed at `start_sha`** in the close sweep instead of
+  accepting HEAD failures verbatim. An observed probe inserts a `late_probe` baseline row and
+  subtracts it like a normal baseline; an unobservable probe blocks with `resolve_blocker`
+  and no longer recommends `--accept-failures`.
+- **The `no_baseline_for_project` reply no longer recommends `--accept-failures`** for
+  unobservable projects.
 - **`check_artifacts`: a failed regenerate hook is now a hard close-sweep failure.**
   Previously, a `regenerate` hook that exited non-zero left the artifact path untouched
   (tree hash unchanged), so the staleness probe reported "fresh" and `tdd advance` replied

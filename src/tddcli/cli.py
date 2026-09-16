@@ -658,6 +658,7 @@ def cmd_run_start(args) -> Envelope:
         pass
 
     dirty = sorted(gitutil.dirty_paths(worktree))
+    start_sha = gitutil.head(worktree)
     if dirty and not args.allow_dirty:
         return failure(
             "working tree is dirty; commit first or pass --allow-dirty"
@@ -819,6 +820,7 @@ def cmd_run_start(args) -> Envelope:
             allow_dirty=int(bool(args.allow_dirty)),
             preexisting_dirty=json.dumps(dirty),
             config_sha=config_mod.config_sha(worktree),
+            start_sha=start_sha,
         )
         run = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
         if blob_changed:
@@ -1090,12 +1092,14 @@ def cmd_blocker(args) -> Envelope:
     )
 
 
-def _accept_failures_into_baseline(ledger: Ledger, run_id: int) -> dict[str, list[str]]:
-    """Fold the failures the last close sweep saw into the baseline (R9.5b).
+def _accept_failures_into_baseline(
+    engine, ledger: Ledger, run_id: int
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """Fold pre-existing failures into the baseline (R9.5b).
 
-    A run whose baseline missed a failure cannot otherwise recover: unblocking returns
-    it to the phase it blocked in, and the next sweep finds the same failure. Only a
-    human reaches this, only by asking, and what was accepted is recorded.
+    Probes each project at run.start_sha; only accepts candidates that fail there.
+    A test that passes at start_sha is refused — it is a run-introduced regression.
+    Returns (accepted, refused).
     """
     latest = ledger.all(
         "SELECT project, other_failures FROM invocation WHERE id IN ("
@@ -1107,6 +1111,7 @@ def _accept_failures_into_baseline(ledger: Ledger, run_id: int) -> dict[str, lis
         r["project"]: r for r in ledger.all("SELECT * FROM baseline WHERE run_id = ?", (run_id,))
     }
     accepted: dict[str, list[str]] = {}
+    refused: dict[str, list[str]] = {}
     for sweep in latest:
         project = sweep["project"]
         row = rows.get(project)
@@ -1114,24 +1119,39 @@ def _accept_failures_into_baseline(ledger: Ledger, run_id: int) -> dict[str, lis
         if row is None:
             if not sweep_failed:
                 continue
-            ledger.insert(
-                "baseline",
-                run_id=run_id,
-                project=project,
-                failing=json.dumps(sweep_failed),
-                captured_at=now(),
-            )
-            accepted[project] = sweep_failed
+            engine.probe_at_start_sha(project)
+            refused[project] = sweep_failed
         else:
             known = set(json.loads(row["failing"]))
             new = sorted(set(sweep_failed) - known)
             if not new:
                 continue
-            ledger.update("baseline", row["id"], failing=json.dumps(sorted(known | set(new))))
-            accepted[project] = new
-    if accepted:
-        ledger.event(run_id, None, "baseline_amended", json.dumps(accepted))
-    return accepted
+            probe = engine.probe_at_start_sha(project)
+            if probe.observed:
+                acc = [f for f in new if f in probe.failing]
+                ref = [f for f in new if f not in probe.failing]
+            else:
+                acc = []
+                ref = list(new)
+            if acc:
+                ledger.update("baseline", row["id"], failing=json.dumps(sorted(known | set(acc))))
+                accepted[project] = acc
+            if ref:
+                refused[project] = ref
+    run_row = ledger.one("SELECT start_sha FROM run WHERE id = ?", (run_id,))
+    start_sha = run_row["start_sha"] if run_row else None
+    verdicts: dict[str, dict] = {}
+    for project in set(list(accepted.keys()) + list(refused.keys())):
+        entry: dict = {
+            "start_sha": start_sha,
+            "accepted": {t: "fails at start sha" for t in accepted.get(project, [])},
+        }
+        if project in refused:
+            entry["refused"] = {t: "passes at start sha" for t in refused[project]}
+        verdicts[project] = entry
+    if verdicts:
+        ledger.event(run_id, None, "baseline_amended", json.dumps(verdicts))
+    return accepted, refused
 
 
 def cmd_resume(args) -> Envelope:
@@ -1140,6 +1160,7 @@ def cmd_resume(args) -> Envelope:
     ledger = Ledger(gitutil.repo_identity(worktree))
     run = ledger.active_run(str(worktree))
     accepted: dict[str, list[str]] = {}
+    refused_from_baseline: dict[str, list[str]] = {}
 
     if args.accept_failures and not args.unblock:
         return failure("--accept-failures applies to --unblock")
@@ -1158,9 +1179,12 @@ def cmd_resume(args) -> Envelope:
             return failure("--unblock requires --note describing the intervention")
         ledger.update("run", blocked["id"], ended_at=None, outcome=None)
         ledger.insert("human_intervention", run_id=blocked["id"], note=args.note, at=now())
-        if args.accept_failures:
-            accepted = _accept_failures_into_baseline(ledger, blocked["id"])
         run = ledger.one("SELECT * FROM run WHERE id = ?", (blocked["id"],))
+        if args.accept_failures:
+            _eng = _engine(worktree, cfg, ledger, run)
+            accepted, refused_from_baseline = _accept_failures_into_baseline(
+                _eng, ledger, blocked["id"]
+            )
 
     if run is None:
         return failure("no active run in this worktree")
@@ -1175,6 +1199,8 @@ def cmd_resume(args) -> Envelope:
     result = {"resumed": True}
     if accepted:
         result["accepted_into_baseline"] = accepted
+    if refused_from_baseline:
+        result["refused_from_baseline"] = refused_from_baseline
     return Envelope(
         run=engine.run_state(cycle),
         result=result,
@@ -1505,8 +1531,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument(
         "--accept-failures",
         action="store_true",
-        help="fold the failures the last close sweep saw into the baseline, so a run"
-        " whose baseline missed them can proceed; recorded as baseline_amended",
+        help="fold pre-existing failures into the baseline: accepts only tests that also fail"
+        " at run.start_sha; tests that pass there are refused; never inserts a new row;"
+        " recorded as baseline_amended",
     )
     s.set_defaults(fn=cmd_resume)
 

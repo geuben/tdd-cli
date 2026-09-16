@@ -102,6 +102,7 @@ One execution of one contract by one executor.
 | `executor_model`, `executor_session` | **resolved by the tool, never accepted as an argument** (§5.1) |
 | `worktree_path` | runs are scoped to a worktree, not a repo |
 | `started_at`, `ended_at`, `outcome` | `complete` / `blocked` / `abandoned` |
+| `start_sha` | HEAD at run start; the tree every late baseline probe and `--accept-failures` verdict is taken from |
 
 Many runs may reference one contract. This is what makes A/B comparison across models possible.
 
@@ -184,7 +185,7 @@ an auditor compares them against reality.
 ### IntegrityEvent
 Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mismatch`,
 `off_protocol_invocation`, `stale_artifact`, `plan_blob_changed`, `executor_unknown`,
-`artifact_regenerate_failed`.
+`artifact_regenerate_failed`, `baseline_late_probe`, `baseline_late_probe_unobserved`.
 
 ### Blocker
 Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `context_exhausted`,
@@ -565,13 +566,15 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   regression, at every close sweep, for the life of the run. The check runs before the run row
   is written, so a refusal leaves nothing behind to block the next attempt. A project with no
   test files and no collection errors is not an error; it simply has no suite yet.
-- **R9.5b** `resume --unblock --accept-failures` folds the failures the last close sweep saw into
-  the baseline, recorded as `baseline_amended` alongside the mandatory `--note`. A run whose
-  baseline missed a failure cannot otherwise recover: unblocking returns it to the phase it
-  blocked in, and the next sweep finds the same failure and blocks again. The flag is explicit
-  and human-only precisely because it launders a failure into the accepted set — an unblock must
-  never do it silently. If a close sweep reached a project that was never baselined, `--accept-failures`
-  inserts a fresh baseline row for it rather than skipping it.
+- **R9.5b** `resume --unblock --accept-failures` folds pre-existing failures into the baseline,
+  recorded as a `baseline_amended` integrity event alongside the mandatory `--note`. For each
+  candidate failure (present in the last close sweep but absent from the current baseline row),
+  the tool probes the project at `run.start_sha`: a test that **fails** at `start_sha` is
+  accepted (added to the row, verdict `"fails at start sha"`); a test that **passes** at
+  `start_sha` is refused (verdict `"passes at start sha"`) and listed in the reply under
+  `refused_from_baseline`. The `baseline_amended` event carries `{project: {start_sha, accepted:
+  {test_id: verdict}, refused: {test_id: verdict}}}`. `--accept-failures` never inserts a new
+  baseline row; projects with no row (unobservable or missing) are always refused.
 - **R9.5c** `run start` scopes baseline capture to plan-reachable projects. The reachable set is
   the union of declared cycle projects plus the transitive `consumed_by` closure of artifacts
   whose root producer is in that set (respecting `in_close_sweep = false` on closure-added
@@ -591,11 +594,18 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   contend for global resources (e.g. xctest simulators, fixed ports) may need `--baseline-jobs 1`;
   suites that declare a `lease` name serialize automatically even inside the pool.
 - **R9.5d** When a close sweep reaches a project with no baseline row (because an edit fell
-  outside the predicted reachable set, pulling an un-baselined consumer into the sweep), its
-  failures are classified as `unattributable` — there is no baseline to subtract, so they cannot
-  be labelled regressions. The advance reply is `resolve_blocker` with kind
-  `no_baseline_for_project`, directing the agent to file the blocker and recover via
-  `resume --unblock --accept-failures`, which inserts the missing baseline row.
+  outside the predicted reachable set, pulling an un-baselined consumer into the sweep), the
+  engine probes that project at `run.start_sha` using a temporary worktree. If the probe
+  succeeds (the suite is collectable and runs), the failing set at `start_sha` is inserted as a
+  `late_probe` baseline row and failures are subtracted from it exactly as if the baseline had
+  been captured up front; a `baseline_late_probe` integrity event records `{project, start_sha,
+  failing, collected}`. If the probe cannot observe the project (collection error, suite runs
+  nothing, or `run.start_sha` is NULL), no baseline row is written, a
+  `baseline_late_probe_unobserved` integrity event records `{project, start_sha, reason}`, and
+  the advance reply is `resolve_blocker` with kind `no_baseline_for_project`; the detail
+  describes the unobservable reason and instructs the agent to make the suite observable at the
+  start sha (or restart the run so it is baselined up front); accepting failures is not
+  available for unobserved projects.
 - **R9.5e** `run start --reuse-baselines` enables opt-in cross-run baseline reuse. The cache key
   is `(project, tree_hash(project root ∪ upstream producer roots), config_sha)`, where
   `upstream_producer_roots` is the fixpoint closure of all artifact-graph producers that feed
@@ -607,9 +617,10 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   projects. The default (`--reuse-baselines` absent) neither reads nor writes the cache, leaving
   behaviour byte-identical to before. An optional TTL (`--reuse-max-age <seconds>`) ignores
   entries older than that many seconds, bounding how stale a reused baseline may be. A stale or
-  wrong reused baseline is always recoverable via `resume --unblock --accept-failures`
-  (R9.5b), which treats a reused baseline row as an ordinary row.
+  wrong reused baseline is recoverable via `resume --unblock --accept-failures` (R9.5b),
+  which treats a reused baseline row as an ordinary row, for tests that fail at the start sha.
 - **R9.6** Baseline failures are subtracted from `other_failures` in every subsequent invocation.
+  A baseline row is only ever captured from `run.start_sha`, never from the current tree.
 - **R9.7** A baseline failure that starts passing is recorded, not ignored.
 - **R9.5g** `run start` refuses a baseline whose failure ratio exceeds the implausibility threshold
   (`BASELINE_MAX_FAILURE_RATIO_DEFAULT = 0.5`) for any project that collected at least

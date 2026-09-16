@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import shutil
 import subprocess
+import tempfile
+from collections.abc import Generator, Sequence
 from pathlib import Path
 
 
@@ -136,3 +140,38 @@ def checkout_paths(worktree: Path, paths: list[str]) -> None:
 def staged_paths(worktree: Path) -> list[str]:
     out = git(worktree, "diff", "--cached", "--name-only")
     return [p for p in out.splitlines() if p.strip()]
+
+
+@contextlib.contextmanager
+def temporary_worktree(
+    worktree: Path, sha: str, link_ignored_under: Sequence[str] = ()
+) -> Generator[Path, None, None]:
+    tmp_dir = Path(tempfile.mkdtemp(prefix="tdd-probe-"))
+    try:
+        git(worktree, "worktree", "add", "--detach", str(tmp_dir), sha)
+        for root in link_ignored_under:
+            root_path = worktree / root
+            listing = git(
+                worktree, "ls-files", "-o", "-i", "--exclude-standard", "--directory", "--", root
+            )
+            for entry in listing.splitlines():
+                entry = entry.rstrip("/")
+                rel = entry[len(root) + 1 :] if entry.startswith(root + "/") else entry
+                if not rel or "/" in rel:
+                    continue
+                src = root_path / rel
+                dst = tmp_dir / root / rel
+                if dst.exists() or dst.is_symlink():
+                    continue
+                try:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    dst.symlink_to(src)
+                except OSError:
+                    pass
+        yield tmp_dir
+    finally:
+        try:
+            git(worktree, "worktree", "remove", "--force", str(tmp_dir))
+        except GitError:
+            pass
+        shutil.rmtree(tmp_dir, ignore_errors=True)
