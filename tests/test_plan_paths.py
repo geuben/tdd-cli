@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from conftest import run_cli, write_plan
+import subprocess
+
+from conftest import git, run_cli, write_plan
 from tddcli import config as config_mod
 from tddcli import contract as contract_mod
 from tddcli import plan_paths as plan_paths_mod
@@ -45,6 +47,31 @@ _CARGO_TOML = (
     'adapter    = "cargo"\n'
     'test_paths = ["tests/"]\n'
 )
+
+
+def _make_cargo_repo(tmp_path):
+    root = tmp_path / "workspace"
+    (root / "crates" / "dd-bridge").mkdir(parents=True)
+    (root / "tdd.toml").write_text(_CARGO_TOML)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    git(root, "config", "user.email", "test@example.com")
+    git(root, "config", "user.name", "Test")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "initial")
+    return root
+
+
+def test_unresolved_ids_do_not_fail_the_command(tmp_path, ledger_home):
+    repo = _make_cargo_repo(tmp_path)
+    plan_text = (
+        "---\ncycles:\n"
+        "  - n: 1\n    project: dd-bridge\n    refactor_cycle: true\n"
+        "    modifies_tests:\n      - \"lib::inner::tests::unit_thing\"\n"
+        "    commit_refactor: x\n---\n"
+    )
+    plan = write_plan(repo, plan_text)
+    result = run_cli(repo, "plan", "paths", plan, "--json")
+    assert result["ok"] is True
 
 
 def test_a_cargo_lib_id_is_unresolved_with_no_path_in_id(tmp_path):
