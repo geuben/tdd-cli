@@ -92,14 +92,29 @@ def _claims(conn: sqlite3.Connection) -> list[dict]:
     ]
 
 
+def _advance_claims(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute("SELECT * FROM advance_claim ORDER BY id").fetchall()
+    return [
+        {
+            "worktree": r["worktree_path"],
+            "hostname": r["hostname"],
+            "pid": r["pid"],
+            "stale": claim_is_stale(r["hostname"], r["pid"], r["started_at"]),
+            "elapsed_s": _age_s(r["started_at"]),
+        }
+        for r in rows
+    ]
+
+
 def summarise(ledger_db: Path) -> dict:
     conn = open_readonly(ledger_db)
     if conn is None:
-        return {"runs": [], "collecting": [], "suites": leases.snapshot()}
+        return {"runs": [], "collecting": [], "advancing": [], "suites": leases.snapshot()}
     try:
         return {
             "runs": _runs(conn),
             "collecting": _claims(conn),
+            "advancing": _advance_claims(conn),
             "suites": leases.snapshot(),
         }
     finally:
