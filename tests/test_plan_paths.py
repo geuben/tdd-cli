@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from conftest import run_cli, run_cli_text, write_plan
-
+from conftest import run_cli, write_plan
 
 PYTEST_PLAN = """---
 cycles:
