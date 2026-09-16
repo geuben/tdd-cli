@@ -56,7 +56,10 @@ packages = ["src/tddcli"]
 "README.md" = "tddcli/_docs/README.md"
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "examples", "README.md", "LICENSE", "CHANGELOG.md", "SECURITY.md"]
+# `docs` is here because the wheel force-includes out of it, and the wheel is built
+# from the sdist — leave it out and `uv build` dies on a forced include it cannot see,
+# even though a wheel built straight from a checkout is fine.
+include = ["src", "tests", "docs", "examples", "README.md", "LICENSE", "CHANGELOG.md", "SECURITY.md"]
 
 [dependency-groups]
 dev = ["pytest>=8.0", "pytest-json-report>=1.5", "pytest-xdist>=3.5", "ruff>=0.5", "zizmor>=1.29"]

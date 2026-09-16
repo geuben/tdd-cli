@@ -73,6 +73,26 @@ def test_topic_paths_exist_in_the_repository():
         assert (REPO_ROOT / topic.path).is_file(), topic.path
 
 
+def test_every_force_included_file_is_carried_in_the_sdist():
+    """The second drift guard: the wheel is built *from the sdist*, not from the checkout.
+
+    So a force-include whose source directory is missing from the sdist `include`
+    list builds fine locally and dies in `uv build` with "Forced include not found".
+    Nothing above catches it — the topic resolves, the force-include is present, and
+    the file exists in the repository; it just never reaches the tree the wheel is
+    built from.
+    """
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+    build = pyproject["tool"]["hatch"]["build"]["targets"]
+    shipped = set(build["sdist"]["include"])
+    for source in build["wheel"]["force-include"]:
+        top = Path(source).parts[0]
+        assert top in shipped or source in shipped, (
+            f"{source} is force-included into the wheel but {top!r} is not in the "
+            f"sdist include list, so `uv build` cannot see it"
+        )
+
+
 def test_the_packaged_copy_wins_over_the_repository_one(repo, monkeypatch, tmp_path):
     """An installed wheel must never read a checkout that happens to sit above it.
 
