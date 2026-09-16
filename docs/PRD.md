@@ -195,6 +195,18 @@ Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `c
 Without it the only available label is `regression`, which records a defect the run introduced —
 so the agent must either misreport its own work or leave the failure unfiled.
 
+### GateResult
+One execution (or memo-skip) of one project's lint or typecheck gate during a close sweep.
+
+| Field | Notes |
+|---|---|
+| `id`, `run_id`, `cycle_id`, `project`, `kind` | `kind` is `lint` or `typecheck` |
+| `ok` | `1` = passed (or skipped), `0` = failed |
+| `output` | truncated stdout/stderr of the failing command; empty when `ok = 1` |
+| `tree_hash` | hash of the project tree at the time the gate ran or was skipped (schema v11) |
+| `skipped` | `1` if the gate was memo-skipped (tree unchanged, gate previously passed within this run); `0` otherwise (schema v11) |
+| `at` | |
+
 ---
 
 ## 6. State machine
@@ -561,7 +573,9 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
 - **R9.2** On the transition out of `AWAITING_REFACTOR`, the close sweep runs: the cycle's own
   projects, plus every project **downstream of an artifact the cycle modified** per the
   `consumed_by` edges in §7.1, plus lint and typecheck for each. Projects with
-  `in_close_sweep = false` are always excluded.
+  `in_close_sweep = false` are always excluded. The close sweep runs lint and typecheck for
+  **every project in scope before any suite**; if any gate fails, the sweep returns immediately
+  without running any suite.
 - **R9.3** A **full sweep** — every registered project, lint and typecheck, including
   `in_close_sweep = false` suites — runs once at plan completion.
 - **R9.4** Rationale: a per-cycle sweep of all four projects with `mypy` and `tsc` costs minutes,
@@ -664,7 +678,12 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
 
 ### 9.4 Lint, typecheck and artifacts
 - **R9.11** Lint and typecheck results are part of the close-sweep verdict, surfaced alongside
-  test failures rather than discovered later at commit time.
+  test failures rather than discovered later at commit time. The gate pass stops at the **first
+  failing gate**; `Adapter._gate` stops at the **first failing command** within a gate. A gate
+  whose project tree hash is unchanged since that gate last passed within the same run is
+  **skipped** (no command is executed) and recorded with `skipped = 1` in `gate_result`. Limit:
+  gate configuration that lives outside the project's declared roots (e.g. a top-level
+  `pyproject.toml`) does not affect the tree hash and therefore does not invalidate the memo.
 - **R9.12** Before a run starts and at every cycle close, declared artifacts are checked for
   staleness against their producer. When the tool cannot resolve staleness itself (no `regenerate`
   command, or the regenerate hook produced no commit), it emits `stale_artifact` and blocks the

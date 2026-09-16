@@ -6,6 +6,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Close sweep runs all gates before any suite** (#129): lint and typecheck now run for every
+  project in the sweep set before any project's suite executes. A failing gate short-circuits the
+  sweep immediately — no suite runs, and `next_action` returns `fix_regression` with the failing
+  gate entry. Previously each project ran its suite first and only then checked its gates.
+- **`Adapter._gate` stops at the first failing command** (#129): the first non-zero exit ends the
+  gate; subsequent commands in the same gate list are not executed.
+- **Gate memoisation** (#129): a gate whose project tree hash is unchanged since it last passed
+  within the same run is skipped (no command executed) and recorded with `skipped = 1` in
+  `gate_result`. A failed gate or a changed tree always re-runs.
+- **`fix_regression` detail wording** (#129): the reply for a gate failure now reads
+  `"Close sweep stopped before the suite: lint/typecheck gates failed."` (was `"Close sweep is
+  green but lint/typecheck gates failed."`).
+- **Schema v11** (#129): `gate_result` gains `tree_hash TEXT` and
+  `skipped INTEGER NOT NULL DEFAULT 0`. Existing ledgers are migrated on open via `MIGRATIONS[10]`.
+
 ## [0.11.0] - 2026-09-16
 
 ### Added
