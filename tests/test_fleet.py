@@ -167,6 +167,23 @@ def test_lease_snapshot_with_no_directory(tmp_path, monkeypatch):
 # -- claim liveness ----------------------------------------------------------
 
 
+def test_fleet_and_progress_agree_on_a_dead_collector(repo):
+    proc = subprocess.Popen(["true"])
+    proc.wait()
+    dead_pid = proc.pid
+    hostname = socket.gethostname()
+
+    ledger = Ledger(repo)
+    ledger.claim(str(repo), hostname, dead_pid, projects_total=2)
+
+    fleet_out = run_cli(repo, "fleet", "--json")
+    progress_out = run_cli(repo, "progress", "--json")
+
+    (fleet_row,) = fleet_out["result"]["collecting"]
+    progress_result = progress_out["result"]
+    assert (fleet_row["stale"], fleet_row["pid"]) == (progress_result["stale"], progress_result["pid"])
+
+
 def test_render_marks_a_dead_collector_and_leaves_a_live_one_alone():
     summary = {
         "runs": [],
