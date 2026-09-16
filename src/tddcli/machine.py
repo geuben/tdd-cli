@@ -286,7 +286,19 @@ class Engine:
                     (self.run["id"], name, kind),
                 )
                 if last and last["ok"] == 1 and last["tree_hash"] == current_hash:
-                    continue  # memo hit: gate passed at this tree hash
+                    self.ledger.insert(
+                        "gate_result",
+                        run_id=self.run["id"],
+                        cycle_id=cycle_row["id"],
+                        project=name,
+                        kind=kind,
+                        ok=1,
+                        output="",
+                        tree_hash=current_hash,
+                        skipped=1,
+                        at=now(),
+                    )
+                    continue
                 gate = gate_fn()
                 self.ledger.insert(
                     "gate_result",
