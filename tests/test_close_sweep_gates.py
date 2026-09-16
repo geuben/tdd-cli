@@ -143,3 +143,78 @@ def test_a_failing_gate_runs_no_suite(repo):
         (run_id,),
     )
     assert len(rows) == 0
+
+
+# ── cycle 6 ── every sweep project's gates run before any project's suite
+
+_THREE_PLAN = """\
+---
+cycles:
+  - n: 1
+    project: backend
+    title: "basic pass"
+    test: "tests/test_gate_probe.py::test_gate_probe"
+    stub_expected: ["app/probe.py"]
+    commit_red: "test: gate probe"
+    commit_green: "feat: gate probe"
+---
+"""
+
+
+def test_a_later_projects_failing_gate_runs_no_earlier_suite(repo_three):
+    # Rewrite tdd.toml: backend has no lint, svc has a failing lint.
+    (repo_three / "tdd.toml").write_text(
+        "[project.backend]\n"
+        'root       = "backend"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        "\n"
+        "[project.svc]\n"
+        'root       = "svc"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        "lint       = [\"sh -c 'exit 1'\"]\n"
+        "typecheck  = []\n"
+        "\n"
+        "[project.other]\n"
+        'root       = "other"\n'
+        'adapter    = "pytest"\n'
+        'test_paths = ["tests/"]\n'
+        "\n"
+        "[artifact.schema]\n"
+        'path        = "backend/schema.json"\n'
+        'produced_by = "backend"\n'
+        'consumed_by = ["svc"]\n'
+        'regenerate  = "true"\n'
+    )
+    git(repo_three, "add", "-A")
+    git(repo_three, "commit", "-q", "-m", "configure svc lint")
+
+    plan = write_plan(repo_three, _THREE_PLAN)
+    assert run_cli(repo_three, "plan", "register", plan)["ok"]
+    assert run_cli(repo_three, "run", "start", "--plan", plan)["ok"]
+
+    # RED: test + stub
+    (repo_three / "backend" / "tests" / "test_gate_probe.py").write_text(_TEST)
+    (repo_three / "backend" / "app" / "probe.py").write_text(_STUB)
+    adv = run_cli(repo_three, "advance")
+    assert adv["next_action"]["verb"] == "write_implementation", adv
+
+    # GREEN: real implementation
+    (repo_three / "backend" / "app" / "probe.py").write_text(_IMPL)
+    adv = run_cli(repo_three, "advance")
+    assert adv["next_action"]["verb"] == "refactor_or_advance", adv
+
+    # Modify backend/schema.json (dirty) → pulls svc into the close sweep
+    (repo_three / "backend" / "schema.json").write_text('{"version": 2}\n')
+
+    # Advance at AWAITING_REFACTOR → svc's lint fails → no suite runs
+    out = run_cli(repo_three, "advance")
+
+    run_id = out["run"]["id"]
+    led = Ledger(gitutil.repo_identity(repo_three))
+    rows = led.all(
+        "SELECT * FROM invocation WHERE run_id = ? AND phase_at = 'CLOSE_SWEEP' AND project = 'backend'",
+        (run_id,),
+    )
+    assert len(rows) == 0
