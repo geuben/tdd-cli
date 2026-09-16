@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import sqlite3
+import subprocess
 import time
 
 from conftest import run_cli, write_plan
@@ -160,3 +162,130 @@ def test_lease_snapshot_with_no_directory(tmp_path, monkeypatch):
     monkeypatch.setenv("TDD_LEASE_DIR", str(tmp_path / "never-created"))
     snap = leases.snapshot()
     assert snap["active"] == 0
+
+
+# -- claim liveness ----------------------------------------------------------
+
+
+def test_an_advance_claim_alone_is_not_no_active_runs():
+    summary = {
+        "runs": [],
+        "collecting": [],
+        "advancing": [
+            {"worktree": "/wt-1", "hostname": "h", "pid": 4243, "stale": False, "elapsed_s": 2.0},
+        ],
+        "suites": {"active": 0, "total_cores": 8, "workers_each": 8},
+    }
+    assert "no active runs" not in fleet.render(summary)
+
+
+def test_render_lists_advance_claims_and_marks_a_dead_holder():
+    summary = {
+        "runs": [],
+        "collecting": [],
+        "suites": {"active": 0, "total_cores": 8, "workers_each": 8},
+        "advancing": [
+            {"worktree": "/wt-1", "hostname": "h", "pid": 4242, "stale": True, "elapsed_s": 91.0},
+            {"worktree": "/wt-2", "hostname": "h", "pid": 4243, "stale": False, "elapsed_s": 2.0},
+        ],
+    }
+    expected = (
+        "/wt-1  advance in flight — 91.0s elapsed — holder (pid 4242) is dead\n"
+        "/wt-2  advance in flight — 2.0s elapsed\n"
+        "suites executing now: 0 — 8 worker(s) each of 8 cores\n"
+    )
+    assert fleet.render(summary) == expected
+
+
+def test_fleet_lists_advance_claims_with_holder_liveness(repo):
+    proc = subprocess.Popen(["true"])
+    proc.wait()
+    dead_pid = proc.pid
+    live_pid = os.getpid()
+    dead_wt = str(repo)
+    live_wt = str(repo) + "-wt2"
+    hostname = socket.gethostname()
+
+    ledger = Ledger(repo)
+    ledger.claim_advance(dead_wt, hostname, dead_pid)
+    ledger.claim_advance(live_wt, hostname, live_pid)
+
+    out = run_cli(repo, "fleet", "--json")
+    rows = {
+        r["worktree"]: (r.get("stale"), r.get("pid")) for r in out["result"].get("advancing") or []
+    }
+    assert rows == {dead_wt: (True, dead_pid), live_wt: (False, live_pid)}
+
+
+def test_fleet_and_progress_agree_on_a_dead_collector(repo):
+    proc = subprocess.Popen(["true"])
+    proc.wait()
+    dead_pid = proc.pid
+    hostname = socket.gethostname()
+
+    ledger = Ledger(repo)
+    ledger.claim(str(repo), hostname, dead_pid, projects_total=2)
+
+    fleet_out = run_cli(repo, "fleet", "--json")
+    progress_out = run_cli(repo, "progress", "--json")
+
+    (fleet_row,) = fleet_out["result"]["collecting"]
+    progress_result = progress_out["result"]
+    assert (fleet_row["stale"], fleet_row["pid"]) == (
+        progress_result["stale"],
+        progress_result["pid"],
+    )
+
+
+def test_render_marks_a_dead_collector_and_leaves_a_live_one_alone():
+    summary = {
+        "runs": [],
+        "advancing": [],
+        "collecting": [
+            {
+                "worktree": "/wt-1",
+                "hostname": "h",
+                "projects_done": 1,
+                "projects_total": 3,
+                "current_project": "backend",
+                "elapsed_s": 12.4,
+                "pid": 4242,
+                "stale": True,
+            },
+            {
+                "worktree": "/wt-2",
+                "hostname": "h",
+                "projects_done": 0,
+                "projects_total": 2,
+                "current_project": None,
+                "elapsed_s": 3.0,
+                "pid": 4243,
+                "stale": False,
+            },
+        ],
+        "suites": {"active": 0, "total_cores": 8, "workers_each": 8},
+    }
+    expected = (
+        "/wt-1  collecting baseline 1/3 (current: backend) — 12.4s elapsed — collector (pid 4242) is dead\n"
+        "/wt-2  collecting baseline 0/2 (current: -) — 3.0s elapsed\n"
+        "suites executing now: 0 — 8 worker(s) each of 8 cores\n"
+    )
+    assert fleet.render(summary) == expected
+
+
+def test_fleet_claim_rows_report_collector_liveness(repo):
+    proc = subprocess.Popen(["true"])
+    proc.wait()
+    dead_pid = proc.pid
+    live_pid = os.getpid()
+    dead_wt = str(repo)
+    live_wt = str(repo) + "-wt2"
+
+    hostname = socket.gethostname()
+    ledger = Ledger(repo)
+    ledger.claim(dead_wt, hostname, dead_pid, projects_total=3)
+    ledger.claim(live_wt, hostname, live_pid, projects_total=2)
+
+    out = run_cli(repo, "fleet", "--json")
+    rows = {r["worktree"]: (r.get("stale"), r.get("pid")) for r in out["result"]["collecting"]}
+    assert rows == {dead_wt: (True, dead_pid), live_wt: (False, live_pid)}

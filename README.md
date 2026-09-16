@@ -183,6 +183,18 @@ suite invocation — a stale age is the signal for a wedged agent. Baselines sti
 collected are listed separately, and the worker-lease directory is read (never modified)
 to show how many suites are executing right now and each one's share of the cores.
 
+A baseline-claim line gains the suffix ` — collector (pid N) is dead` when the collector
+process is no longer running. The JSON row carries `stale` and `pid` fields that match the
+`stale`/`pid` fields on `tdd status` and `tdd progress` result objects (#115), so a machine
+consumer can detect a wedged collector without a second command. In-flight `tdd advance`
+calls are listed under a separate `advancing` key (JSON) or as `advance in flight` lines
+(human text), with ` — holder (pid N) is dead` appended when the holder was killed.
+
+`tdd fleet` reports staleness but never clears a claim — it is a pure read-only observer.
+To recover a wedged baseline collector, run `tdd run start --plan <path>` from the wedged
+worktree. A dead advance holder releases its claim automatically on the next `tdd advance`
+call.
+
 The command is safe to run while agents are mid-run from any worktree on any branch: it
 opens the ledger with SQLite's read-only mode, so it is structurally incapable of creating,
 migrating, or writing the database, and it requires no `tdd.toml`, plan, or active run.

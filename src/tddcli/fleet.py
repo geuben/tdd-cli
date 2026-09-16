@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import leases
+from .ledger import claim_is_stale
 
 
 def open_readonly(path: Path) -> sqlite3.Connection | None:
@@ -84,6 +85,22 @@ def _claims(conn: sqlite3.Connection) -> list[dict]:
             "projects_total": r["projects_total"],
             "current_project": r["current_project"],
             "elapsed_s": _age_s(r["started_at"]),
+            "pid": r["pid"],
+            "stale": claim_is_stale(r["hostname"], r["pid"], r["started_at"]),
+        }
+        for r in rows
+    ]
+
+
+def _advance_claims(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute("SELECT * FROM advance_claim ORDER BY id").fetchall()
+    return [
+        {
+            "worktree": r["worktree_path"],
+            "hostname": r["hostname"],
+            "pid": r["pid"],
+            "stale": claim_is_stale(r["hostname"], r["pid"], r["started_at"]),
+            "elapsed_s": _age_s(r["started_at"]),
         }
         for r in rows
     ]
@@ -92,11 +109,12 @@ def _claims(conn: sqlite3.Connection) -> list[dict]:
 def summarise(ledger_db: Path) -> dict:
     conn = open_readonly(ledger_db)
     if conn is None:
-        return {"runs": [], "collecting": [], "suites": leases.snapshot()}
+        return {"runs": [], "collecting": [], "advancing": [], "suites": leases.snapshot()}
     try:
         return {
             "runs": _runs(conn),
             "collecting": _claims(conn),
+            "advancing": _advance_claims(conn),
             "suites": leases.snapshot(),
         }
     finally:
@@ -113,16 +131,24 @@ def render(summary: dict) -> str:
             f"  last activity {r['last_activity_age_s']}s ago"
         )
     for c in summary["collecting"]:
-        lines.append(
+        line = (
             f"{c['worktree']}  collecting baseline"
             f" {c['projects_done']}/{c['projects_total']}"
             f" (current: {c['current_project'] or '-'}) — {c['elapsed_s']}s elapsed"
         )
+        if c.get("stale"):
+            line += f" — collector (pid {c['pid']}) is dead"
+        lines.append(line)
+    for a in summary["advancing"]:
+        line = f"{a['worktree']}  advance in flight — {a['elapsed_s']}s elapsed"
+        if a.get("stale"):
+            line += f" — holder (pid {a['pid']}) is dead"
+        lines.append(line)
     s = summary["suites"]
     lines.append(
         f"suites executing now: {s['active']}"
         f" — {s['workers_each']} worker(s) each of {s['total_cores']} cores"
     )
-    if not summary["runs"] and not summary["collecting"]:
+    if not summary["runs"] and not summary["collecting"] and not summary["advancing"]:
         lines.insert(0, "no active runs")
     return "\n".join(lines) + "\n"
