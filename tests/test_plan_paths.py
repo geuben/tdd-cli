@@ -25,6 +25,25 @@ cycles:
 """
 
 
+def test_every_qualification_form_resolves_to_the_same_path(repo):
+    forms = [
+        "tests/test_add.py::test_add",
+        "backend/tests/test_add.py::test_add",
+        "backend::tests/test_add.py::test_add",
+    ]
+    results = []
+    for form in forms:
+        plan_text = (
+            "---\ncycles:\n"
+            f"  - n: 1\n    project: backend\n    test: \"{form}\"\n"
+            "    commit_red: x\n    commit_green: x\n---\n"
+        )
+        plan = write_plan(repo, plan_text, f"tasks/plan_{len(results)}.md")
+        paths = run_cli(repo, "plan", "paths", plan, "--json")["result"]["paths"]
+        results.append((paths[0]["project"], paths[0]["path"]))
+    assert results[0] == results[1] == results[2]
+
+
 def test_resolves_modifies_tests_ids_labelled_with_their_field(repo):
     plan = write_plan(repo, MODIFIES_TESTS_PLAN)
     result = run_cli(repo, "plan", "paths", plan, "--json")["result"]["paths"]
