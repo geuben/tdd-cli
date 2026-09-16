@@ -167,6 +167,24 @@ def test_lease_snapshot_with_no_directory(tmp_path, monkeypatch):
 # -- claim liveness ----------------------------------------------------------
 
 
+def test_fleet_lists_advance_claims_with_holder_liveness(repo):
+    proc = subprocess.Popen(["true"])
+    proc.wait()
+    dead_pid = proc.pid
+    live_pid = os.getpid()
+    dead_wt = str(repo)
+    live_wt = str(repo) + "-wt2"
+    hostname = socket.gethostname()
+
+    ledger = Ledger(repo)
+    ledger.claim_advance(dead_wt, hostname, dead_pid)
+    ledger.claim_advance(live_wt, hostname, live_pid)
+
+    out = run_cli(repo, "fleet", "--json")
+    rows = {r["worktree"]: (r.get("stale"), r.get("pid")) for r in out["result"].get("advancing") or []}
+    assert rows == {dead_wt: (True, dead_pid), live_wt: (False, live_pid)}
+
+
 def test_fleet_and_progress_agree_on_a_dead_collector(repo):
     proc = subprocess.Popen(["true"])
     proc.wait()
