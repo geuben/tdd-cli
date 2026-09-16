@@ -167,6 +167,18 @@ def test_lease_snapshot_with_no_directory(tmp_path, monkeypatch):
 # -- claim liveness ----------------------------------------------------------
 
 
+def test_an_advance_claim_alone_is_not_no_active_runs():
+    summary = {
+        "runs": [],
+        "collecting": [],
+        "advancing": [
+            {"worktree": "/wt-1", "hostname": "h", "pid": 4243, "stale": False, "elapsed_s": 2.0},
+        ],
+        "suites": {"active": 0, "total_cores": 8, "workers_each": 8},
+    }
+    assert "no active runs" not in fleet.render(summary)
+
+
 def test_render_lists_advance_claims_and_marks_a_dead_holder():
     summary = {
         "runs": [],
