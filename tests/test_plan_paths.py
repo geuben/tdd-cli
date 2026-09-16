@@ -61,6 +61,24 @@ def _make_cargo_repo(tmp_path):
     return root
 
 
+def test_a_refactor_cycles_modifies_tests_are_resolved(tmp_path):
+    plan_text = (
+        "---\ncycles:\n"
+        "  - n: 1\n    project: dd-bridge\n    refactor_cycle: true\n"
+        "    modifies_tests:\n"
+        "      - \"adapter_host_catalog::host_catalog_lists_each_running\"\n"
+        "    commit_refactor: x\n"
+        "  - n: 2\n    project: dd-bridge\n    refactor_cycle: true\n"
+        "    modifies_tests:\n"
+        "      - \"other_file::some_test\"\n"
+        "    commit_refactor: x\n---\n"
+    )
+    result = _resolve(tmp_path, _CARGO_TOML, plan_text)
+    cycle2_paths = [r for r in result["paths"] if r["cycle"] == 2]
+    assert len(cycle2_paths) == 1
+    assert cycle2_paths[0]["path"] == "crates/dd-bridge/tests/other_file.rs"
+
+
 def test_a_cargo_integration_test_id_resolves_under_the_project_root(tmp_path):
     plan_text = (
         "---\ncycles:\n"
