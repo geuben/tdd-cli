@@ -96,6 +96,44 @@ def test_xctest_scans_sources_to_map_an_id_to_its_file(tmp_path):
     assert result == {"AppTests/RecTests/testStopsRecording": "AppTests/RecTests.swift"}
 
 
+def test_a_scan_that_matches_other_than_one_file_says_why(tmp_path):
+    id_ = "com.example.feature.BarTest/rejectsAnEmptyName"
+
+    # Case 1: id absent from all source files → not_found_in_sources
+    (tmp_path / "case1").mkdir()
+    adapter1 = _gradle_adapter_for(tmp_path / "case1")  # no test files with that id
+    plan_text1 = (
+        "---\ncycles:\n"
+        "  - n: 1\n    project: app\n    refactor_cycle: true\n"
+        f"    modifies_tests:\n      - \"{id_}\"\n"
+        "    commit_refactor: x\n---\n"
+    )
+    (tmp_path / "case1" / "tdd.toml").write_text(_GRADLE_TOML)
+    cfg1 = config_mod.load(tmp_path / "case1")
+    c1 = contract_mod.parse(plan_text1, "tasks/p.md", cfg1)
+    result1 = plan_paths_mod.resolve(c1, cfg1, tmp_path / "case1")
+
+    # Case 2: id appears in two files → ambiguous_id
+    dup_kt = _BAR_TEST_KT  # same package + class in both files
+    (tmp_path / "case2").mkdir()
+    adapter2 = _gradle_adapter_for(
+        tmp_path / "case2",
+        [
+            ("src/test/kotlin/com/example/feature/BarTest.kt", dup_kt),
+            ("src/test/kotlin/dup/BarTest.kt", dup_kt),
+        ],
+    )
+    _ = adapter2  # adapter created for side effects (files written)
+    plan_text2 = plan_text1
+    (tmp_path / "case2" / "tdd.toml").write_text(_GRADLE_TOML)
+    cfg2 = config_mod.load(tmp_path / "case2")
+    c2 = contract_mod.parse(plan_text2, "tasks/p.md", cfg2)
+    result2 = plan_paths_mod.resolve(c2, cfg2, tmp_path / "case2")
+
+    reasons = [result1["unresolved"][0]["reason"], result2["unresolved"][0]["reason"]]
+    assert reasons == ["not_found_in_sources", "ambiguous_id"]
+
+
 def test_a_gradle_id_resolves_through_the_source_scan(tmp_path):
     (tmp_path / "tdd.toml").write_text(_GRADLE_TOML)
     (tmp_path / "app" / "src" / "test" / "kotlin" / "com" / "example" / "feature").mkdir(
