@@ -167,6 +167,26 @@ def test_lease_snapshot_with_no_directory(tmp_path, monkeypatch):
 # -- claim liveness ----------------------------------------------------------
 
 
+def test_render_marks_a_dead_collector_and_leaves_a_live_one_alone():
+    summary = {
+        "runs": [],
+        "advancing": [],
+        "collecting": [
+            {"worktree": "/wt-1", "hostname": "h", "projects_done": 1, "projects_total": 3,
+             "current_project": "backend", "elapsed_s": 12.4, "pid": 4242, "stale": True},
+            {"worktree": "/wt-2", "hostname": "h", "projects_done": 0, "projects_total": 2,
+             "current_project": None, "elapsed_s": 3.0, "pid": 4243, "stale": False},
+        ],
+        "suites": {"active": 0, "total_cores": 8, "workers_each": 8},
+    }
+    expected = (
+        "/wt-1  collecting baseline 1/3 (current: backend) — 12.4s elapsed — collector (pid 4242) is dead\n"
+        "/wt-2  collecting baseline 0/2 (current: -) — 3.0s elapsed\n"
+        "suites executing now: 0 — 8 worker(s) each of 8 cores\n"
+    )
+    assert fleet.render(summary) == expected
+
+
 def test_fleet_claim_rows_report_collector_liveness(repo):
     proc = subprocess.Popen(["true"])
     proc.wait()
