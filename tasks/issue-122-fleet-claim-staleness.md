@@ -416,9 +416,13 @@ This plan is executed through `tdd-cli`. **You run every command below yourself*
 user to start the run. `tdd run start` records which model is executing, resolved from your own
 session; a run started by anyone else attributes this work to the wrong agent.
 
-    git checkout -b issue-122-fleet-claim-staleness                  # first, before anything else
-    tdd doctor                                                       # must report healthy: true
-    tdd run start --plan tasks/issue-122-fleet-claim-staleness.md    # captures baselines, opens cycle 1
+    git checkout -b issue-122-fleet-claim-staleness     # first, before anything else
+    uv venv /tmp/tdd-referee-122                        # then freeze the referee, before any edit
+    uv pip install --python /tmp/tdd-referee-122/bin/python .
+    REF=/tmp/tdd-referee-122/bin/tdd                    # every `tdd` below means this binary
+
+    $REF doctor                                         # must report healthy: true
+    $REF run start --plan tasks/issue-122-fleet-claim-staleness.md   # baselines, opens cycle 1
 
 If the branch already exists, do not force-checkout and do not pick another name: check it out
 only if it carries this plan's commit and no unrelated work, otherwise stop and ask.
@@ -429,16 +433,30 @@ Stop when `next_action.terminal` is `true`.
 When `next_action.terminal` is `true`, finish the run: render the friction log, commit it, and
 raise the PR — see Done-criteria below.
 
+- Every `tdd` in the loop below is `$REF`. If you open a new shell, re-export it; a bare `tdd`
+  silently runs the editable tree.
 - `tdd advance` is the only command that changes phase. Do not `git add` or `git commit` — the
   tool stages and commits, deriving the file set from the phase.
 - The baseline is captured at `run start` and subtracted from later verdicts. Expected summary
   line for `tddcli`: `536 passed` (0 baseline failures); anything else means the branch moved.
-- The referee is the **released** tdd-cli (see the comment at the top of `tdd.toml`), not this
-  working tree. The `tdd` on PATH here is the venv's *editable* install of the tree you are
-  editing, so run every `tdd` command in this plan as `uvx --from tdd-cli==0.10.1 tdd <args>` (or
-  `uv tool install tdd-cli==0.10.1` once and use that binary). Note the `--from` form: the package
-  is `tdd-cli` but the executable is `tdd`, so `uvx tdd-cli@0.10.1` fails with "An executable named
-  `tdd-cli` is not provided by package `tdd-cli`".
+- **The referee is the frozen snapshot, not the released tool and not this working tree.**
+  `tdd.toml`'s comment says to referee with the released tdd-cli; that is currently
+  **unexecutable** and you must not try it. The newest release is `0.10.1` (checked on PyPI at
+  plan time) and it understands ledger schema **v8**, while this repository's ledger is at **v10**
+  (`MIGRATIONS[9]`, `run.start_sha`, still under `## [Unreleased]` in `CHANGELOG.md`). Verified at
+  plan time: `uvx --from tdd-cli==0.10.1 tdd plan register <this plan>` fails with
+
+      ledger ... has schema version 10, but this tdd-cli understands up to 8 — it was written by
+      a newer tdd-cli. Upgrade tdd-cli; do not downgrade the ledger.
+
+  The `tdd` on PATH is this tree's *editable* install (`.venv/bin/tdd`, via
+  `_editable_impl_tdd_cli.pth`), so using it would put the controller being edited in charge of
+  enforcing the cycle — and **cycle 1 edits `src/tddcli/ledger.py`, the referee's own claim
+  module**. The frozen snapshot installed above is a non-editable copy of the plan commit: it
+  understands v10 and cannot change under the run. Build it **before** cycle 1's first edit and do
+  not rebuild it mid-run. *User decision, 2026-09-16.* Verified at plan time:
+  `/tmp/tdd-referee-122/bin/tdd doctor` reported `healthy: true` and `tdd status` read the ledger
+  cleanly. Do not downgrade or delete the ledger, and do not cut a release to work around this.
 - Verbs this plan will hit: `write_test` / `write_implementation` / `refactor_or_advance` on cycles
   2, 3, 5, 6, 7; `write_test` then `refactor_or_advance` on the pin (cycle 4), where the tool
   expects the test to pass on arrival; `refactor_or_advance` alone on cycles 1 and 8 (refactor
