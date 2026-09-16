@@ -8,6 +8,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`tdd fleet` reports baseline-collector and advance-holder liveness** (follow-up to #115,
+  fixes #122): `fleet --json` now includes `stale` and `pid` on every `collecting` row,
+  matching the fields already on `tdd status` / `tdd progress` result objects. A new
+  top-level `advancing` list exposes in-flight `tdd advance` claims with the same liveness
+  fields. Human text gains ` — collector (pid N) is dead` / ` — holder (pid N) is dead`
+  suffixes; `no active runs` is suppressed when an advance claim is held.
+
 - **`run.start_sha`** (schema v10, `MIGRATIONS[9]`): the HEAD commit at run start is now
   recorded on the run row and used as the reference point for late probes and
   `--accept-failures` gating.
