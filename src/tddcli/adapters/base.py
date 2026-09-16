@@ -302,9 +302,8 @@ class Adapter:
         return self._gate(self.project.typecheck)
 
     def _gate(self, commands: list[str]) -> GateResult:
-        chunks = []
         for cmd in commands:
             code, out, err = run_command(cmd, self.root, label="gate")
             if code != 0:
-                chunks.append(f"$ {cmd}\n{out}\n{err}".strip())
-        return GateResult(ok=not chunks, output="\n\n".join(chunks)[:4000])
+                return GateResult(ok=False, output=f"$ {cmd}\n{out}\n{err}".strip()[:4000])
+        return GateResult(ok=True)
