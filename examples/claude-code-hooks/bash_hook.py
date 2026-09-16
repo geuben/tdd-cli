@@ -19,7 +19,7 @@ import subprocess
 import sys
 
 BARE_RUNNER = re.compile(
-    r"(?:^|&&|;|\|)\s*"                       # start of a shell command
+    r"(?:^|&&|;|\|)\s*"  # start of a shell command
     r"(?:uv\s+run\s+|npx\s+|pnpm\s+|yarn\s+)?"  # common launchers
     r"(?:python\s+-m\s+)?"
     r"(pytest|vitest)\b(?![\w-])"
@@ -29,9 +29,7 @@ ALLOWED_MARKERS = ("--collect-only", "--co", "vitest list")
 
 def run_is_live() -> bool:
     try:
-        proc = subprocess.run(
-            ["tdd", "status"], capture_output=True, text=True, timeout=120
-        )
+        proc = subprocess.run(["tdd", "status"], capture_output=True, text=True, timeout=120)
         envelope = json.loads(proc.stdout)
     except Exception:
         return False  # no tdd here — stay out of the way
@@ -50,17 +48,21 @@ def main() -> int:
     if not run_is_live():
         return 0
 
-    print(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": (
-                "A tdd run is live: run suites through `tdd advance`, not bare"
-                " pytest/vitest. The ledger derives phase from observed execution,"
-                " and a bare run observes nothing it can record."
-            ),
-        }
-    }))
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": (
+                        "A tdd run is live: run suites through `tdd advance`, not bare"
+                        " pytest/vitest. The ledger derives phase from observed execution,"
+                        " and a bare run observes nothing it can record."
+                    ),
+                }
+            }
+        )
+    )
     return 0
 
 

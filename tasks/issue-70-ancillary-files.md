@@ -309,8 +309,12 @@ Test (`test_declared_ancillary_file_is_bucketed_and_staged`, in
 `test_files_outside_cycle_projects_are_flagged_not_staged`):
 ```python
 c = staging.classify(
-    cfg, {"backend/app/x.py", "tasks/plan.md"}, ["backend"],
-    declared(), set(), ancillary={"tasks/plan.md"},
+    cfg,
+    {"backend/app/x.py", "tasks/plan.md"},
+    ["backend"],
+    declared(),
+    set(),
+    ancillary={"tasks/plan.md"},
 )
 assert c.ancillary == ["tasks/plan.md"]
 assert c.outside == []
