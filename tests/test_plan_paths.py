@@ -8,7 +8,6 @@ from tddcli import config as config_mod
 from tddcli import contract as contract_mod
 from tddcli import plan_paths as plan_paths_mod
 from tddcli.adapters.gradle_adapter import GradleAdapter
-from tddcli.adapters.xctest_adapter import XCTestAdapter
 
 PYTEST_PLAN = """---
 cycles:
