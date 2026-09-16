@@ -8,6 +8,7 @@ from tddcli import config as config_mod
 from tddcli import contract as contract_mod
 from tddcli import plan_paths as plan_paths_mod
 from tddcli.adapters.gradle_adapter import GradleAdapter
+from tddcli.adapters.xctest_adapter import XCTestAdapter
 
 PYTEST_PLAN = """---
 cycles:
@@ -64,6 +65,35 @@ def test_gradle_scans_sources_to_map_an_id_to_its_file(tmp_path):
     assert result == {
         "com.example.feature.BarTest/rejectsAnEmptyName": "src/test/kotlin/com/example/feature/BarTest.kt"
     }
+
+
+def _xctest_adapter_for(tmp_path: Path, extra_files=()) -> XCTestAdapter:
+    (tmp_path / "tdd.toml").write_text(_XCTEST_TOML)
+    (tmp_path / "ios" / "AppTests").mkdir(parents=True)
+    for rel, text in extra_files:
+        p = tmp_path / "ios" / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+    cfg = config_mod.load(tmp_path)
+    return XCTestAdapter(cfg.project("ios"), tmp_path)
+
+
+_REC_TESTS_SWIFT = """\
+import XCTest
+
+class RecTests: XCTestCase {
+    func testStopsRecording() {}
+}
+"""
+
+
+def test_xctest_scans_sources_to_map_an_id_to_its_file(tmp_path):
+    adapter = _xctest_adapter_for(
+        tmp_path,
+        [("AppTests/RecTests.swift", _REC_TESTS_SWIFT)],
+    )
+    result = adapter.scan_target_paths()
+    assert result == {"AppTests/RecTests/testStopsRecording": "AppTests/RecTests.swift"}
 
 
 def _make_cfg(tmp_path, toml: str):
