@@ -240,3 +240,48 @@ def test_a_failed_gate_is_rerun_at_the_same_tree(repo, tmp_path):
     # Advance again at AWAITING_REFACTOR with nothing edited (same tree) → gate re-runs
     run_cli(repo, "advance")
     assert counter.read_text().count("\n") == 2
+
+
+# ── cycle 9 ── pin: a gate is re-run when its project tree changed
+
+
+def test_a_gate_is_rerun_when_the_tree_changed(repo, tmp_path):
+    """Lint passes but suite fails first time; tree changes; lint runs again second time."""
+    counter = tmp_path / "lint-count"
+    lint_cmds = [f"sh -c 'echo x >> {counter}'"]  # exits 0 (passes)
+
+    # Set up a failing test that will be in the close sweep
+    (repo / "tdd.toml").write_text(_toml(lint_cmds))
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "configure gates")
+
+    plan = write_plan(repo, SIMPLE_PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    assert run_cli(repo, "run", "start", "--plan", plan)["ok"]
+
+    # RED
+    (repo / "backend" / "tests" / "test_gate_probe.py").write_text(_TEST)
+    (repo / "backend" / "app" / "probe.py").write_text(_STUB)
+    adv = run_cli(repo, "advance")
+    assert adv["next_action"]["verb"] == "write_implementation", adv
+
+    # GREEN
+    (repo / "backend" / "app" / "probe.py").write_text(_IMPL)
+    adv = run_cli(repo, "advance")
+    assert adv["next_action"]["verb"] == "refactor_or_advance", adv
+
+    # First close: add a failing test → lint passes but suite fails
+    (repo / "backend" / "tests" / "test_fail.py").write_text(
+        "def test_fail():\n    assert False\n"
+    )
+    out1 = run_cli(repo, "advance")
+    assert out1["next_action"]["verb"] == "fix_regression", out1
+
+    # Fix the failing test → tree changes → second close: lint re-runs
+    (repo / "backend" / "tests" / "test_fail.py").write_text(
+        "def test_fail():\n    assert True\n"
+    )
+    out2 = run_cli(repo, "advance")
+    assert out2["next_action"]["verb"] != "fix_regression" or out2.get("result", {}).get("gates"), out2
+
+    assert counter.read_text().count("\n") == 2
