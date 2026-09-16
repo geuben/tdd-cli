@@ -79,7 +79,7 @@ skill that duplicates any of it will fight the ledger.
 | `confirm_cycle_applicable` | a judgement point outside the cycle loop: config scaffolded, no active run, doctor passed | review / register / start as the `detail` names; if a cycle no longer applies, `tdd cycle skip --reason "..."` |
 | `annotate_cycle` | the plan requires judgement annotations before the cycle closes | `tdd annotate --key <k> --value "..."` for each missing key, then `tdd advance` |
 | `resolve_blocker` | wedged: three unchanged retries, or failing environment checks | fix the cause, or record it: `tdd blocker --kind <kind> --detail "..."` |
-| `await_baseline` | baseline collection is in flight | poll `tdd progress`; **never** re-run `tdd run start` |
+| `await_baseline` | baseline collection is in flight (collector pid alive) | poll `tdd progress`; **never** re-run `tdd run start` for a live claim |
 | `complete` *(terminal)* | the run (or command) is finished | render the friction log if the `detail` asks, then stop |
 | `blocked` *(terminal)* | a typed blocker was recorded | surface the blocker to the human and stop |
 
@@ -141,8 +141,11 @@ per-worktree claim that serialises concurrent invocations.
 
 **`baseline_in_progress`** (`reason: "baseline_in_progress"`): a second `run start`
 while the first is still probing baselines. `tdd progress` reports progress and emits
-`next_action.verb == "await_baseline"`. Never re-run `run start`; the refusal will
-just stack.
+`next_action.verb == "await_baseline"` when the collector pid is alive. Never re-run
+`run start` against a live claim; the refusal will just stack. If the collector is
+dead (`result.stale == true`), `tdd status` and `tdd progress` emit
+`confirm_cycle_applicable` instead — re-run `tdd run start --plan <path>` to
+release the stale claim and reclaim.
 
 **`advance_in_flight`** (`reason: "advance_in_flight"`): a second `advance` while the
 first is still running its close sweep. The refusal body carries `pid`, `started_at`,

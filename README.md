@@ -620,6 +620,8 @@ agent can confirm the first process is still alive. Run `tdd status` to see the 
 3. **Poll.** `tdd progress` (and `tdd status`) report `collecting_baseline` with per-project
    counters and elapsed time while a baseline is in flight, with `next_action.verb ==
    "await_baseline"` — the fallback for an agent that inherited a run it did not start itself.
+   If the collector process died before finishing, both commands emit `confirm_cycle_applicable`
+   with `result.stale == true` instead — re-run `tdd run start --plan <path>` to recover.
 
 ## Storage
 

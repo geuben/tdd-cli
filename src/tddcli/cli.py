@@ -94,15 +94,33 @@ def _collecting_envelope(claim: dict) -> Envelope:
     row yet is an in-flight baseline, not "never started". `status` is
     documented as the agent's machine view; agents polled `progress` because
     `status` gave them nothing — routing them to the human command to learn machine
-    state was the actual defect."""
+    state was the actual defect.
+
+    When the claim is stale (collector pid is dead), emits `confirm_cycle_applicable`
+    with recovery instructions rather than `await_baseline` — both `cmd_status` and
+    `cmd_progress` go through this seam, so neither can return the wrong verb.
+    """
+    result = {
+        "status": "collecting_baseline",
+        "projects_done": claim["projects_done"],
+        "projects_total": claim["projects_total"],
+        "current_project": claim["current_project"],
+        "elapsed_s": _claim_elapsed_s(claim),
+        "stale": claim["stale"],
+        "pid": claim["pid"],
+    }
+    if claim["stale"]:
+        return Envelope(
+            result=result,
+            next_action=NextAction(
+                Verb.CONFIRM_CYCLE_APPLICABLE,
+                "Baseline collector (pid {}) is dead; re-run `tdd run start --plan <path>` to recover.".format(
+                    claim["pid"]
+                ),
+            ),
+        )
     return Envelope(
-        result={
-            "status": "collecting_baseline",
-            "projects_done": claim["projects_done"],
-            "projects_total": claim["projects_total"],
-            "current_project": claim["current_project"],
-            "elapsed_s": _claim_elapsed_s(claim),
-        },
+        result=result,
         next_action=NextAction(
             Verb.AWAIT_BASELINE,
             "A baseline is being collected; poll `tdd progress` again.",
@@ -1419,13 +1437,19 @@ def cmd_progress(args) -> Envelope:
             if args.json:
                 return envelope
             result = envelope.result
-            current = (
-                f" (current: {result['current_project']})" if result["current_project"] else ""
-            )
-            sys.stdout.write(
-                f"collecting baseline: {result['projects_done']}/{result['projects_total']}"
-                f" projects{current} — {result['elapsed_s']}s elapsed\n"
-            )
+            if result["stale"]:
+                sys.stdout.write(
+                    f"baseline collector (pid {result['pid']}) is dead —"
+                    " run `tdd run start --plan <path>` to recover\n"
+                )
+            else:
+                current = (
+                    f" (current: {result['current_project']})" if result["current_project"] else ""
+                )
+                sys.stdout.write(
+                    f"collecting baseline: {result['projects_done']}/{result['projects_total']}"
+                    f" projects{current} — {result['elapsed_s']}s elapsed\n"
+                )
             envelope.silent = True
             return envelope
         return failure("no runs recorded for this worktree")

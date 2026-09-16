@@ -151,3 +151,51 @@ def test_status_reports_collecting_baseline(repo):
     out = run_cli(repo, "status")
     assert out["result"]["status"] == "collecting_baseline"
     assert out["next_action"]["verb"] == "await_baseline"
+
+
+def open_stale_claim(repo):
+    """Create a baseline claim whose collector pid is guaranteed dead."""
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    led = Ledger(gitutil.repo_identity(repo))
+    led.claim(
+        str(repo),
+        hostname=socket.gethostname(),
+        pid=999_999_999,
+        projects_total=1,
+    )
+    return plan
+
+
+def test_status_on_a_stale_claim_does_not_tell_the_agent_to_wait(repo):
+    open_stale_claim(repo)
+    out = run_cli(repo, "status")
+    assert out["next_action"]["verb"] != "await_baseline", (
+        "status must not tell the agent to poll when the baseline collector is dead"
+    )
+
+
+def test_collecting_baseline_result_reports_claim_liveness(repo):
+    open_claim(repo)
+    out = run_cli(repo, "progress", "--json")
+    assert out["result"]["status"] == "collecting_baseline"
+    assert "stale" in out["result"], "collecting_baseline result must include stale field"
+    assert "pid" in out["result"], "collecting_baseline result must include pid field"
+    assert out["result"]["stale"] is False
+    assert out["result"]["pid"] == os.getpid()
+
+
+def test_progress_json_and_status_agree_on_a_stale_claim(repo):
+    open_stale_claim(repo)
+    progress_out = run_cli(repo, "progress", "--json")
+    status_out = run_cli(repo, "status")
+    assert progress_out["result"].get("stale") is True
+    assert status_out["result"].get("stale") is True
+    assert progress_out["result"].get("pid") == status_out["result"].get("pid")
+
+
+def test_bare_progress_names_the_dead_collector_and_the_recovery_command(repo):
+    open_stale_claim(repo)
+    text = run_cli_text(repo, "progress")
+    assert "999999999" in text, "bare progress must include the dead pid"
+    assert "run start" in text, "bare progress must name the recovery command"
