@@ -350,7 +350,9 @@ class Engine:
                 tree_hash=self.tree_hash([name]),
                 started_at=now(),
             )
-            for kind, gate in (("lint", adapter.lint()), ("typecheck", adapter.typecheck())):
+            gate_failed = False
+            for kind, gate_fn in (("lint", adapter.lint), ("typecheck", adapter.typecheck)):
+                gate = gate_fn()
                 self.ledger.insert(
                     "gate_result",
                     run_id=self.run["id"],
@@ -363,6 +365,10 @@ class Engine:
                 )
                 if not gate.ok:
                     gates.append((name, kind, gate.output))
+                    gate_failed = True
+                    break
+            if gate_failed:
+                break
         return SweepOutcome(
             failures=failures, gates=gates, unbaselined=unbaselined, unobserved=unobserved
         )
