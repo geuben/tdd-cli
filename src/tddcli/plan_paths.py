@@ -11,6 +11,7 @@ def resolve(contract, cfg, worktree: Path) -> dict:
 
     paths = []
     unresolved = []
+    _scan_cache: dict[str, dict[str, str]] = {}
 
     for cycle in contract.cycles:
         for field, ids in (("test", cycle.tests), ("modifies_tests", cycle.modifies_tests)):
@@ -21,15 +22,30 @@ def resolve(contract, cfg, worktree: Path) -> dict:
                 adapter = adapters.build(project, worktree)
                 file_path = adapter.target_path(native)
                 if file_path is None:
-                    unresolved.append(
-                        {
-                            "cycle": cycle.ordinal,
-                            "field": field,
-                            "id": test_id,
-                            "project": project_name,
-                            "reason": "no_path_in_id",
-                        }
-                    )
+                    if project_name not in _scan_cache:
+                        _scan_cache[project_name] = adapter.scan_target_paths()
+                    scan = _scan_cache[project_name]
+                    if native in scan:
+                        joined = os.path.normpath(os.path.join(project.root, scan[native]))
+                        paths.append(
+                            {
+                                "cycle": cycle.ordinal,
+                                "field": field,
+                                "id": test_id,
+                                "project": project_name,
+                                "path": joined,
+                            }
+                        )
+                    else:
+                        unresolved.append(
+                            {
+                                "cycle": cycle.ordinal,
+                                "field": field,
+                                "id": test_id,
+                                "project": project_name,
+                                "reason": "no_path_in_id",
+                            }
+                        )
                 else:
                     joined = os.path.normpath(os.path.join(project.root, file_path))
                     paths.append(
