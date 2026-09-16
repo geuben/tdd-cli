@@ -17,9 +17,7 @@ import sys
 def main() -> int:
     json.load(sys.stdin)  # hook payload; unused, but consume it
 
-    proc = subprocess.run(
-        ["tdd", "status"], capture_output=True, text=True, timeout=120
-    )
+    proc = subprocess.run(["tdd", "status"], capture_output=True, text=True, timeout=120)
     try:
         envelope = json.loads(proc.stdout)
     except json.JSONDecodeError:
@@ -30,15 +28,19 @@ def main() -> int:
         return 0  # complete or blocked: the run is not live, stopping is fine
 
     run = envelope.get("run") or {}
-    print(json.dumps({
-        "decision": "block",
-        "reason": (
-            f"A tdd run is live (cycle {run.get('cycle')}, phase {run.get('phase')})."
-            f" Next action: {next_action.get('verb')} — {next_action.get('detail')}"
-            " If you are genuinely stuck, record it with"
-            " `tdd blocker --kind <kind> --detail <why>`, which releases this hook."
-        ),
-    }))
+    print(
+        json.dumps(
+            {
+                "decision": "block",
+                "reason": (
+                    f"A tdd run is live (cycle {run.get('cycle')}, phase {run.get('phase')})."
+                    f" Next action: {next_action.get('verb')} — {next_action.get('detail')}"
+                    " If you are genuinely stuck, record it with"
+                    " `tdd blocker --kind <kind> --detail <why>`, which releases this hook."
+                ),
+            }
+        )
+    )
     return 0
 
 
