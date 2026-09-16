@@ -200,6 +200,17 @@ class GradleAdapter(Adapter):
     def _collect_per_file(self, rels, result):
         return result
 
+    def scan_target_paths(self) -> dict[str, list[str]]:
+        result: dict[str, list[str]] = {}
+        for path in self._test_files():
+            try:
+                for qualified_id in self._grep_tests(path):
+                    native = self.strip(qualified_id)
+                    result.setdefault(native, []).append(str(path.relative_to(self.root)))
+            except OSError:
+                pass
+        return result
+
     # ------------------------------------------------------------------
     # Doctor gate
     # ------------------------------------------------------------------

@@ -1,0 +1,354 @@
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+from conftest import git, run_cli, run_cli_text, write_plan
+from tddcli import config as config_mod
+from tddcli import contract as contract_mod
+from tddcli import plan_paths as plan_paths_mod
+from tddcli.adapters.gradle_adapter import GradleAdapter
+from tddcli.adapters.xctest_adapter import XCTestAdapter
+
+PYTEST_PLAN = """---
+cycles:
+  - n: 1
+    project: backend
+    test: "tests/test_add.py::test_add"
+    commit_red: "test: add"
+    commit_green: "feat: add"
+---
+"""
+
+MODIFIES_TESTS_PLAN = """---
+cycles:
+  - n: 1
+    project: backend
+    test: "tests/test_add.py::test_add"
+    modifies_tests:
+      - "tests/test_helper.py::test_helper"
+    commit_red: "test: add"
+    commit_green: "feat: add"
+---
+"""
+
+
+def _gradle_adapter_for(tmp_path: Path, extra_files=()) -> GradleAdapter:
+    (tmp_path / "tdd.toml").write_text(_GRADLE_TOML)
+    (tmp_path / "app" / "src" / "test").mkdir(parents=True)
+    for rel, text in extra_files:
+        p = tmp_path / "app" / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+    cfg = config_mod.load(tmp_path)
+    return GradleAdapter(cfg.project("app"), tmp_path)
+
+
+_BAR_TEST_KT = """\
+package com.example.feature
+
+import org.junit.Test
+
+class BarTest {
+    @Test
+    fun rejectsAnEmptyName() {}
+}
+"""
+
+
+def test_gradle_scans_sources_to_map_an_id_to_its_file(tmp_path):
+    adapter = _gradle_adapter_for(
+        tmp_path,
+        [("src/test/kotlin/com/example/feature/BarTest.kt", _BAR_TEST_KT)],
+    )
+    result = adapter.scan_target_paths()
+    assert result == {
+        "com.example.feature.BarTest/rejectsAnEmptyName": [
+            "src/test/kotlin/com/example/feature/BarTest.kt"
+        ]
+    }
+
+
+def _xctest_adapter_for(tmp_path: Path, extra_files=()) -> XCTestAdapter:
+    (tmp_path / "tdd.toml").write_text(_XCTEST_TOML)
+    (tmp_path / "ios" / "AppTests").mkdir(parents=True)
+    for rel, text in extra_files:
+        p = tmp_path / "ios" / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+    cfg = config_mod.load(tmp_path)
+    return XCTestAdapter(cfg.project("ios"), tmp_path)
+
+
+_REC_TESTS_SWIFT = """\
+import XCTest
+
+class RecTests: XCTestCase {
+    func testStopsRecording() {}
+}
+"""
+
+
+def test_xctest_scans_sources_to_map_an_id_to_its_file(tmp_path):
+    adapter = _xctest_adapter_for(
+        tmp_path,
+        [("AppTests/RecTests.swift", _REC_TESTS_SWIFT)],
+    )
+    result = adapter.scan_target_paths()
+    assert result == {"AppTests/RecTests/testStopsRecording": ["AppTests/RecTests.swift"]}
+
+
+def test_a_scan_that_matches_other_than_one_file_says_why(tmp_path):
+    id_ = "com.example.feature.BarTest/rejectsAnEmptyName"
+
+    # Case 1: id absent from all source files → not_found_in_sources
+    (tmp_path / "case1").mkdir()
+    _gradle_adapter_for(tmp_path / "case1")  # creates dirs only; no test files with that id
+    plan_text1 = (
+        "---\ncycles:\n"
+        "  - n: 1\n    project: app\n    refactor_cycle: true\n"
+        f'    modifies_tests:\n      - "{id_}"\n'
+        "    commit_refactor: x\n---\n"
+    )
+    (tmp_path / "case1" / "tdd.toml").write_text(_GRADLE_TOML)
+    cfg1 = config_mod.load(tmp_path / "case1")
+    c1 = contract_mod.parse(plan_text1, "tasks/p.md", cfg1)
+    result1 = plan_paths_mod.resolve(c1, cfg1, tmp_path / "case1")
+
+    # Case 2: id appears in two files → ambiguous_id
+    dup_kt = _BAR_TEST_KT  # same package + class in both files
+    (tmp_path / "case2").mkdir()
+    _gradle_adapter_for(
+        tmp_path / "case2",
+        [
+            ("src/test/kotlin/com/example/feature/BarTest.kt", dup_kt),
+            ("src/test/kotlin/dup/BarTest.kt", dup_kt),
+        ],
+    )  # creates dirs and test files for the resolver to scan
+    plan_text2 = plan_text1
+    (tmp_path / "case2" / "tdd.toml").write_text(_GRADLE_TOML)
+    cfg2 = config_mod.load(tmp_path / "case2")
+    c2 = contract_mod.parse(plan_text2, "tasks/p.md", cfg2)
+    result2 = plan_paths_mod.resolve(c2, cfg2, tmp_path / "case2")
+
+    reasons = [result1["unresolved"][0]["reason"], result2["unresolved"][0]["reason"]]
+    assert reasons == ["not_found_in_sources", "ambiguous_id"]
+
+
+def test_a_gradle_id_resolves_through_the_source_scan(tmp_path):
+    (tmp_path / "tdd.toml").write_text(_GRADLE_TOML)
+    (tmp_path / "app" / "src" / "test" / "kotlin" / "com" / "example" / "feature").mkdir(
+        parents=True
+    )
+    (
+        tmp_path / "app" / "src" / "test" / "kotlin" / "com" / "example" / "feature" / "BarTest.kt"
+    ).write_text(_BAR_TEST_KT)
+    plan_text = (
+        "---\ncycles:\n"
+        "  - n: 1\n    project: app\n    refactor_cycle: true\n"
+        "    modifies_tests:\n"
+        '      - "com.example.feature.BarTest/rejectsAnEmptyName"\n'
+        "    commit_refactor: x\n---\n"
+    )
+    cfg = config_mod.load(tmp_path)
+    c = contract_mod.parse(plan_text, "tasks/p.md", cfg)
+    result = plan_paths_mod.resolve(c, cfg, tmp_path)
+    assert result["paths"][0]["path"] == "app/src/test/kotlin/com/example/feature/BarTest.kt"
+
+
+def _make_cfg(tmp_path, toml: str):
+    (tmp_path / "tdd.toml").write_text(toml)
+    return config_mod.load(tmp_path)
+
+
+def _resolve(tmp_path, toml: str, plan_text: str):
+    cfg = _make_cfg(tmp_path, toml)
+    c = contract_mod.parse(plan_text, "tasks/p.md", cfg)
+    return plan_paths_mod.resolve(c, cfg, tmp_path)
+
+
+_GRADLE_TOML = (
+    "[project.app]\n"
+    'root       = "app"\n'
+    'adapter    = "gradle"\n'
+    'test_paths = ["src/test/"]\n'
+    'test_command = "./gradlew test"\n'
+)
+
+_XCTEST_TOML = (
+    "[project.ios]\n"
+    'root       = "ios"\n'
+    'adapter    = "xctest"\n'
+    'test_paths = ["AppTests/"]\n'
+    'test_command = "xcodebuild test -scheme AppTests"\n'
+)
+
+_CARGO_TOML = (
+    "[project.dd-bridge]\n"
+    'root       = "crates/dd-bridge"\n'
+    'adapter    = "cargo"\n'
+    'test_paths = ["tests/"]\n'
+)
+
+
+def _make_cargo_repo(tmp_path):
+    root = tmp_path / "workspace"
+    (root / "crates" / "dd-bridge").mkdir(parents=True)
+    (root / "tdd.toml").write_text(_CARGO_TOML)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    git(root, "config", "user.email", "test@example.com")
+    git(root, "config", "user.name", "Test")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "initial")
+    return root
+
+
+def test_a_refactor_cycles_modifies_tests_are_resolved(tmp_path):
+    plan_text = (
+        "---\ncycles:\n"
+        "  - n: 1\n    project: dd-bridge\n    refactor_cycle: true\n"
+        "    modifies_tests:\n"
+        '      - "adapter_host_catalog::host_catalog_lists_each_running"\n'
+        "    commit_refactor: x\n"
+        "  - n: 2\n    project: dd-bridge\n    refactor_cycle: true\n"
+        "    modifies_tests:\n"
+        '      - "other_file::some_test"\n'
+        "    commit_refactor: x\n---\n"
+    )
+    result = _resolve(tmp_path, _CARGO_TOML, plan_text)
+    cycle2_paths = [r for r in result["paths"] if r["cycle"] == 2]
+    assert len(cycle2_paths) == 1
+    assert cycle2_paths[0]["path"] == "crates/dd-bridge/tests/other_file.rs"
+
+
+def test_a_cargo_integration_test_id_resolves_under_the_project_root(tmp_path):
+    plan_text = (
+        "---\ncycles:\n"
+        "  - n: 1\n    project: dd-bridge\n    refactor_cycle: true\n"
+        "    modifies_tests:\n"
+        '      - "adapter_host_catalog::host_catalog_lists_each_running"\n'
+        "    commit_refactor: x\n---\n"
+    )
+    result = _resolve(tmp_path, _CARGO_TOML, plan_text)
+    assert result["paths"][0]["path"] == "crates/dd-bridge/tests/adapter_host_catalog.rs"
+
+
+def test_a_plan_that_is_not_a_contract_refuses_cleanly(repo):
+    # Case 1: plan whose cycle names an unknown project
+    plan_text1 = (
+        "---\ncycles:\n"
+        '  - n: 1\n    project: nosuch\n    test: "tests/test_add.py::test_add"\n'
+        "    commit_red: x\n    commit_green: x\n---\n"
+    )
+    plan1 = write_plan(repo, plan_text1, "tasks/bad_project.md")
+    result1 = run_cli(repo, "plan", "paths", plan1, "--json")
+
+    # Case 2: plan path that does not exist
+    result2 = run_cli(repo, "plan", "paths", "tasks/nonexistent.md", "--json")
+
+    assert result1["ok"] is False
+    assert result2["ok"] is False
+
+
+def test_unresolved_ids_do_not_fail_the_command(tmp_path, ledger_home):
+    repo = _make_cargo_repo(tmp_path)
+    plan_text = (
+        "---\ncycles:\n"
+        "  - n: 1\n    project: dd-bridge\n    refactor_cycle: true\n"
+        '    modifies_tests:\n      - "lib::inner::tests::unit_thing"\n'
+        "    commit_refactor: x\n---\n"
+    )
+    plan = write_plan(repo, plan_text)
+    result = run_cli(repo, "plan", "paths", plan, "--json")
+    assert result["ok"] is True
+
+
+def test_a_cargo_lib_id_is_unresolved_with_no_path_in_id(tmp_path):
+    plan_text = (
+        "---\ncycles:\n"
+        "  - n: 1\n    project: dd-bridge\n    refactor_cycle: true\n"
+        '    modifies_tests:\n      - "lib::inner::tests::unit_thing"\n'
+        "    commit_refactor: x\n---\n"
+    )
+    result = _resolve(tmp_path, _CARGO_TOML, plan_text)
+    assert result["unresolved"] == [
+        {
+            "cycle": 1,
+            "field": "modifies_tests",
+            "id": "lib::inner::tests::unit_thing",
+            "project": "dd-bridge",
+            "reason": "no_path_in_id",
+        }
+    ]
+
+
+def test_a_root_project_yields_an_unprefixed_path(tmp_path):
+    toml = '[project.flat]\nroot       = "."\nadapter    = "pytest"\ntest_paths = ["tests/"]\n'
+    plan_text = (
+        "---\ncycles:\n"
+        '  - n: 1\n    project: flat\n    test: "tests/test_add.py::test_add"\n'
+        "    commit_red: x\n    commit_green: x\n---\n"
+    )
+    result = _resolve(tmp_path, toml, plan_text)
+    assert result["paths"][0]["path"] == "tests/test_add.py"
+
+
+def test_every_qualification_form_resolves_to_the_same_path(repo):
+    forms = [
+        "tests/test_add.py::test_add",
+        "backend/tests/test_add.py::test_add",
+        "backend::tests/test_add.py::test_add",
+    ]
+    results = []
+    for form in forms:
+        plan_text = (
+            "---\ncycles:\n"
+            f'  - n: 1\n    project: backend\n    test: "{form}"\n'
+            "    commit_red: x\n    commit_green: x\n---\n"
+        )
+        plan = write_plan(repo, plan_text, f"tasks/plan_{len(results)}.md")
+        paths = run_cli(repo, "plan", "paths", plan, "--json")["result"]["paths"]
+        results.append((paths[0]["project"], paths[0]["path"]))
+    assert results[0] == results[1] == results[2]
+
+
+def test_resolves_modifies_tests_ids_labelled_with_their_field(repo):
+    plan = write_plan(repo, MODIFIES_TESTS_PLAN)
+    result = run_cli(repo, "plan", "paths", plan, "--json")["result"]["paths"]
+    modifies = [r for r in result if r["field"] == "modifies_tests"]
+    assert modifies == [
+        {
+            "cycle": 1,
+            "field": "modifies_tests",
+            "id": "tests/test_helper.py::test_helper",
+            "project": "backend",
+            "path": "backend/tests/test_helper.py",
+        }
+    ]
+
+
+def test_the_bare_command_renders_a_human_table(repo):
+    plan = write_plan(repo, PYTEST_PLAN)
+    out = run_cli_text(repo, "plan", "paths", plan)
+    assert "cycle  field  project  path" in out
+    assert "backend/tests/test_add.py" in out
+
+
+def test_the_bare_command_emits_no_json_envelope(repo):
+    plan = write_plan(repo, PYTEST_PLAN)
+    out = run_cli_text(repo, "plan", "paths", plan)
+    assert "envelope_version" not in out
+
+
+def test_resolves_a_pytest_target_to_a_repository_path(repo):
+    plan = write_plan(repo, PYTEST_PLAN)
+    result = run_cli(repo, "plan", "paths", plan, "--json")["result"]["paths"]
+    assert result == [
+        {
+            "cycle": 1,
+            "field": "test",
+            "id": "tests/test_add.py::test_add",
+            "project": "backend",
+            "path": "backend/tests/test_add.py",
+        }
+    ]

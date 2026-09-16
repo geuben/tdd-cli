@@ -223,6 +223,17 @@ class Adapter:
         """Return the file-path portion of `native`, or None for non-path-bearing ids."""
         return None
 
+    def scan_target_paths(self) -> dict[str, list[str]] | None:
+        """Return a map of native id → list of project-root-relative paths by scanning sources.
+
+        Returns None when the adapter's id grammar never carries a file path
+        (cargo lib::, exec); returns a dict (possibly empty) for adapters that
+        scan sources. A list with exactly one entry is resolved; zero entries are
+        not_found_in_sources (unreachable since the id was found in that file);
+        more than one entry is ambiguous_id.
+        """
+        return None
+
     def stub_hint(self) -> str:
         """The language idiom for a stub body, quoted into the create_stub directive."""
         return "a body that fails loudly, never working logic"

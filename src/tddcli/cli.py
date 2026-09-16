@@ -517,6 +517,31 @@ def cmd_plan_register(args) -> Envelope:
     )
 
 
+def cmd_plan_paths(args) -> Envelope:
+    from . import plan_paths as plan_paths_mod
+
+    worktree = _worktree()
+    cfg = config_mod.load(worktree)
+    plan_file = Path(args.plan)
+    try:
+        text = plan_file.read_text()
+    except OSError as exc:
+        return failure(f"malformed plan contract: {exc}", plan=str(args.plan))
+    try:
+        contract = contract_mod.parse(text, str(args.plan), cfg)
+    except contract_mod.ContractError as exc:
+        return failure(f"malformed plan contract: {exc}", plan=str(args.plan))
+    result = plan_paths_mod.resolve(contract, cfg, worktree)
+    if args.json:
+        return Envelope(result=result, next_action=NextAction(Verb.COMPLETE, "Paths resolved."))
+    sys.stdout.write(plan_paths_mod.render(result))
+    return Envelope(
+        result=result,
+        next_action=NextAction(Verb.COMPLETE, "Paths rendered."),
+        silent=True,
+    )
+
+
 def _probe_projects(
     projects,
     worktree,
@@ -1513,6 +1538,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("plan")
     s.add_argument("--allow-undeclared", action="store_true")
     s.set_defaults(fn=cmd_plan_register)
+
+    s = plan.add_parser("paths")
+    s.add_argument("plan")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(fn=cmd_plan_paths)
 
     run_p = sub.add_parser("run", help="runs").add_subparsers(dest="run_command", required=True)
     s = run_p.add_parser("start")
