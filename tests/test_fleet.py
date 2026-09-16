@@ -167,6 +167,24 @@ def test_lease_snapshot_with_no_directory(tmp_path, monkeypatch):
 # -- claim liveness ----------------------------------------------------------
 
 
+def test_render_lists_advance_claims_and_marks_a_dead_holder():
+    summary = {
+        "runs": [],
+        "collecting": [],
+        "suites": {"active": 0, "total_cores": 8, "workers_each": 8},
+        "advancing": [
+            {"worktree": "/wt-1", "hostname": "h", "pid": 4242, "stale": True, "elapsed_s": 91.0},
+            {"worktree": "/wt-2", "hostname": "h", "pid": 4243, "stale": False, "elapsed_s": 2.0},
+        ],
+    }
+    expected = (
+        "/wt-1  advance in flight — 91.0s elapsed — holder (pid 4242) is dead\n"
+        "/wt-2  advance in flight — 2.0s elapsed\n"
+        "suites executing now: 0 — 8 worker(s) each of 8 cores\n"
+    )
+    assert fleet.render(summary) == expected
+
+
 def test_fleet_lists_advance_claims_with_holder_liveness(repo):
     proc = subprocess.Popen(["true"])
     proc.wait()
