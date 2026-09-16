@@ -119,3 +119,13 @@ def test_gate_stops_at_the_first_failing_command(repo):
     lint_gate = next((g for g in gates if g["kind"] == "lint"), None)
     assert lint_gate is not None
     assert "SECOND-RAN" not in lint_gate["output"]
+
+
+# ── cycle 4 ── a failing lint means typecheck is never run
+
+
+def test_a_failing_lint_stops_the_gate_pass_before_typecheck(repo, tmp_path):
+    counter = tmp_path / "typecheck-ran"
+    typecheck_cmds = [f"sh -c 'echo ran >> {counter}; exit 1'"]
+    _drive_to_close(repo, lint_cmds=["sh -c 'exit 1'"], typecheck_cmds=typecheck_cmds)
+    assert not counter.exists()
