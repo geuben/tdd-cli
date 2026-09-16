@@ -104,3 +104,18 @@ def test_a_failing_lint_records_its_gate_result_row(repo):
         (run_id,),
     )
     assert any(r["ok"] == 0 for r in rows)
+
+
+# ── cycle 3 ── _gate stops at the first failing command
+
+
+def test_gate_stops_at_the_first_failing_command(repo):
+    lint_cmds = [
+        "sh -c 'echo LINT-BOOM; exit 1'",
+        "sh -c 'echo SECOND-RAN; exit 1'",
+    ]
+    out = _drive_to_close(repo, lint_cmds=lint_cmds)
+    gates = out.get("result", {}).get("gates", [])
+    lint_gate = next((g for g in gates if g["kind"] == "lint"), None)
+    assert lint_gate is not None
+    assert "SECOND-RAN" not in lint_gate["output"]
