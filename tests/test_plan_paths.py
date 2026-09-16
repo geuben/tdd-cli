@@ -233,6 +233,23 @@ def test_a_cargo_integration_test_id_resolves_under_the_project_root(tmp_path):
     assert result["paths"][0]["path"] == "crates/dd-bridge/tests/adapter_host_catalog.rs"
 
 
+def test_a_plan_that_is_not_a_contract_refuses_cleanly(repo):
+    # Case 1: plan whose cycle names an unknown project
+    plan_text1 = (
+        "---\ncycles:\n"
+        "  - n: 1\n    project: nosuch\n    test: \"tests/test_add.py::test_add\"\n"
+        "    commit_red: x\n    commit_green: x\n---\n"
+    )
+    plan1 = write_plan(repo, plan_text1, "tasks/bad_project.md")
+    result1 = run_cli(repo, "plan", "paths", plan1, "--json")
+
+    # Case 2: plan path that does not exist
+    result2 = run_cli(repo, "plan", "paths", "tasks/nonexistent.md", "--json")
+
+    assert result1["ok"] is False
+    assert result2["ok"] is False
+
+
 def test_unresolved_ids_do_not_fail_the_command(tmp_path, ledger_home):
     repo = _make_cargo_repo(tmp_path)
     plan_text = (
