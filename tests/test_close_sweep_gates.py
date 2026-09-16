@@ -218,3 +218,13 @@ def test_a_later_projects_failing_gate_runs_no_earlier_suite(repo_three):
         (run_id,),
     )
     assert len(rows) == 0
+
+
+# ── cycle 7 ── the gate-failure reply does not claim the sweep is green
+
+
+def test_the_gate_failure_reply_does_not_claim_the_sweep_is_green(repo):
+    out = _drive_to_close(repo, lint_cmds=["sh -c 'exit 1'"])
+    assert out["next_action"]["detail"] == (
+        "Close sweep stopped before the suite: lint/typecheck gates failed."
+    )
