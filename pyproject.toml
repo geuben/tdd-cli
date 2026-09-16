@@ -43,8 +43,23 @@ path = "src/tddcli/__init__.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/tddcli"]
 
+# `tdd docs` reads these from the installed package, so an agent never has to fetch
+# the protocol spec over the network — and never reads a version of it that disagrees
+# with the binary it is driving. Keep in step with `tddcli.docs.TOPICS`;
+# tests/test_docs_command.py fails if a topic is not included here.
+[tool.hatch.build.targets.wheel.force-include]
+"docs/harness-integration.md" = "tddcli/_docs/docs/harness-integration.md"
+"examples/plan.md" = "tddcli/_docs/examples/plan.md"
+"examples/skills/tdd-drive/SKILL.md" = "tddcli/_docs/examples/skills/tdd-drive/SKILL.md"
+"examples/skills/tdd-handoff/SKILL.md" = "tddcli/_docs/examples/skills/tdd-handoff/SKILL.md"
+"examples/claude-code-hooks/README.md" = "tddcli/_docs/examples/claude-code-hooks/README.md"
+"README.md" = "tddcli/_docs/README.md"
+
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "examples", "README.md", "LICENSE", "CHANGELOG.md", "SECURITY.md"]
+# `docs` is here because the wheel force-includes out of it, and the wheel is built
+# from the sdist — leave it out and `uv build` dies on a forced include it cannot see,
+# even though a wheel built straight from a checkout is fine.
+include = ["src", "tests", "docs", "examples", "README.md", "LICENSE", "CHANGELOG.md", "SECURITY.md"]
 
 [dependency-groups]
 dev = ["pytest>=8.0", "pytest-json-report>=1.5", "pytest-xdist>=3.5", "ruff>=0.5", "zizmor>=1.29"]

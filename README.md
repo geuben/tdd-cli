@@ -28,6 +28,7 @@ the end trustworthy.
 ```sh
 pip install tdd-cli        # or: uv tool install tdd-cli
 tdd --help
+tdd docs                   # the documentation shipped with this version
 ```
 
 From source:
@@ -51,7 +52,10 @@ Every command emits JSON with a `next_action`. That verb is the single authority
 flow — skills describe *how* to do the work and must never contain stopping instructions.
 [`docs/harness-integration.md`](./docs/harness-integration.md) specifies the verb set and how
 to write such a skill; [`examples/skills/tdd-drive/`](./examples/skills/tdd-drive/) is a
-runnable one for Claude Code. Its planning-side counterpart,
+runnable one for Claude Code. Both ship inside the wheel — an agent meeting the tool in an
+unfamiliar project reads them with `tdd docs harness` and `tdd docs skill` rather than
+fetching a copy from GitHub that may target a different `verb_set_version` than the
+installed binary emits. Its planning-side counterpart,
 [`examples/skills/tdd-handoff/`](./examples/skills/tdd-handoff/), hardens a
 draft plan and authors its contract before the run starts.
 
@@ -429,6 +433,7 @@ and is never reclassified as a pin.
 
 | Command | Purpose |
 |---|---|
+| `tdd docs [topic]` | print the documentation shipped with this version; no network |
 | `tdd init` / `tdd doctor` | scaffold config; environment preflight |
 | `tdd plan register <path>` | parse and hash the contract |
 | `tdd run start --plan <path>` | capture baselines, resolve executor, open cycle 1 |
