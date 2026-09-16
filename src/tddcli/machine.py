@@ -276,8 +276,17 @@ class Engine:
 
         for name in names:
             adapter = adapters_by_name[name]
+            current_hash = self.tree_hash([name])
             gate_failed = False
             for kind, gate_fn in (("lint", adapter.lint), ("typecheck", adapter.typecheck)):
+                last = self.ledger.one(
+                    "SELECT ok, tree_hash FROM gate_result"
+                    " WHERE run_id = ? AND project = ? AND kind = ?"
+                    " ORDER BY id DESC LIMIT 1",
+                    (self.run["id"], name, kind),
+                )
+                if last and last["ok"] == 1 and last["tree_hash"] == current_hash:
+                    continue  # memo hit: gate passed at this tree hash
                 gate = gate_fn()
                 self.ledger.insert(
                     "gate_result",
@@ -287,6 +296,7 @@ class Engine:
                     kind=kind,
                     ok=int(gate.ok),
                     output=gate.output,
+                    tree_hash=current_hash,
                     at=now(),
                 )
                 if not gate.ok:
