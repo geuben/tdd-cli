@@ -96,6 +96,27 @@ def test_xctest_scans_sources_to_map_an_id_to_its_file(tmp_path):
     assert result == {"AppTests/RecTests/testStopsRecording": "AppTests/RecTests.swift"}
 
 
+def test_a_gradle_id_resolves_through_the_source_scan(tmp_path):
+    (tmp_path / "tdd.toml").write_text(_GRADLE_TOML)
+    (tmp_path / "app" / "src" / "test" / "kotlin" / "com" / "example" / "feature").mkdir(
+        parents=True
+    )
+    (tmp_path / "app" / "src" / "test" / "kotlin" / "com" / "example" / "feature" / "BarTest.kt").write_text(
+        _BAR_TEST_KT
+    )
+    plan_text = (
+        "---\ncycles:\n"
+        "  - n: 1\n    project: app\n    refactor_cycle: true\n"
+        "    modifies_tests:\n"
+        "      - \"com.example.feature.BarTest/rejectsAnEmptyName\"\n"
+        "    commit_refactor: x\n---\n"
+    )
+    cfg = config_mod.load(tmp_path)
+    c = contract_mod.parse(plan_text, "tasks/p.md", cfg)
+    result = plan_paths_mod.resolve(c, cfg, tmp_path)
+    assert result["paths"][0]["path"] == "app/src/test/kotlin/com/example/feature/BarTest.kt"
+
+
 def _make_cfg(tmp_path, toml: str):
     (tmp_path / "tdd.toml").write_text(toml)
     return config_mod.load(tmp_path)
