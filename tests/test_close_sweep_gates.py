@@ -129,3 +129,17 @@ def test_a_failing_lint_stops_the_gate_pass_before_typecheck(repo, tmp_path):
     typecheck_cmds = [f"sh -c 'echo ran >> {counter}; exit 1'"]
     _drive_to_close(repo, lint_cmds=["sh -c 'exit 1'"], typecheck_cmds=typecheck_cmds)
     assert not counter.exists()
+
+
+# ── cycle 5 ── a failing gate short-circuits the sweep before any suite runs
+
+
+def test_a_failing_gate_runs_no_suite(repo):
+    out = _drive_to_close(repo, lint_cmds=["sh -c 'exit 1'"])
+    run_id = out["run"]["id"]
+    led = Ledger(gitutil.repo_identity(repo))
+    rows = led.all(
+        "SELECT * FROM invocation WHERE run_id = ? AND phase_at = 'CLOSE_SWEEP'",
+        (run_id,),
+    )
+    assert len(rows) == 0
