@@ -270,9 +270,36 @@ class Engine:
         unbaselined: dict[str, list[str]] = {}
         unobserved: dict[str, str] = {}
 
+        adapters_by_name = {
+            name: adapters.build(self.config.project(name), self.worktree) for name in names
+        }
+
         for name in names:
-            project = self.config.project(name)
-            adapter = adapters.build(project, self.worktree)
+            adapter = adapters_by_name[name]
+            gate_failed = False
+            for kind, gate_fn in (("lint", adapter.lint), ("typecheck", adapter.typecheck)):
+                gate = gate_fn()
+                self.ledger.insert(
+                    "gate_result",
+                    run_id=self.run["id"],
+                    cycle_id=cycle_row["id"],
+                    project=name,
+                    kind=kind,
+                    ok=int(gate.ok),
+                    output=gate.output,
+                    at=now(),
+                )
+                if not gate.ok:
+                    gates.append((name, kind, gate.output))
+                    gate_failed = True
+                    break
+            if gate_failed:
+                return SweepOutcome(
+                    failures=failures, gates=gates, unbaselined=unbaselined, unobserved=unobserved
+                )
+
+        for name in names:
+            adapter = adapters_by_name[name]
             started = time.monotonic()
             verdict = adapter.run(None)
             heartbeat(
@@ -350,25 +377,6 @@ class Engine:
                 tree_hash=self.tree_hash([name]),
                 started_at=now(),
             )
-            gate_failed = False
-            for kind, gate_fn in (("lint", adapter.lint), ("typecheck", adapter.typecheck)):
-                gate = gate_fn()
-                self.ledger.insert(
-                    "gate_result",
-                    run_id=self.run["id"],
-                    cycle_id=cycle_row["id"],
-                    project=name,
-                    kind=kind,
-                    ok=int(gate.ok),
-                    output=gate.output,
-                    at=now(),
-                )
-                if not gate.ok:
-                    gates.append((name, kind, gate.output))
-                    gate_failed = True
-                    break
-            if gate_failed:
-                break
         return SweepOutcome(
             failures=failures, gates=gates, unbaselined=unbaselined, unobserved=unobserved
         )
