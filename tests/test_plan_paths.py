@@ -61,6 +61,18 @@ def _make_cargo_repo(tmp_path):
     return root
 
 
+def test_a_cargo_integration_test_id_resolves_under_the_project_root(tmp_path):
+    plan_text = (
+        "---\ncycles:\n"
+        "  - n: 1\n    project: dd-bridge\n    refactor_cycle: true\n"
+        "    modifies_tests:\n"
+        "      - \"adapter_host_catalog::host_catalog_lists_each_running\"\n"
+        "    commit_refactor: x\n---\n"
+    )
+    result = _resolve(tmp_path, _CARGO_TOML, plan_text)
+    assert result["paths"][0]["path"] == "crates/dd-bridge/tests/adapter_host_catalog.rs"
+
+
 def test_unresolved_ids_do_not_fail_the_command(tmp_path, ledger_home):
     repo = _make_cargo_repo(tmp_path)
     plan_text = (
