@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 from conftest import git, run_cli, write_plan
 from tddcli import config as config_mod
 from tddcli import contract as contract_mod
 from tddcli import plan_paths as plan_paths_mod
+from tddcli.adapters.gradle_adapter import GradleAdapter
+from tddcli.adapters.xctest_adapter import XCTestAdapter
 
 PYTEST_PLAN = """---
 cycles:
@@ -30,6 +33,40 @@ cycles:
 """
 
 
+def _gradle_adapter_for(tmp_path: Path, extra_files=()) -> GradleAdapter:
+    (tmp_path / "tdd.toml").write_text(_GRADLE_TOML)
+    (tmp_path / "app" / "src" / "test").mkdir(parents=True)
+    for rel, text in extra_files:
+        p = tmp_path / "app" / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+    cfg = config_mod.load(tmp_path)
+    return GradleAdapter(cfg.project("app"), tmp_path)
+
+
+_BAR_TEST_KT = """\
+package com.example.feature
+
+import org.junit.Test
+
+class BarTest {
+    @Test
+    fun rejectsAnEmptyName() {}
+}
+"""
+
+
+def test_gradle_scans_sources_to_map_an_id_to_its_file(tmp_path):
+    adapter = _gradle_adapter_for(
+        tmp_path,
+        [("src/test/kotlin/com/example/feature/BarTest.kt", _BAR_TEST_KT)],
+    )
+    result = adapter.scan_target_paths()
+    assert result == {
+        "com.example.feature.BarTest/rejectsAnEmptyName": "src/test/kotlin/com/example/feature/BarTest.kt"
+    }
+
+
 def _make_cfg(tmp_path, toml: str):
     (tmp_path / "tdd.toml").write_text(toml)
     return config_mod.load(tmp_path)
@@ -40,6 +77,22 @@ def _resolve(tmp_path, toml: str, plan_text: str):
     c = contract_mod.parse(plan_text, "tasks/p.md", cfg)
     return plan_paths_mod.resolve(c, cfg, tmp_path)
 
+
+_GRADLE_TOML = (
+    "[project.app]\n"
+    'root       = "app"\n'
+    'adapter    = "gradle"\n'
+    'test_paths = ["src/test/"]\n'
+    'test_command = "./gradlew test"\n'
+)
+
+_XCTEST_TOML = (
+    "[project.ios]\n"
+    'root       = "ios"\n'
+    'adapter    = "xctest"\n'
+    'test_paths = ["AppTests/"]\n'
+    'test_command = "xcodebuild test -scheme AppTests"\n'
+)
 
 _CARGO_TOML = (
     "[project.dd-bridge]\n"
