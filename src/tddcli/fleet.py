@@ -116,11 +116,14 @@ def render(summary: dict) -> str:
             f"  last activity {r['last_activity_age_s']}s ago"
         )
     for c in summary["collecting"]:
-        lines.append(
+        line = (
             f"{c['worktree']}  collecting baseline"
             f" {c['projects_done']}/{c['projects_total']}"
             f" (current: {c['current_project'] or '-'}) — {c['elapsed_s']}s elapsed"
         )
+        if c.get("stale"):
+            line += f" — collector (pid {c['pid']}) is dead"
+        lines.append(line)
     s = summary["suites"]
     lines.append(
         f"suites executing now: {s['active']}"
