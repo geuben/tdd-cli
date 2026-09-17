@@ -6,6 +6,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-09-17
+
 ### Fixed
 
 - **cargo: a test target whose name differs from its file's stem** (#134): the adapter derived the
