@@ -8,6 +8,16 @@ binary name for a file under `tests/` (`tests/roundtrip.rs` → `roundtrip`); th
     lib::layout::tests::wraps_short
     roundtrip::renders_cover_only
 
+The target is the *binary* name, which is only the file stem under cargo's
+default of one binary per `tests/*.rs`. A crate that sets `autotests = false`
+and declares its own `[[test]]` compiles many files into one binary named
+something else entirely — `tests/main.rs` with a `mod` per file, built as
+`bridge_tests` — and then ids read `bridge_tests::adapter_config::parses`, the
+file is `tests/main.rs`, and `--test bridge_tests` is what runs it. The manifest
+is the only thing relating the two, so it is read; the `Running` header's
+artifact (`…/deps/bridge_tests-<hash>`) is what names the target per block,
+since the header's path is `tests/main.rs` in every crate of a workspace.
+
 A targeted run composes to cargo's own selectors without translation —
 `cargo test --lib -- --exact layout::tests::wraps_short` or
 `cargo test --test roundtrip -- --exact renders_cover_only` — and nothing else
@@ -49,6 +59,7 @@ from __future__ import annotations
 import re
 import shlex
 import time
+import tomllib
 from pathlib import Path
 
 from .base import (
@@ -63,7 +74,14 @@ from .base import (
 
 # `     Running unittests src/lib.rs (target/debug/deps/x-abc)` → target "lib"
 # `     Running tests/roundtrip.rs (target/debug/deps/roundtrip-abc)` → "roundtrip"
-_RUNNING_RE = re.compile(r"^\s*Running (?:unittests (\S+)|(\S+)) \(", re.MULTILINE)
+# The artifact in parentheses is captured too: it is the only part of the header
+# that names the *target*, which a crate may name differently from its file
+# (`tests/main.rs` compiled as `bridge_tests`), and the only part that tells two
+# crates' identically-pathed test files apart in a workspace.
+_RUNNING_RE = re.compile(r"^\s*Running (?:unittests (\S+)|(\S+)) \(([^)]*)\)", re.MULTILINE)
+# `bridge_tests-541f4f38a741dff0` → `bridge_tests` (cargo abbreviates the hash
+# in some outputs, so its length is not pinned)
+_ARTIFACT_HASH_RE = re.compile(r"-[0-9a-f]+$")
 _DOCTEST_RE = re.compile(r"^\s*Doc-tests ", re.MULTILINE)
 # `test layout::tests::wraps_short ... ok` / `... FAILED` / `... ignored`
 _TEST_LINE_RE = re.compile(r"^test (\S+) \.\.\. (ok|FAILED|ignored)\s*$", re.MULTILINE)
@@ -76,17 +94,35 @@ _COULD_NOT_COMPILE_RE = re.compile(r"could not compile")
 _NO_LIB_RE = re.compile(r"no library targets found")
 
 
+def _artifact_target(artifact: str) -> str | None:
+    """Target name from a `target/debug/deps/<name>-<hash>` artifact path.
+
+    cargo writes `-` in a target name as `_` here, so the result is the mangled
+    spelling; `CargoAdapter._demangle_target` maps it back to the declared one.
+    """
+    stem = Path(artifact).name
+    stripped = _ARTIFACT_HASH_RE.sub("", stem)
+    return stripped or None
+
+
 def _target_of_header(match: re.Match) -> str | None:
-    unit, path = match.group(1), match.group(2)
+    unit, path, artifact = match.group(1), match.group(2), match.group(3)
     if unit is not None:
         return "lib"
     if path.startswith("tests/") and path.endswith(".rs"):
-        return Path(path).stem
+        # The artifact names the target; the path only names the file it was
+        # built from, and those differ whenever a crate declares `[[test]]`
+        # with a `name` of its own.
+        return _artifact_target(artifact) or Path(path).stem
     return None  # examples/benches: not test targets
 
 
 class CargoAdapter(Adapter):
     name = "cargo"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._targets_cache: dict[str, str] | None = None
 
     def stub_hint(self) -> str:
         return (
@@ -99,7 +135,10 @@ class CargoAdapter(Adapter):
         if "::" not in native:
             return (
                 f"cargo target ids must be '<target>::<path>' (got {native!r}); expected"
-                " shape: lib::module::tests::name or <tests-file-stem>::name"
+                " shape: lib::module::tests::name or <test-binary>::name — the"
+                " binary is the tests file's stem unless the crate declares"
+                " [[test]] name, and `cargo test --tests -- --list` prints the"
+                " spelling to use"
             )
         return None
 
@@ -107,7 +146,90 @@ class CargoAdapter(Adapter):
         target, _, _ = native.partition("::")
         if target == "lib":
             return None
-        return f"tests/{target}.rs"
+        declared = self._declared_target(target)
+        path = self._manifest_targets().get(declared)
+        # No `[[test]]` entry: cargo's default, one binary per file, named for it.
+        return path or f"tests/{target}.rs"
+
+    # ------------------------------------------------------------------
+    # Target names vs. their files
+    #
+    # By default a target is named after its file (`tests/roundtrip.rs` →
+    # `roundtrip`), and the two are interchangeable. A crate that sets
+    # `autotests = false` and declares its own `[[test]]` breaks that: several
+    # files compile into one binary whose `name` is unrelated to any of them
+    # (`tests/main.rs` → `bridge_tests`). Only the manifest relates the two.
+    # ------------------------------------------------------------------
+
+    def _manifest_targets(self) -> dict[str, str]:
+        """`{declared [[test]] name: path relative to the project root}`.
+
+        Read from the manifest owning each file under `test_paths`, so a
+        workspace contributes one entry per crate that declares a test target.
+        """
+        if self._targets_cache is None:
+            targets: dict[str, str] = {}
+            for manifest in self._manifests():
+                try:
+                    raw = tomllib.loads(manifest.read_text())
+                except (OSError, tomllib.TOMLDecodeError):
+                    continue
+                for entry in raw.get("test", []) or []:
+                    name, rel = entry.get("name"), entry.get("path")
+                    if not name or not rel:
+                        continue
+                    try:
+                        full = (manifest.parent / rel).resolve().relative_to(self.root.resolve())
+                    except ValueError:
+                        continue
+                    targets[name] = str(full)
+            self._targets_cache = targets
+        return self._targets_cache
+
+    def _manifests(self) -> set[Path]:
+        """The nearest Cargo.toml above each declared test directory.
+
+        Walked from `test_paths` rather than `_test_files()`, which does not
+        expand a wildcard directory pattern (`crates/*/tests/`) — the very shape
+        a workspace of crates uses.
+        """
+        found: set[Path] = set()
+        root = self.root.resolve()
+        for pattern in self.project.test_patterns or []:
+            for match in self.root.glob(pattern.rstrip("/") or "."):
+                start = match.resolve()
+                # Bounded by construction: a glob of the root cannot escape it,
+                # so the ascent always reaches root and stops there.
+                for here in [start, *start.parents]:
+                    candidate = here / "Cargo.toml"
+                    if candidate.is_file():
+                        found.add(candidate)
+                        break
+                    if here == root:
+                        break
+        return found
+
+    def _declared_target(self, target: str) -> str:
+        """The `[[test]] name` behind a collected target name.
+
+        cargo writes a target's `-` as `_` in the artifact filename the id is
+        read from, so `my-tests` is collected as `my_tests`; `--test` wants the
+        declared spelling back.
+        """
+        names = self._manifest_targets()
+        if target in names:
+            return target
+        for declared in names:
+            if declared.replace("-", "_") == target:
+                return declared
+        return target
+
+    def _target_of_file(self, rel: str) -> str:
+        """The target a test file belongs to; its stem under cargo's default."""
+        for declared, path in self._manifest_targets().items():
+            if path == rel:
+                return declared
+        return Path(rel).stem
 
     # ------------------------------------------------------------------
     # Commands
@@ -116,10 +238,12 @@ class CargoAdapter(Adapter):
     def _test_cmd(self) -> str:
         return self.project.test_command or "cargo test --tests"
 
-    @staticmethod
-    def _selector(native_id: str) -> str:
+    def _selector(self, native_id: str) -> str:
         target, _, path = native_id.partition("::")
-        scope = "--lib" if target == "lib" else f"--test {shlex.quote(target)}"
+        if target == "lib":
+            scope = "--lib"
+        else:
+            scope = f"--test {shlex.quote(self._declared_target(target))}"
         return f"{scope} -- --exact {shlex.quote(path)}"
 
     def _targeted_cmd(self, native_id: str) -> str:
@@ -154,18 +278,19 @@ class CargoAdapter(Adapter):
         if code != 0 or _COULD_NOT_COMPILE_RE.search(out):
             return None
         tests = self._parse_list(out)
-        files = {f"tests/{t.split('::', 1)[0]}.rs" for t in tests if not t.startswith("lib::")}
+        files = {self.target_path(t) for t in tests if not t.startswith("lib::")} - {None}
         return {self.qualify(t) for t in tests}, files
 
     def _collect_per_file(self, rels, result):
         for rel in sorted(rels):
-            stem = Path(rel).stem
-            cmd = f"{self._targeted_prefix()} --test {shlex.quote(stem)} -- --list 2>&1"
+            declared = self._target_of_file(rel)
+            cmd = f"{self._targeted_prefix()} --test {shlex.quote(declared)} -- --list 2>&1"
             code, out, _err = self._run_suite(cmd, self._suite_env(None))
             if code != 0 or _COULD_NOT_COMPILE_RE.search(out):
                 result.failed_files[rel] = clip_failure(self._errors(out))
                 continue
-            result.tests |= {self.qualify(t) for t in self._parse_list(out, default=stem)}
+            default = declared.replace("-", "_")
+            result.tests |= {self.qualify(t) for t in self._parse_list(out, default=default)}
         return result
 
     def _targeted_prefix(self) -> str:

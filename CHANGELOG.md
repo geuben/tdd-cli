@@ -6,6 +6,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **cargo: a test target whose name differs from its file's stem** (#134): the adapter derived the
+  target from the `Running tests/<file>.rs` header's path, which is only the target's name under
+  cargo's default of one binary per `tests/*.rs`. A crate that sets `autotests = false` and declares
+  its own `[[test]]` — many files compiled into one binary named something else — was unreachable:
+  collection ran `--test <stem>` and cargo answered ``no test target named `<stem>` in default-run
+  packages``, so every cycle target came back `not_collected`, whatever id the plan declared. The
+  target is now read from the artifact the header names (`…/deps/bridge_tests-<hash>`), which is
+  also the only thing distinguishing two crates in a workspace whose test files are both
+  `tests/main.rs`. The crate manifests supply the mapping back: target → the file it is built from
+  for `target_path` and the collection file set, and the declared spelling for `--test`, since cargo
+  writes a target's `-` as `_` in the artifact. Manifests are located by walking up from the declared
+  `test_paths`, not from `_test_files()`, which does not expand a wildcard directory pattern such as
+  `crates/*/tests/`. Under the default layout target and stem still agree and nothing changes.
+
 ## [0.12.0] - 2026-09-17
 
 ### Changed

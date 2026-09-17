@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from tddcli import config as config_mod
 from tddcli.adapters import available
-from tddcli.adapters.base import FAILED, NOT_COLLECTED, NOT_FOUND, PASSED
+from tddcli.adapters.base import FAILED, NOT_COLLECTED, NOT_FOUND, PASSED, Collection
 from tddcli.adapters.cargo_adapter import CargoAdapter
 
 TOML = """
@@ -395,3 +395,190 @@ def test_every_invocation_carries_the_project_env(tmp_path):
     for call in rs.call_args_list:
         env = call.args[1] if len(call.args) > 1 else call.kwargs.get("extra_env")
         assert env == {"CARGO_HOME": "/opt/cargo"}, call
+
+
+# ---------------------------------------------------------------------------
+# A crate whose test binary is not named after its file
+#
+# `autotests = false` plus a `[[test]]` entry compiles every file under tests/
+# into one binary with a name of its own. The target is then unrelated to the
+# file it was built from, and in a workspace every crate's header reads
+# `Running tests/main.rs` — only the artifact tells them apart.
+# ---------------------------------------------------------------------------
+
+CONSOLIDATED_LIST = """
+     Running tests/main.rs (/work/target/debug/deps/bridge_tests-541f4f38a741dff0)
+
+adapter_config::poll_config_parses_targets_and_maps: test
+adapter_webhook_config::webhook_table_parses_listen_token_and_maps: test
+
+2 tests, 0 benchmarks
+"""
+
+WORKSPACE_LIST = """
+     Running tests/main.rs (/work/target/debug/deps/bridge_tests-541f4f38a741dff0)
+
+adapter_config::poll_config_parses_targets_and_maps: test
+
+     Running tests/main.rs (/work/target/debug/deps/core_tests-9f1e2d3c4b5a6879)
+
+attention_clear::clear_removes_the_alert: test
+
+2 tests, 0 benchmarks
+"""
+
+
+def make_consolidated_adapter(tmp_path: Path) -> CargoAdapter:
+    """A workspace of two crates, each compiling tests/main.rs under its own name."""
+    (tmp_path / "tdd.toml").write_text(
+        "\n".join(
+            [
+                "[project.ws]",
+                'root       = "."',
+                'adapter    = "cargo"',
+                'test_paths = ["crates/*/tests/"]',
+                "",
+            ]
+        )
+    )
+    for crate, target in (("dd-bridge", "bridge_tests"), ("dd-core", "core_tests")):
+        tests = tmp_path / "crates" / crate / "tests"
+        tests.mkdir(parents=True)
+        (tests / "main.rs").write_text("mod adapter_config;\n")
+        (tmp_path / "crates" / crate / "Cargo.toml").write_text(
+            "\n".join(
+                [
+                    "[package]",
+                    f'name = "{crate}"',
+                    "autotests = false",
+                    "",
+                    "[[test]]",
+                    f'name = "{target}"',
+                    'path = "tests/main.rs"',
+                    "",
+                ]
+            )
+        )
+    cfg = config_mod.load(tmp_path)
+    return CargoAdapter(cfg.project("ws"), tmp_path)
+
+
+def test_ids_use_the_binary_name_not_the_file_stem(tmp_path):
+    a = make_consolidated_adapter(tmp_path)
+    assert a._parse_list(CONSOLIDATED_LIST) == {
+        "bridge_tests::adapter_config::poll_config_parses_targets_and_maps",
+        "bridge_tests::adapter_webhook_config::webhook_table_parses_listen_token_and_maps",
+    }
+
+
+def test_identically_pathed_files_are_told_apart_by_their_artifact(tmp_path):
+    a = make_consolidated_adapter(tmp_path)
+    assert a._parse_list(WORKSPACE_LIST) == {
+        "bridge_tests::adapter_config::poll_config_parses_targets_and_maps",
+        "core_tests::attention_clear::clear_removes_the_alert",
+    }
+
+
+def test_targeted_command_scopes_to_the_declared_binary(tmp_path):
+    a = make_consolidated_adapter(tmp_path)
+    assert a._targeted_cmd("bridge_tests::adapter_config::parses") == (
+        "cargo test --test bridge_tests -- --exact adapter_config::parses"
+    )
+
+
+def test_target_path_maps_a_declared_binary_to_the_file_it_is_built_from(tmp_path):
+    a = make_consolidated_adapter(tmp_path)
+    assert a.target_path("bridge_tests::adapter_config::parses") == (
+        "crates/dd-bridge/tests/main.rs"
+    )
+    assert a.target_path("core_tests::attention_clear::clears") == ("crates/dd-core/tests/main.rs")
+
+
+def test_per_file_collection_scopes_to_the_files_binary(tmp_path):
+    a = make_consolidated_adapter(tmp_path)
+    seen: list[str] = []
+
+    def record(cmd, env):
+        seen.append(cmd)
+        return 0, CONSOLIDATED_LIST, ""
+
+    with patch.object(CargoAdapter, "_run_suite", side_effect=record):
+        a._collect_per_file({"crates/dd-bridge/tests/main.rs"}, Collection())
+    assert "--test bridge_tests" in seen[0]
+    assert "--test main" not in seen[0]
+
+
+def test_a_dashed_binary_name_is_run_under_its_declared_spelling(tmp_path):
+    """cargo writes `-` as `_` in the artifact, but `--test` wants the manifest's spelling."""
+    (tmp_path / "tdd.toml").write_text(
+        '[project.ws]\nroot = "."\nadapter = "cargo"\ntest_paths = ["tests/"]\n'
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "main.rs").write_text("mod a;\n")
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "w"\nautotests = false\n\n'
+        '[[test]]\nname = "my-tests"\npath = "tests/main.rs"\n'
+    )
+    cfg = config_mod.load(tmp_path)
+    a = CargoAdapter(cfg.project("ws"), tmp_path)
+    assert a._targeted_cmd("my_tests::a::works") == (
+        "cargo test --test my-tests -- --exact a::works"
+    )
+
+
+def test_collection_reports_the_file_each_target_was_built_from(tmp_path):
+    """The set of covered files is the manifest's, not `tests/<target>.rs`."""
+    a = make_consolidated_adapter(tmp_path)
+    with patch.object(CargoAdapter, "_run_suite", return_value=(0, WORKSPACE_LIST, "")):
+        tests, files = a._collect_batch("cargo test --tests -- --list", {})
+    assert files == {"crates/dd-bridge/tests/main.rs", "crates/dd-core/tests/main.rs"}
+    assert "ws::bridge_tests::adapter_config::poll_config_parses_targets_and_maps" in tests
+
+
+def test_a_malformed_artifact_falls_back_to_the_file_stem(tmp_path):
+    """Nothing usable in the parentheses: the file stem is still cargo's default."""
+    a = make_adapter(tmp_path)
+    output = (
+        "     Running tests/roundtrip.rs (/work/target/debug/deps/-1d2c3b4a)\n"
+        "\nrenders_cover_only: test\n"
+    )
+    assert a._parse_list(output) == {"roundtrip::renders_cover_only"}
+
+
+def test_a_test_entry_without_a_path_resolves_through_cargos_default(tmp_path):
+    """`[[test]] name = "x"` with no `path` means `tests/x.rs`; no mapping needed."""
+    (tmp_path / "tdd.toml").write_text(
+        '[project.ws]\nroot = "."\nadapter = "cargo"\ntest_paths = ["tests/"]\n'
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "roundtrip.rs").write_text("#[test] fn t() {}\n")
+    (tmp_path / "Cargo.toml").write_text('[package]\nname = "w"\n\n[[test]]\nname = "roundtrip"\n')
+    cfg = config_mod.load(tmp_path)
+    a = CargoAdapter(cfg.project("ws"), tmp_path)
+    assert a._manifest_targets() == {}
+    assert a.target_path("roundtrip::t") == "tests/roundtrip.rs"
+    assert a._targeted_cmd("roundtrip::t") == ("cargo test --test roundtrip -- --exact t")
+
+
+def test_a_file_shaped_test_path_still_finds_the_manifest(tmp_path):
+    """`test_paths` may name files (`tests/*.rs`), not only directories."""
+    (tmp_path / "tdd.toml").write_text(
+        '[project.ws]\nroot = "."\nadapter = "cargo"\ntest_paths = ["tests/*.rs"]\n'
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "main.rs").write_text("mod a;\n")
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "w"\nautotests = false\n\n'
+        '[[test]]\nname = "w_tests"\npath = "tests/main.rs"\n'
+    )
+    cfg = config_mod.load(tmp_path)
+    a = CargoAdapter(cfg.project("ws"), tmp_path)
+    assert a._manifest_targets() == {"w_tests": "tests/main.rs"}
+
+
+def test_a_crate_with_no_manifest_keeps_cargos_default_mapping(tmp_path):
+    """No Cargo.toml above the tests dir: the walk stops at the root, nothing is claimed."""
+    a = make_adapter(tmp_path)  # kernel/tests/roundtrip.rs, no Cargo.toml anywhere
+    assert a._manifest_targets() == {}
+    assert a.target_path("roundtrip::renders_cover_only") == "tests/roundtrip.rs"
+    assert a._target_of_file("tests/roundtrip.rs") == "roundtrip"
