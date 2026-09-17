@@ -197,15 +197,16 @@ class CargoAdapter(Adapter):
         root = self.root.resolve()
         for pattern in self.project.test_patterns or []:
             for match in self.root.glob(pattern.rstrip("/") or "."):
-                here = (match if match.is_dir() else match.parent).resolve()
-                while True:
+                start = match.resolve()
+                # Bounded by construction: a glob of the root cannot escape it,
+                # so the ascent always reaches root and stops there.
+                for here in [start, *start.parents]:
                     candidate = here / "Cargo.toml"
                     if candidate.is_file():
                         found.add(candidate)
                         break
-                    if here == root or root not in here.parents:
+                    if here == root:
                         break
-                    here = here.parent
         return found
 
     def _declared_target(self, target: str) -> str:

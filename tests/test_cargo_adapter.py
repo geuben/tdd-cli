@@ -524,3 +524,61 @@ def test_a_dashed_binary_name_is_run_under_its_declared_spelling(tmp_path):
     assert a._targeted_cmd("my_tests::a::works") == (
         "cargo test --test my-tests -- --exact a::works"
     )
+
+
+def test_collection_reports_the_file_each_target_was_built_from(tmp_path):
+    """The set of covered files is the manifest's, not `tests/<target>.rs`."""
+    a = make_consolidated_adapter(tmp_path)
+    with patch.object(CargoAdapter, "_run_suite", return_value=(0, WORKSPACE_LIST, "")):
+        tests, files = a._collect_batch("cargo test --tests -- --list", {})
+    assert files == {"crates/dd-bridge/tests/main.rs", "crates/dd-core/tests/main.rs"}
+    assert "ws::bridge_tests::adapter_config::poll_config_parses_targets_and_maps" in tests
+
+
+def test_a_malformed_artifact_falls_back_to_the_file_stem(tmp_path):
+    """Nothing usable in the parentheses: the file stem is still cargo's default."""
+    a = make_adapter(tmp_path)
+    output = (
+        "     Running tests/roundtrip.rs (/work/target/debug/deps/-1d2c3b4a)\n"
+        "\nrenders_cover_only: test\n"
+    )
+    assert a._parse_list(output) == {"roundtrip::renders_cover_only"}
+
+
+def test_a_test_entry_without_a_path_resolves_through_cargos_default(tmp_path):
+    """`[[test]] name = "x"` with no `path` means `tests/x.rs`; no mapping needed."""
+    (tmp_path / "tdd.toml").write_text(
+        '[project.ws]\nroot = "."\nadapter = "cargo"\ntest_paths = ["tests/"]\n'
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "roundtrip.rs").write_text("#[test] fn t() {}\n")
+    (tmp_path / "Cargo.toml").write_text('[package]\nname = "w"\n\n[[test]]\nname = "roundtrip"\n')
+    cfg = config_mod.load(tmp_path)
+    a = CargoAdapter(cfg.project("ws"), tmp_path)
+    assert a._manifest_targets() == {}
+    assert a.target_path("roundtrip::t") == "tests/roundtrip.rs"
+    assert a._targeted_cmd("roundtrip::t") == ("cargo test --test roundtrip -- --exact t")
+
+
+def test_a_file_shaped_test_path_still_finds_the_manifest(tmp_path):
+    """`test_paths` may name files (`tests/*.rs`), not only directories."""
+    (tmp_path / "tdd.toml").write_text(
+        '[project.ws]\nroot = "."\nadapter = "cargo"\ntest_paths = ["tests/*.rs"]\n'
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "main.rs").write_text("mod a;\n")
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "w"\nautotests = false\n\n'
+        '[[test]]\nname = "w_tests"\npath = "tests/main.rs"\n'
+    )
+    cfg = config_mod.load(tmp_path)
+    a = CargoAdapter(cfg.project("ws"), tmp_path)
+    assert a._manifest_targets() == {"w_tests": "tests/main.rs"}
+
+
+def test_a_crate_with_no_manifest_keeps_cargos_default_mapping(tmp_path):
+    """No Cargo.toml above the tests dir: the walk stops at the root, nothing is claimed."""
+    a = make_adapter(tmp_path)  # kernel/tests/roundtrip.rs, no Cargo.toml anywhere
+    assert a._manifest_targets() == {}
+    assert a.target_path("roundtrip::renders_cover_only") == "tests/roundtrip.rs"
+    assert a._target_of_file("tests/roundtrip.rs") == "roundtrip"
