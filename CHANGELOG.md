@@ -6,6 +6,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-17
+
 ### Changed
 
 - **Close sweep runs all gates before any suite** (#129): lint and typecheck now run for every
