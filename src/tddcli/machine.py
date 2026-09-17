@@ -270,9 +270,58 @@ class Engine:
         unbaselined: dict[str, list[str]] = {}
         unobserved: dict[str, str] = {}
 
+        adapters_by_name = {
+            name: adapters.build(self.config.project(name), self.worktree) for name in names
+        }
+
         for name in names:
-            project = self.config.project(name)
-            adapter = adapters.build(project, self.worktree)
+            adapter = adapters_by_name[name]
+            current_hash = self.tree_hash([name])
+            gate_failed = False
+            for kind, gate_fn in (("lint", adapter.lint), ("typecheck", adapter.typecheck)):
+                last = self.ledger.one(
+                    "SELECT ok, tree_hash FROM gate_result"
+                    " WHERE run_id = ? AND project = ? AND kind = ?"
+                    " ORDER BY id DESC LIMIT 1",
+                    (self.run["id"], name, kind),
+                )
+                if last and last["ok"] == 1 and last["tree_hash"] == current_hash:
+                    self.ledger.insert(
+                        "gate_result",
+                        run_id=self.run["id"],
+                        cycle_id=cycle_row["id"],
+                        project=name,
+                        kind=kind,
+                        ok=1,
+                        output="",
+                        tree_hash=current_hash,
+                        skipped=1,
+                        at=now(),
+                    )
+                    continue
+                gate = gate_fn()
+                self.ledger.insert(
+                    "gate_result",
+                    run_id=self.run["id"],
+                    cycle_id=cycle_row["id"],
+                    project=name,
+                    kind=kind,
+                    ok=int(gate.ok),
+                    output=gate.output,
+                    tree_hash=current_hash,
+                    at=now(),
+                )
+                if not gate.ok:
+                    gates.append((name, kind, gate.output))
+                    gate_failed = True
+                    break
+            if gate_failed:
+                return SweepOutcome(
+                    failures=failures, gates=gates, unbaselined=unbaselined, unobserved=unobserved
+                )
+
+        for name in names:
+            adapter = adapters_by_name[name]
             started = time.monotonic()
             verdict = adapter.run(None)
             heartbeat(
@@ -350,19 +399,6 @@ class Engine:
                 tree_hash=self.tree_hash([name]),
                 started_at=now(),
             )
-            for kind, gate in (("lint", adapter.lint()), ("typecheck", adapter.typecheck())):
-                self.ledger.insert(
-                    "gate_result",
-                    run_id=self.run["id"],
-                    cycle_id=cycle_row["id"],
-                    project=name,
-                    kind=kind,
-                    ok=int(gate.ok),
-                    output=gate.output,
-                    at=now(),
-                )
-                if not gate.ok:
-                    gates.append((name, kind, gate.output))
         return SweepOutcome(
             failures=failures, gates=gates, unbaselined=unbaselined, unobserved=unobserved
         )

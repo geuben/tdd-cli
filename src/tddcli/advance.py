@@ -520,7 +520,7 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
             engine,
             cycle,
             Verb.FIX_REGRESSION,
-            "Close sweep is green but lint/typecheck gates failed.",
+            "Close sweep stopped before the suite: lint/typecheck gates failed.",
             gates=gates,
             commit=sha,
         )
