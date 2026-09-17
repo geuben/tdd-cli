@@ -6,6 +6,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-09-17
+
 ### Fixed
 
 - **A wildcard directory in `test_paths` matched nothing** (#136): a pattern ending in `/` was
