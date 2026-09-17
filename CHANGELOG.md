@@ -6,6 +6,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A wildcard directory in `test_paths` matched nothing** (#136): a pattern ending in `/` was
+  compared as a literal prefix by `Project.is_test_file` and joined as a literal path by the cargo
+  adapter's `_test_files`, so `crates/*/tests/` — how a workspace declares one pattern instead of
+  one per crate — matched no file at all. Every test file in such a project classified as
+  implementation, so a RED commit touching only tests was recorded as `implementation_during_red`,
+  reporting the agent for writing production code it had not written; `_test_files` returned an
+  empty list, leaving the unaccounted-files check with nothing to compare. A directory pattern is
+  now matched per path segment (`crates/*/tests/` covers `crates/x/tests/main.rs`, not
+  `crates/x/src/tests/main.rs`), and the adapter globs it.
+
 ## [0.12.1] - 2026-09-17
 
 ### Fixed

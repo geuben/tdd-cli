@@ -582,3 +582,10 @@ def test_a_crate_with_no_manifest_keeps_cargos_default_mapping(tmp_path):
     assert a._manifest_targets() == {}
     assert a.target_path("roundtrip::renders_cover_only") == "tests/roundtrip.rs"
     assert a._target_of_file("tests/roundtrip.rs") == "roundtrip"
+
+
+def test_test_files_expands_a_wildcard_directory_pattern(tmp_path):
+    """`self.root / "crates/*/tests/"` is a literal path and never resolves."""
+    a = make_consolidated_adapter(tmp_path)
+    rels = sorted(str(p.relative_to(tmp_path)) for p in a._test_files())
+    assert rels == ["crates/dd-bridge/tests/main.rs", "crates/dd-core/tests/main.rs"]
