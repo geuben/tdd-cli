@@ -259,9 +259,13 @@ class CargoAdapter(Adapter):
         found: set[Path] = set()
         for pattern in self.project.test_patterns or []:
             if pattern.endswith("/"):
-                base = self.root / pattern
-                if base.is_dir():
-                    found.update(p for p in base.glob("*.rs") if p.is_file())
+                # `self.root / pattern` is a literal path, so a wildcard
+                # directory pattern (`crates/*/tests/`) never resolves; glob it.
+                # A trailing slash is accepted by glob on every supported
+                # Python (3.11–3.14), so the pattern goes through as declared.
+                for base in self.root.glob(pattern):
+                    if base.is_dir():
+                        found.update(p for p in base.glob("*.rs") if p.is_file())
             else:
                 found.update(p for p in self.root.glob(pattern) if p.is_file())
         return sorted(found)

@@ -21,6 +21,11 @@ adapter        = "vitest"
 test_paths     = ["e2e/"]
 in_close_sweep = false
 
+[project.workspace]
+root       = "ws"
+adapter    = "cargo"
+test_paths = ["crates/*/tests/"]
+
 [artifact.openapi]
 path        = "schema/openapi.json"
 produced_by = "backend"
@@ -43,7 +48,7 @@ def cfg(tmp_path):
 
 
 def test_projects_and_roots_are_declared_not_scanned(cfg):
-    assert sorted(cfg.projects) == ["backend", "e2e", "frontend"]
+    assert sorted(cfg.projects) == ["backend", "e2e", "frontend", "workspace"]
     assert cfg.project("backend").root == "backend"
 
 
@@ -320,3 +325,36 @@ def test_health_command_parses_onto_project(tmp_path):
     )
     with pytest.raises(config_mod.ConfigError):
         config_mod.load(tmp_path)
+
+
+def test_a_wildcard_directory_test_path_matches_per_segment(cfg):
+    """`crates/*/tests/` is a glob, not a literal prefix.
+
+    A workspace declares its test directories with one pattern rather than one
+    per crate. Comparing it as a literal string classifies every test file as
+    implementation, which reports the agent for writing production code during
+    RED when it only edited tests.
+    """
+    ws = cfg.project("workspace")
+    assert ws.is_test_file("ws/crates/dd-bridge/tests/main.rs")
+    assert ws.is_test_file("ws/crates/dd-core/tests/attention_clear.rs")
+    # The wildcard spans exactly one segment, and the directory itself is not a file.
+    assert not ws.is_test_file("ws/crates/dd-bridge/src/adapter/config.rs")
+    assert not ws.is_test_file("ws/crates/dd-bridge/src/tests/inner.rs")
+    assert not ws.is_test_file("ws/crates/a/b/tests/deep.rs")
+    assert not ws.is_test_file("ws/crates/dd-bridge/tests")
+
+
+def test_a_wildcard_test_path_classifies_edits_as_tests_not_implementation(cfg):
+    """The staging consequence: RED may touch these without being reported."""
+    changed = {
+        "ws/crates/dd-bridge/tests/main.rs",
+        "ws/crates/dd-bridge/tests/adapter_config.rs",
+        "ws/crates/dd-bridge/src/adapter/config.rs",
+    }
+    out = staging.classify(cfg, changed, ["workspace"], None, set())
+    assert out.tests == [
+        "ws/crates/dd-bridge/tests/adapter_config.rs",
+        "ws/crates/dd-bridge/tests/main.rs",
+    ]
+    assert out.implementation == ["ws/crates/dd-bridge/src/adapter/config.rs"]

@@ -73,6 +73,20 @@ class Override:
     timeout: int | None = None
 
 
+def _dir_pattern_matches(pattern: str, inner: str) -> bool:
+    """True when `inner` sits under the directory `pattern` describes.
+
+    `pattern` ends in `/` and may contain wildcards; matching is per path
+    segment, so `crates/*/tests/` covers `crates/dd-bridge/tests/main.rs` but
+    not `crates/dd-bridge/src/main.rs`.
+    """
+    segments = pattern.rstrip("/").split("/")
+    parts = inner.split("/")
+    if len(parts) <= len(segments):
+        return False
+    return all(fnmatch(part, seg) for part, seg in zip(parts, segments))
+
+
 @dataclass
 class Project:
     name: str
@@ -141,11 +155,14 @@ class Project:
         inner = self.relative_to_root(rel_path)
         for pattern in self.test_patterns:
             if pattern.endswith("/"):
-                if inner.startswith(pattern):
+                # A directory pattern may carry wildcards (`crates/*/tests/`),
+                # so it is matched as a glob against the leading path segments,
+                # not compared as a literal prefix.
+                if _dir_pattern_matches(pattern, inner):
                     return True
             elif fnmatch(inner, pattern) or fnmatch(rel_path, pattern):
                 return True
-            elif inner.startswith(pattern.rstrip("/") + "/"):
+            elif _dir_pattern_matches(pattern.rstrip("/") + "/", inner):
                 return True
         return False
 
