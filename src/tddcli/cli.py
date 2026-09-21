@@ -38,12 +38,13 @@ from . import (
 from . import (
     docs as docs_mod,
 )
+from . import ledger as ledger_mod
 from . import runner as runner_mod
 from . import target_lint as target_lint_mod
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
 from .envelope import Envelope, NextAction, Verb, failure, heartbeat
-from .ledger import Ledger, LedgerVersionError, ledger_path, now
+from .ledger import PRE_SPLIT_IMPORT, Ledger, LedgerVersionError, ledger_path, now
 from .machine import CLOSED, SKIPPED, Engine
 
 BASELINE_MAX_FAILURE_RATIO_DEFAULT = 0.5
@@ -1556,7 +1557,20 @@ def cmd_metrics(args) -> Envelope:
 
 
 def cmd_runner_import(args) -> Envelope:
-    return failure("runner import is not implemented", reason="not_implemented")
+    """Needs no worktree: it is an operator's command, run as the runner, about a file."""
+    source = Path(args.ledger).resolve()
+    if not source.is_file():
+        return failure(f"{source} is not a file")
+    target = ledger_mod.import_legacy(source)
+    marker = json.loads(Ledger(target.parent, path=target).get_meta(PRE_SPLIT_IMPORT) or "{}")
+    return Envelope(
+        result={"imported": str(target), "pre_split_import": marker},
+        next_action=NextAction(
+            Verb.COMPLETE,
+            f"Imported to {target}. Runs up to {marker.get('last_run_id')} predate the"
+            " split and are marked as such.",
+        ),
+    )
 
 
 def cmd_docs(args) -> Envelope:
@@ -1766,13 +1780,16 @@ def _actor_for(
     return actor.LocalActor()
 
 
-def _refusal(split: runner_mod.RunnerConfig | None) -> Envelope | None:
+def _refusal(split: runner_mod.RunnerConfig | None, args) -> Envelope | None:
     """A runner that was not called through sudo acts for nobody.
 
     It must not fall back to acting as itself: that would run the agent's suites, and
-    the agent's git hooks, as the uid that owns the ledger.
+    the agent's git hooks, as the uid that owns the ledger. `runner` verbs are the
+    exception: they are the operator's, touch no worktree and spawn nothing.
     """
     if split is None or split.role != "runner" or os.environ.get("SUDO_USER"):
+        return None
+    if args.command == "runner":
         return None
     return failure(
         f"this is the split-mode runner ({split.user}) and no agent called it: run `tdd`"
@@ -1808,7 +1825,7 @@ def main(argv: list[str] | None = None) -> int:
             # round trip; forwarded verbatim, so the runner parses exactly what we did.
             return runner_mod.forward(split, list(sys.argv[1:] if argv is None else argv))
         actor.install(_actor_for(split, _agent_env(args)))
-        envelope = _refusal(split) or args.fn(args)
+        envelope = _refusal(split, args) or args.fn(args)
     except PermissionError as exc:
         # Only the runner reads someone else's files. Anywhere else this is a bug, and
         # a traceback is the right report for one.

@@ -302,15 +302,53 @@ def _default_home() -> Path:
     return Path.home() / ".local" / "share" / "tdd-cli"
 
 
-def ledger_path(repo_path: Path) -> Path:
+def _ensured_home() -> Path:
     root = ledger_home()
-    slug = str(repo_path).replace(os.sep, "-").strip("-")
     root.mkdir(parents=True, exist_ok=True)
     if _as_runner() is not None:
         # Tightened on every open, not only at creation: a directory an operator made
         # by hand would otherwise stay readable by the agent for good.
         root.chmod(0o700)
-    return root / f"{slug}.sqlite3"
+    return root
+
+
+def ledger_path(repo_path: Path) -> Path:
+    slug = str(repo_path).replace(os.sep, "-").strip("-")
+    return _ensured_home() / f"{slug}.sqlite3"
+
+
+#: `meta` key written by `import_legacy`: everything up to `last_run_id` was recorded
+#: while the agent's uid could still open the ledger.
+PRE_SPLIT_IMPORT = "pre_split_import"
+
+
+def import_legacy(source: Path) -> Path:
+    """Bring a single-user ledger under the runner, marked as pre-split history.
+
+    Copied with SQLite's backup API rather than as a file: a ledger in WAL mode keeps
+    its newest rows in a sidecar, and a plain copy of the main file would drop them.
+    """
+    target = _ensured_home() / source.name
+    src = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+    dst = sqlite3.connect(target)
+    try:
+        src.backup(dst)
+    finally:
+        src.close()
+        dst.close()
+    imported = Ledger(target.parent, path=target)  # opening it migrates it forward
+    last = imported.one("SELECT MAX(id) AS id FROM run")
+    imported.set_meta(
+        PRE_SPLIT_IMPORT,
+        json.dumps(
+            {
+                "source": str(source),
+                "imported_at": now(),
+                "last_run_id": last["id"] if last else None,
+            }
+        ),
+    )
+    return target
 
 
 def claim_is_stale(hostname: str, pid: int, started_at: str) -> bool:
@@ -339,9 +377,10 @@ def claim_is_stale(hostname: str, pid: int, started_at: str) -> bool:
 class Ledger:
     _claim_is_stale = staticmethod(claim_is_stale)
 
-    def __init__(self, repo_path: Path):
+    def __init__(self, repo_path: Path, *, path: Path | None = None):
         self.repo_path = repo_path
-        self.path = ledger_path(repo_path)
+        # `path` is for a ledger that is not found by its repository: an imported one.
+        self.path = path or ledger_path(repo_path)
         # A generous busy timeout: two `run start` calls against one worktree open
         # separate connections and both write (claim, then run/baseline rows).
         # SQLite's default 5s timeout can be exceeded while one holds the write lock
@@ -388,6 +427,18 @@ class Ledger:
         except sqlite3.OperationalError:  # no meta table: fresh database
             return None
         return int(row[0]) if row else None
+
+    def get_meta(self, key: str) -> str | None:
+        row = self.db.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        self.db.execute(
+            "INSERT INTO meta(key, value) VALUES (?, ?)"
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+        self.db.commit()
 
     # -- generic helpers -------------------------------------------------
 

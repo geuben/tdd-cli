@@ -105,7 +105,7 @@ def split_client(tmp_path, monkeypatch, sudo_shim):
         "#!/bin/sh\n"
         f'echo "$@" > "{tmp_path}/stub.argv"\n'
         f'cat > "{tmp_path}/stub.stdin"\n'
-        "echo '{\"ok\": true, \"stub\": true}'\n"
+        'echo \'{"ok": true, "stub": true}\'\n'
         "exit 3\n"
     )
     stub.chmod(0o755)

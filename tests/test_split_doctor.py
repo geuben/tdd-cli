@@ -42,9 +42,7 @@ def test_split_doctor_checks_the_drop_to_the_agent(repo, split_runner, monkeypat
     assert (verdicts, "NOPASSWD:SETENV" in detail) == ([True, False], True)
 
 
-def test_split_doctor_ledger_check_follows_what_the_agent_can_read(
-    repo, split_runner, monkeypatch
-):
+def test_split_doctor_ledger_check_follows_what_the_agent_can_read(repo, split_runner, monkeypatch):
     """In this suite the agent and the runner are one uid, so the agent *can* read the
     ledger and the check must say so. It passes only once `test -r`, asked as the
     agent, is refused: the check reports what is true, not what was configured."""
