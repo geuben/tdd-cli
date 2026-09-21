@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 
 import pytest
@@ -42,3 +43,14 @@ def test_the_client_forwards_the_verb_and_relays_the_answer(repo, split_client):
         '{"ok": true, "stub": true}',
         3,
     )
+
+
+def test_the_client_sends_its_environment_on_stdin(repo, split_client, monkeypatch):
+    """sudo resets the environment, and the suites need the agent's: its `PATH`, its
+    virtualenv, its `HOME`. It travels as data, to be handed back to the agent's own
+    processes."""
+    monkeypatch.setenv("AGENT_ONLY", "yes")
+
+    _invoke(repo, "status")
+
+    assert json.loads(split_client.stdin.read_text())["env"]["AGENT_ONLY"] == "yes"
