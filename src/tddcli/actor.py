@@ -98,8 +98,11 @@ class SudoActor(LocalActor):
         self.agent_env = env
 
     def run_argv(self, argv, *, cwd=None, env=None, timeout=None, input=None):
-        # `-n`: a sudo that prompts would hang an unattended agent.
-        wrapped = [self.sudo, "-n", "-E", "-u", self.agent, "--", *argv]
+        # `-n`: a sudo that prompts would hang an unattended agent. With the agent's
+        # environment in hand, `-E` passes exactly that; with none, sudo resets to the
+        # agent's own, and `-H` stops macOS leaving `HOME` at the runner's.
+        keep = "-H" if self.agent_env is None else "-E"
+        wrapped = [self.sudo, "-n", keep, "-u", self.agent, "--", *argv]
         return super().run_argv(wrapped, cwd=cwd, env=env, timeout=timeout, input=input)
 
     def run_shell(self, command, *, cwd, env=None, timeout=None):
