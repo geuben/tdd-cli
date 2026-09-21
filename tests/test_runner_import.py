@@ -119,3 +119,15 @@ def test_import_is_refused_in_single_mode(repo, ledger_home, tmp_path):
 
     refused = (out["result"].get("reason"), (ledger_home / elsewhere.name).exists())
     assert refused == ("not_split", False)
+
+
+def test_metrics_reports_the_pre_split_marker(repo, ledger_home, tmp_path, monkeypatch, sudo_shim):
+    """The marker is only worth writing if whoever compares runs is told about it."""
+    legacy = _legacy_ledger(repo, ledger_home)
+    _become_the_runner(tmp_path, monkeypatch, sudo_shim, called_by=None)
+    run_cli(repo, "runner", "import", str(legacy))
+    monkeypatch.setenv("SUDO_USER", current_user())  # an agent asks, as it would
+
+    out = run_cli(repo, "metrics")
+
+    assert out["result"]["pre_split_import"]["last_run_id"] == 1
