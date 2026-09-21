@@ -105,6 +105,12 @@ class SudoActor(LocalActor):
     def run_shell(self, command, *, cwd, env=None, timeout=None):
         return self.run_argv(["/bin/sh", "-c", command], cwd=cwd, env=env, timeout=timeout)
 
+    def _env(self, extra):  # type: ignore[override]
+        """The agent's environment, never the runner's: `-E` hands sudo exactly this."""
+        if self.agent_env is None:
+            return super()._env(extra)
+        return {**self.agent_env, **(extra or {})}
+
     def read_text(self, path):
         raise NotImplementedError
 
