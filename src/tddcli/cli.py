@@ -1689,6 +1689,21 @@ def _actor_for(
     return actor.LocalActor()
 
 
+def _refusal(split: runner_mod.RunnerConfig | None) -> Envelope | None:
+    """A runner that was not called through sudo acts for nobody.
+
+    It must not fall back to acting as itself: that would run the agent's suites, and
+    the agent's git hooks, as the uid that owns the ledger.
+    """
+    if split is None or split.role != "runner" or os.environ.get("SUDO_USER"):
+        return None
+    return failure(
+        f"this is the split-mode runner ({split.user}) and no agent called it: run `tdd`"
+        " from the agent's account, which reaches the runner through sudo",
+        reason="no_agent",
+    )
+
+
 def _agent_env(args) -> dict[str, str] | None:
     """The environment the client sent. It only ever reaches processes spawned as the
     agent, so nothing in it is trusted and nothing in it needs to be."""
@@ -1709,8 +1724,9 @@ def main(argv: list[str] | None = None) -> int:
         ).emit()
     try:
         args = build_parser().parse_args(argv)
-        actor.install(_actor_for(runner_mod.load(), _agent_env(args)))
-        envelope = args.fn(args)
+        split = runner_mod.load()
+        actor.install(_actor_for(split, _agent_env(args)))
+        envelope = _refusal(split) or args.fn(args)
     except (
         config_mod.ConfigError,
         gitutil.GitError,

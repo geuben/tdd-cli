@@ -60,4 +60,4 @@ def test_the_runner_without_an_agent_refuses_to_act(repo, split_runner, monkeypa
 
     out = run_cli(repo, "status")
 
-    assert (out["ok"], out.get("reason")) == (False, "no_agent")
+    assert (out["ok"], out["result"].get("reason")) == (False, "no_agent")
