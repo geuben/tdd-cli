@@ -342,6 +342,18 @@ def _split_checks(check: Callable, split: runner_mod.RunnerConfig, ledger_file: 
         else "",
     )
 
+    # A runner whose code the agent can edit is the agent.
+    install = Path(__file__).resolve().parent
+    writable = actor.current().run_argv(["test", "-w", str(install)]).returncode == 0
+    check(
+        "install not writable by the agent",
+        not writable,
+        f"{agent!r} can write {install}. Install tdd-cli for the runner where the agent's"
+        " account has no write access (for example under /opt, owned by root)"
+        if writable
+        else "",
+    )
+
 
 def cmd_doctor(args) -> Envelope:
     worktree = _worktree()
