@@ -31,3 +31,16 @@ def _modules_matching(pattern: re.Pattern[str]) -> set[str]:
 
 def test_only_the_actor_spawns_processes():
     assert _modules_matching(SPAWNS) == {"actor.py"}
+
+
+WRITES = re.compile(
+    r"\.write_text\(|\.write_bytes\(|\.unlink\(|rmtree\(|mkdtemp\(|TemporaryDirectory\("
+    r"|symlink_to\(|\.mkdir\("
+)
+
+#: Leases and the ledger are the tool's own state: they stay the runner's.
+OWN_STATE = {"actor.py", "agentfs.py", "leases.py", "ledger.py"}
+
+
+def test_only_the_actor_writes_outside_the_tools_own_state():
+    assert _modules_matching(WRITES) - OWN_STATE == set()
