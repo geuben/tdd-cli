@@ -8,6 +8,8 @@ without root can show.
 
 from __future__ import annotations
 
+import os
+
 from tddcli.actor import SudoActor
 
 
@@ -19,3 +21,20 @@ def test_both_spawn_forms_run_through_sudo_as_the_agent(tmp_path, sudo_shim):
 
     tails = [line.split(" -u ", 1)[1] for line in sudo_shim.lines()]
     assert tails == ["agent-x -- echo one", "agent-x -- /bin/sh -c echo two"]
+
+
+def _agent_env(sudo_shim, **extra: str) -> dict[str, str]:
+    """What a client would send: the shim itself needs `PATH` and `SUDO_LOG` from it."""
+    return {"PATH": os.environ["PATH"], "SUDO_LOG": str(sudo_shim.log), **extra}
+
+
+def test_spawned_environment_is_the_agents_plus_extras(tmp_path, monkeypatch, sudo_shim):
+    monkeypatch.setenv("WHO", "runner")
+    actor = SudoActor(
+        sudo=str(sudo_shim.path), agent="agent-x", env=_agent_env(sudo_shim, WHO="agent")
+    )
+
+    proc = actor.run_shell("echo $WHO $TDD_WORKERS", cwd=tmp_path, env={"TDD_WORKERS": "4"})
+
+    flags = sudo_shim.lines()[0].split(" -u ", 1)[0].split()[1:]
+    assert (proc.stdout, "-E" in flags) == ("agent 4\n", True)
