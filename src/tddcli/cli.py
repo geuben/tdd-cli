@@ -1723,10 +1723,21 @@ def main(argv: list[str] | None = None) -> int:
             reason="unsupported_platform",
         ).emit()
     try:
+        split = None
         args = build_parser().parse_args(argv)
         split = runner_mod.load()
         actor.install(_actor_for(split, _agent_env(args)))
         envelope = _refusal(split) or args.fn(args)
+    except PermissionError as exc:
+        # Only the runner reads someone else's files. Anywhere else this is a bug, and
+        # a traceback is the right report for one.
+        if split is None or split.role != "runner":
+            raise
+        envelope = failure(
+            f"the runner ({split.user}) cannot read {exc.filename}: split mode needs the"
+            " worktree readable by that user (`chmod -R go+rX` it, or share a group)",
+            reason="worktree_unreadable",
+        )
     except (
         config_mod.ConfigError,
         gitutil.GitError,
