@@ -38,3 +38,12 @@ def test_spawned_environment_is_the_agents_plus_extras(tmp_path, monkeypatch, su
 
     flags = sudo_shim.lines()[0].split(" -u ", 1)[0].split()[1:]
     assert (proc.stdout, "-E" in flags) == ("agent 4\n", True)
+
+
+def test_without_an_agent_environment_sudo_builds_it(sudo_shim):
+    """No `-E`, so a real sudo resets the environment to the agent's own; `-H` because
+    macOS sudo would otherwise leave `HOME` pointing at the runner's."""
+    SudoActor(sudo=str(sudo_shim.path), agent="agent-x", env=None).run_argv(["true"])
+
+    asked = sudo_shim.lines()[0].split(" ", 1)[1]
+    assert asked == "-n -H -u agent-x -- true"
