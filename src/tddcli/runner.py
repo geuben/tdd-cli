@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import pwd
+import stat
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,11 +38,29 @@ def config_path() -> Path:
     return Path(override) if override else CONFIG_PATH
 
 
+def _require_trusted(path: Path) -> None:
+    """Refuse a config the caller could have forged.
+
+    An agent may point its own client at any file it likes: that only moves its own
+    run into a ledger nobody trusts. The runner must not follow it there, so the file
+    has to belong to root or to this process, and nobody else may be able to edit it.
+    """
+    st = path.stat()
+    if st.st_uid not in (0, os.geteuid()):
+        raise RunnerConfigError(
+            f"{path} is owned by uid {st.st_uid}; it must be owned by root or by the"
+            " user running tdd"
+        )
+    if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise RunnerConfigError(f"{path} is group- or world-writable; `chmod go-w` it")
+
+
 def load() -> RunnerConfig | None:
     """None on a machine that is not split."""
     path = config_path()
     if not path.is_file():
         return None
+    _require_trusted(path)
     try:
         raw = tomllib.loads(path.read_text())
     except tomllib.TOMLDecodeError as exc:
