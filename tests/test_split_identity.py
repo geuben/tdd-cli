@@ -1,0 +1,47 @@
+"""Who the runner says did the work.
+
+Everything `identity.resolve` reads today — the session id, the transcript, the
+`TDD_EXECUTOR_MODEL` override — is the agent's to write. In split mode the runner
+trusts only what its operator told it, and labels everything else a claim.
+"""
+
+from __future__ import annotations
+
+from conftest import current_user, run_cli, write_plan
+from tddcli.ledger import Ledger
+
+MINIMAL_PLAN = """\
+---
+cycles:
+  - n: 1
+    project: backend
+    title: "placeholder"
+    test: "tests/test_smoke.py::test_smoke"
+    commit_red: "test: placeholder"
+    commit_green: "feat: placeholder"
+---
+# Minimal plan for split-mode identity tests
+"""
+
+
+def _start(repo, *flags: str) -> dict:
+    plan = write_plan(repo, MINIMAL_PLAN)
+    run_cli(repo, "plan", "register", plan)
+    return run_cli(repo, *flags, "run", "start", "--plan", plan)
+
+
+def _recorded(repo) -> tuple[str, str]:
+    row = Ledger(repo).one("SELECT executor_model, executor_source FROM run")
+    return row["executor_model"], row["executor_source"]
+
+
+def test_a_mapped_agent_records_the_operator_assigned_model(repo, split_runner):
+    """`conftest` pins `TDD_EXECUTOR_MODEL` in this process, which here is the runner:
+    recording the operator's model proves the runner did not read its own environment."""
+    with split_runner.config.open("a") as fh:
+        fh.write(f'\n[executor]\n{current_user()} = "model-from-operator"\n')
+
+    out = _start(repo)
+
+    seen = (out["result"]["executor_source"], *_recorded(repo))
+    assert seen == ("operator", "model-from-operator", "operator")
