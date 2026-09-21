@@ -327,6 +327,18 @@ def cmd_doctor(args) -> Envelope:
     check(
         "ledger outside worktree", not str(ledger.path).startswith(str(worktree)), str(ledger.path)
     )
+    split = runner_mod.load()
+    mode = "single" if split is None else "split"
+    if split is None:
+        # A notice, never a blocker: single-user installs must keep working. What it
+        # must not do is let "outside the worktree" pass for "out of reach".
+        check(
+            "ledger isolation",
+            True,
+            "single-user mode: the ledger is owned by the same uid that runs the agent,"
+            " which can open and edit it. `tdd docs split` sets up a runner the agent"
+            " cannot reach.",
+        )
 
     ex = identity.resolve(worktree)
     ex_detail = f"{ex.source}: {ex.model}"
@@ -465,7 +477,7 @@ def cmd_doctor(args) -> Envelope:
     ok = all(c["ok"] for c in checks)
     return Envelope(
         ok=ok,
-        result={"checks": checks, "projects": projects, "healthy": ok},
+        result={"checks": checks, "projects": projects, "healthy": ok, "mode": mode},
         next_action=NextAction(
             Verb.CONFIRM_CYCLE_APPLICABLE if ok else Verb.RESOLVE_BLOCKER,
             "Environment is ready." if ok else "Resolve the failing checks above.",
