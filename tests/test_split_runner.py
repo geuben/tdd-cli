@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import io
+import json
+import os
+import sys
+
 from conftest import current_user, run_cli, write_plan
 
 MINIMAL_PLAN = """\
@@ -32,3 +37,17 @@ def test_run_start_spawns_git_and_the_suite_as_the_agent(repo, split_runner):
         any(as_agent + "/bin/sh -c" in line for line in lines),
     )
     assert spawned == (True, True, True)
+
+
+def _agent_context(monkeypatch, **extra: str) -> None:
+    """What the client writes to the runner's stdin: the agent's environment."""
+    payload = json.dumps({"env": {**os.environ, **extra}})
+    monkeypatch.setattr(sys, "stdin", io.StringIO(payload))
+
+
+def test_agent_context_on_stdin_reaches_spawned_commands(repo, split_runner, monkeypatch):
+    _agent_context(monkeypatch, MARK="from-agent")
+
+    run_cli(repo, "--agent-context-stdin", "doctor")
+
+    assert any(line.startswith("MARK=from-agent ") for line in split_runner.shim.lines())
