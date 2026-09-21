@@ -1558,10 +1558,19 @@ def cmd_metrics(args) -> Envelope:
 
 def cmd_runner_import(args) -> Envelope:
     """Needs no worktree: it is an operator's command, run as the runner, about a file."""
+    # sudo sets SUDO_UID itself. Unset means someone logged in as the runner; "0" means
+    # root. Anything else reached us the way an agent does, and an agent that could
+    # import could hand the runner a history it wrote itself.
+    if os.environ.get("SUDO_UID") not in (None, "0"):
+        return failure(
+            "`tdd runner import` is for the machine's operator: run it as root, or"
+            " logged in as the runner",
+            reason="operator_only",
+        )
     source = Path(args.ledger).resolve()
     if not source.is_file():
         return failure(f"{source} is not a file")
-    held = ledger_mod.ledger_home() / source.name
+    held =ledger_mod.ledger_home() / source.name
     if held.exists():
         # No merge, by design: the runner's copy may hold runs recorded out of the
         # agent's reach, and a second import would trade them for ones that were not.
