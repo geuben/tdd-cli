@@ -16,6 +16,21 @@
 - A new `tdd docs` topic needs three things that move together: the `Topic` in
   `src/tddcli/docs.py`, the `force-include` line in `pyproject.toml`, and the file. Tests in
   `tests/test_docs_command.py` enforce the first two.
+- A refusal's `reason` is under `result.reason`, never at the envelope's top level
+  (`envelope.failure(error, **result)`). Say so in any cycle that asserts one.
+- A static guard test that greps the source must be run against the design it guards, not
+  only against today's tree. Issue 142's write guard matched `.unlink(`, `mkdtemp(` and
+  `rmtree(`, which were also the method names the plan gave the new seam, so every migrated
+  call site still matched. Its spawn guard matched the word "subprocess" in two comments.
+  Probe the regex on a scratch copy of the *after* state, and match code, not prose.
+- Moving a call between modules breaks tests that patch through the old module
+  (`monkeypatch.setattr(adapters.pytest_adapter.tempfile, ...)`). Grep `tests/` for
+  `<module>.<name>` before declaring a move, and list the hits in `modifies_tests`.
+- Anything that spawns a process belongs in `src/tddcli/actor.py`: `tests/test_actor_seams.py`
+  fails a spawn or a worktree write anywhere else. A cycle that adds one names `actor.py` in
+  `files`.
+- Split mode (issue 142) is tested through `conftest.sudo_shim`, a stand-in for sudo that does
+  not change uid. `split_runner` and `split_client` put the in-process CLI in either role.
 - `CHANGELOG.md` is hand-edited under `## [Unreleased]` (see `RELEASING.md`).
 - There is no `docs/INVARIANTS.md` and no `perturb/` ledger in this repo.
 - `gitutil.tree_hash` is a content hash from #146 on (throwaway index + `git add -A`): staging or
