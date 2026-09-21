@@ -47,3 +47,24 @@ def test_without_an_agent_environment_sudo_builds_it(sudo_shim):
 
     asked = sudo_shim.lines()[0].split(" ", 1)[1]
     assert asked == "-n -H -u agent-x -- true"
+
+
+def test_file_operations_are_performed_as_the_agent(sudo_shim):
+    """The runner's uid cannot write into the agent's worktree or its temp directories,
+    so each operation is a helper process spawned as the agent."""
+    actor = SudoActor(sudo=str(sudo_shim.path), agent="agent-x", env=_agent_env(sudo_shim))
+
+    root = actor.make_temp_dir("tdd-agentfs-")
+    actor.write_file(root / "a" / "b.txt", b"x")
+    read = actor.read_text(root / "a" / "b.txt")
+    missing = actor.read_text(root / "missing")
+    actor.link(root / "a" / "b.txt", root / "l" / "link")
+    linked = (root / "l" / "link").is_symlink()
+    actor.remove_file(root / "a" / "b.txt")
+    removed = not (root / "a" / "b.txt").exists()
+    actor.remove_tree(root)
+
+    lines = sudo_shim.lines()
+    observed = (read, missing, linked, removed, root.exists(), len(lines))
+    via_helper = all("-m tddcli.agentfs" in line for line in lines)
+    assert (observed, via_helper) == (("x", None, True, True, False, 7), True)
