@@ -98,10 +98,12 @@ class SudoActor(LocalActor):
         self.agent_env = env
 
     def run_argv(self, argv, *, cwd=None, env=None, timeout=None, input=None):
-        raise NotImplementedError
+        # `-n`: a sudo that prompts would hang an unattended agent.
+        wrapped = [self.sudo, "-n", "-E", "-u", self.agent, "--", *argv]
+        return super().run_argv(wrapped, cwd=cwd, env=env, timeout=timeout, input=input)
 
     def run_shell(self, command, *, cwd, env=None, timeout=None):
-        raise NotImplementedError
+        return self.run_argv(["/bin/sh", "-c", command], cwd=cwd, env=env, timeout=timeout)
 
     def read_text(self, path):
         raise NotImplementedError
