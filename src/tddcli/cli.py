@@ -310,7 +310,7 @@ def _cleanliness_detail(blocking: list[str], unrelated: list[str]) -> str:
     return ""
 
 
-def _split_checks(check: Callable, split: runner_mod.RunnerConfig) -> None:
+def _split_checks(check: Callable, split: runner_mod.RunnerConfig, ledger_file: Path) -> None:
     """What split mode rests on, probed live and as the agent.
 
     Each probe goes through the installed actor, so on a real machine it is answered
@@ -330,6 +330,16 @@ def _split_checks(check: Callable, split: runner_mod.RunnerConfig) -> None:
         if dropped
         else f"the runner could not run `id -u` as {agent!r}. Add to sudoers:"
         f" `{split.user} ALL=({agent}) NOPASSWD:SETENV: ALL`",
+    )
+
+    readable = actor.current().run_argv(["test", "-r", str(ledger_file)]).returncode == 0
+    check(
+        "ledger out of the agent's reach",
+        not readable,
+        f"{agent!r} can read {ledger_file}. Its directory must belong to {split.user}"
+        " alone, at mode 700, somewhere the agent's account cannot otherwise reach"
+        if readable
+        else "",
     )
 
 
@@ -364,7 +374,7 @@ def cmd_doctor(args) -> Envelope:
             " cannot reach.",
         )
     else:
-        _split_checks(check, split)
+        _split_checks(check, split, ledger.path)
 
     ex = identity.resolve(worktree)
     ex_detail = f"{ex.source}: {ex.model}"
