@@ -1558,6 +1558,15 @@ def cmd_metrics(args) -> Envelope:
 
 def cmd_runner_import(args) -> Envelope:
     """Needs no worktree: it is an operator's command, run as the runner, about a file."""
+    split = runner_mod.load()
+    if split is None or split.role != "runner":
+        # With no runner there is nowhere out of reach to import into: the copy would
+        # land back in the caller's own ledger home.
+        return failure(
+            "this machine is not split, or this is not its runner: `tdd docs split`"
+            " sets one up",
+            reason="not_split",
+        )
     # sudo sets SUDO_UID itself. Unset means someone logged in as the runner; "0" means
     # root. Anything else reached us the way an agent does, and an agent that could
     # import could hand the runner a history it wrote itself.
