@@ -7,6 +7,7 @@ import json
 import os
 import sys
 
+import pytest
 from conftest import current_user, run_cli, write_plan
 
 MINIMAL_PLAN = """\
@@ -61,3 +62,17 @@ def test_the_runner_without_an_agent_refuses_to_act(repo, split_runner, monkeypa
     out = run_cli(repo, "status")
 
     assert (out["ok"], out["result"].get("reason")) == (False, "no_agent")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a mode-000 file")
+def test_an_unreadable_worktree_is_a_failure_envelope(repo, split_runner):
+    """The runner reads the worktree as itself, so the agent has to let it."""
+    config = repo / "tdd.toml"
+    config.chmod(0)
+    try:
+        out = run_cli(repo, "doctor")
+    finally:
+        config.chmod(0o644)
+
+    named = (out["result"].get("reason"), current_user() in out["error"])
+    assert named == ("worktree_unreadable", True)
