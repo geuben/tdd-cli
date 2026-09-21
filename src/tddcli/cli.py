@@ -1555,6 +1555,10 @@ def cmd_metrics(args) -> Envelope:
     )
 
 
+def cmd_runner_import(args) -> Envelope:
+    return failure("runner import is not implemented", reason="not_implemented")
+
+
 def cmd_docs(args) -> Envelope:
     """The shipped documentation, printed. No network, and versioned with the binary.
 
@@ -1732,6 +1736,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("metrics")
     s.set_defaults(fn=cmd_metrics)
+
+    runner_p = sub.add_parser("runner", help="split-mode runner administration").add_subparsers(
+        dest="runner_command", required=True
+    )
+    s = runner_p.add_parser("import")
+    s.add_argument("ledger")
+    s.set_defaults(fn=cmd_runner_import)
     return p
 
 
