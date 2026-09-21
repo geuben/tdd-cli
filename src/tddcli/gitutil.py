@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-import os
 import shutil
-import subprocess
 import tempfile
 from collections.abc import Generator, Sequence
 from pathlib import Path
+
+from . import actor
 
 
 class GitError(RuntimeError):
@@ -17,12 +17,13 @@ class GitError(RuntimeError):
 
 
 def git(worktree: Path, *args: str, check: bool = True, env: dict[str, str] | None = None) -> str:
-    proc = subprocess.run(
-        ["git", "-C", str(worktree), *args],
-        capture_output=True,
-        text=True,
-        env={**os.environ, **env} if env else None,
-    )
+    argv = ["git", "-C", str(worktree), *args]
+    if env:
+        # On the command line, not in the process environment: a SudoActor with no
+        # agent environment runs `sudo -H`, which resets the environment, and a lost
+        # GIT_INDEX_FILE would point `git add` at the agent's real index.
+        argv = ["env", *(f"{k}={v}" for k, v in env.items()), *argv]
+    proc = actor.current().run_argv(argv)
     if check and proc.returncode != 0:
         raise GitError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
     return proc.stdout
