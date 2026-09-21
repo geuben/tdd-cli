@@ -1726,6 +1726,10 @@ def main(argv: list[str] | None = None) -> int:
         split = None
         args = build_parser().parse_args(argv)
         split = runner_mod.load()
+        if split is not None and split.role == "client":
+            # Parsed first, so `--help`, `--version` and a mistyped verb never cost a
+            # round trip; forwarded verbatim, so the runner parses exactly what we did.
+            return runner_mod.forward(split, list(sys.argv[1:] if argv is None else argv))
         actor.install(_actor_for(split, _agent_env(args)))
         envelope = _refusal(split) or args.fn(args)
     except PermissionError as exc:

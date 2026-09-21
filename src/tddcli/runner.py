@@ -10,9 +10,12 @@ from __future__ import annotations
 import os
 import pwd
 import stat
+import sys
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from . import actor
 
 CONFIG_PATH = Path("/etc/tdd-cli/runner.toml")
 CONFIG_ENV = "TDD_RUNNER_CONFIG"
@@ -36,6 +39,23 @@ class RunnerConfig:
 def config_path() -> Path:
     override = os.environ.get(CONFIG_ENV)
     return Path(override) if override else CONFIG_PATH
+
+
+#: The client adds this when it re-executes as the runner; see `cli.build_parser`.
+CONTEXT_FLAG = "--agent-context-stdin"
+
+
+def forward(cfg: RunnerConfig, argv: list[str]) -> int:
+    """Ask the runner to do what this process was asked, and pass its answer on.
+
+    `-n` so a missing sudoers rule fails instead of prompting an unattended agent;
+    `-H` because macOS sudo otherwise leaves `HOME` at the caller's, and the runner's
+    ledger home and leases default to under it.
+    """
+    asked = [cfg.sudo, "-n", "-H", "-u", cfg.user, "--", cfg.command, CONTEXT_FLAG, *argv]
+    proc = actor.LocalActor().relay(asked, input="")
+    sys.stdout.write(proc.stdout)
+    return proc.returncode
 
 
 def _require_trusted(path: Path) -> None:

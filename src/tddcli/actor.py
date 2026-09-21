@@ -61,6 +61,11 @@ class LocalActor:
             env=self._env(env),
         )
 
+    def relay(self, argv: Sequence[str], *, input: str) -> subprocess.CompletedProcess[str]:
+        """Run a command whose answer is ours to pass on: stdout is captured so the
+        caller can print it, stderr is inherited so its heartbeats stay live."""
+        return subprocess.run(list(argv), stdout=subprocess.PIPE, text=True, input=input)
+
     def read_text(self, path: Path) -> str | None:
         """None when the file is missing: callers ask "did it get written?" by reading."""
         try:
