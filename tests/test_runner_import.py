@@ -131,3 +131,18 @@ def test_metrics_reports_the_pre_split_marker(repo, ledger_home, tmp_path, monke
     out = run_cli(repo, "metrics")
 
     assert out["result"]["pre_split_import"]["last_run_id"] == 1
+
+
+def test_root_may_import_and_is_told_what_was_marked(
+    repo, ledger_home, tmp_path, monkeypatch, sudo_shim
+):
+    """The documented way in: `sudo -u <runner> tdd runner import` from a root shell,
+    where sudo reports uid 0. The operator sees which runs were marked without opening
+    the ledger."""
+    legacy = _legacy_ledger(repo, ledger_home)
+    _become_the_runner(tmp_path, monkeypatch, sudo_shim, called_by="0")
+
+    out = run_cli(repo, "runner", "import", str(legacy))
+
+    told = (out["ok"], out["result"]["pre_split_import"]["last_run_id"])
+    assert told == (True, 1)

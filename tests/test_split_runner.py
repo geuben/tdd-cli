@@ -10,6 +10,7 @@ import sys
 import pytest
 
 from conftest import current_user, run_cli, write_plan
+from tddcli import actor
 
 MINIMAL_PLAN = """\
 ---
@@ -77,3 +78,28 @@ def test_an_unreadable_worktree_is_a_failure_envelope(repo, split_runner):
 
     named = (out["result"].get("reason"), current_user() in out["error"])
     assert named == ("worktree_unreadable", True)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a mode-000 file")
+def test_an_unreadable_file_outside_the_runner_role_is_still_a_crash(repo):
+    """Only the runner reads someone else's files. On a single-user machine an
+    unreadable `tdd.toml` is a broken checkout, and a traceback is the right report."""
+    config = repo / "tdd.toml"
+    config.chmod(0)
+    try:
+        with pytest.raises(PermissionError):
+            run_cli(repo, "doctor")
+    finally:
+        config.chmod(0o644)
+
+
+def test_the_runner_never_installs_an_actor_that_acts_as_itself(repo, split_runner, monkeypatch):
+    """With no caller the verb is refused before anything spawns. The actor behind that
+    refusal still has to be one that cannot run the agent's code as the ledger's uid:
+    if a path ever slipped past, it must fail at sudo, not succeed as the runner."""
+    monkeypatch.delenv("SUDO_USER")
+    monkeypatch.delenv("SUDO_UID")
+
+    run_cli(repo, "status")
+
+    assert isinstance(actor.current(), actor.SudoActor)

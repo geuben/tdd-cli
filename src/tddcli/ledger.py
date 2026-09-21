@@ -322,11 +322,12 @@ def ledger_path(repo_path: Path) -> Path:
 PRE_SPLIT_IMPORT = "pre_split_import"
 
 
-def import_legacy(source: Path) -> Path:
+def import_legacy(source: Path) -> tuple[Path, dict]:
     """Bring a single-user ledger under the runner, marked as pre-split history.
 
     Copied with SQLite's backup API rather than as a file: a ledger in WAL mode keeps
     its newest rows in a sidecar, and a plain copy of the main file would drop them.
+    Returns where it landed and the marker written into it.
     """
     target = _ensured_home() / source.name
     src = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
@@ -337,18 +338,11 @@ def import_legacy(source: Path) -> Path:
         src.close()
         dst.close()
     imported = Ledger(target.parent, path=target)  # opening it migrates it forward
-    last = imported.one("SELECT MAX(id) AS id FROM run")
-    imported.set_meta(
-        PRE_SPLIT_IMPORT,
-        json.dumps(
-            {
-                "source": str(source),
-                "imported_at": now(),
-                "last_run_id": last["id"] if last else None,
-            }
-        ),
-    )
-    return target
+    # MAX over no rows is one row holding NULL: an empty ledger imports with `None`.
+    last = imported.db.execute("SELECT MAX(id) FROM run").fetchone()[0]
+    marker = {"source": str(source), "imported_at": now(), "last_run_id": last}
+    imported.set_meta(PRE_SPLIT_IMPORT, json.dumps(marker))
+    return target, marker
 
 
 def claim_is_stale(hostname: str, pid: int, started_at: str) -> bool:

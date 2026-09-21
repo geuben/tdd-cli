@@ -44,7 +44,7 @@ from . import target_lint as target_lint_mod
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
 from .envelope import Envelope, NextAction, Verb, failure, heartbeat
-from .ledger import PRE_SPLIT_IMPORT, Ledger, LedgerVersionError, ledger_path, now
+from .ledger import Ledger, LedgerVersionError, ledger_path, now
 from .machine import CLOSED, SKIPPED, Engine
 
 BASELINE_MAX_FAILURE_RATIO_DEFAULT = 0.5
@@ -1586,13 +1586,12 @@ def cmd_runner_import(args) -> Envelope:
             f"the runner already holds {held}; importing again would overwrite it",
             reason="ledger_exists",
         )
-    target = ledger_mod.import_legacy(source)
-    marker = json.loads(Ledger(target.parent, path=target).get_meta(PRE_SPLIT_IMPORT) or "{}")
+    target, marker = ledger_mod.import_legacy(source)
     return Envelope(
         result={"imported": str(target), "pre_split_import": marker},
         next_action=NextAction(
             Verb.COMPLETE,
-            f"Imported to {target}. Runs up to {marker.get('last_run_id')} predate the"
+            f"Imported to {target}. Runs up to {marker['last_run_id']} predate the"
             " split and are marked as such.",
         ),
     )
@@ -1798,9 +1797,14 @@ def _actor_for(
 
     The agent is `SUDO_USER`: sudo sets it itself, so a caller cannot name someone
     else. Installed on every invocation, because the suite drives `main` in-process.
+
+    The runner never gets a `LocalActor`, even with no caller to act for. `_refusal`
+    stops such an invocation before it spawns anything; if one ever got past it, a
+    `sudo -u ""` that fails is the right outcome, and the agent's code running as the
+    ledger's uid is the wrong one.
     """
-    agent = os.environ.get("SUDO_USER")
-    if split is not None and split.role == "runner" and agent:
+    if split is not None and split.role == "runner":
+        agent = os.environ.get("SUDO_USER", "")
         return actor.SudoActor(sudo=split.sudo, agent=agent, env=agent_env)
     return actor.LocalActor()
 

@@ -62,3 +62,20 @@ def test_an_unmapped_agent_is_recorded_as_claimed(repo, split_runner, monkeypatc
 
     seen = (out["result"]["executor_source"], *_recorded(repo))
     assert seen == ("claimed", "model-the-agent-claims", "claimed")
+
+
+def test_the_human_label_is_a_claim_like_any_other(repo, split_runner, monkeypatch):
+    """`--executor` is a human's word on a single-user machine. Through the runner it is
+    whatever the caller typed, so it is carried across and recorded as a claim."""
+    anonymous = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in ("TDD_EXECUTOR_MODEL", "CLAUDE_CODE_SESSION_ID")
+    }
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"env": anonymous})))
+    plan = write_plan(repo, MINIMAL_PLAN)
+    run_cli(repo, "plan", "register", plan)
+
+    run_cli(repo, "--agent-context-stdin", "run", "start", "--plan", plan, "--executor", "a-human")
+
+    assert _recorded(repo) == ("a-human", "claimed")
