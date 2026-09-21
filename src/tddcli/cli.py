@@ -37,6 +37,7 @@ from . import (
 from . import (
     docs as docs_mod,
 )
+from . import runner as runner_mod
 from . import target_lint as target_lint_mod
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
@@ -1671,6 +1672,18 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _actor_for(split: runner_mod.RunnerConfig | None) -> actor.LocalActor:
+    """Who acts in the agent's territory for this invocation.
+
+    The agent is `SUDO_USER`: sudo sets it itself, so a caller cannot name someone
+    else. Installed on every invocation, because the suite drives `main` in-process.
+    """
+    agent = os.environ.get("SUDO_USER")
+    if split is not None and split.role == "runner" and agent:
+        return actor.SudoActor(sudo=split.sudo, agent=agent, env=None)
+    return actor.LocalActor()
+
+
 def main(argv: list[str] | None = None) -> int:
     if os.name == "nt":
         # Worker leases, process-liveness checks, and cache paths are POSIX-only.
@@ -1682,8 +1695,14 @@ def main(argv: list[str] | None = None) -> int:
         ).emit()
     try:
         args = build_parser().parse_args(argv)
+        actor.install(_actor_for(runner_mod.load()))
         envelope = args.fn(args)
-    except (config_mod.ConfigError, gitutil.GitError, LedgerVersionError) as exc:
+    except (
+        config_mod.ConfigError,
+        gitutil.GitError,
+        LedgerVersionError,
+        runner_mod.RunnerConfigError,
+    ) as exc:
         envelope = failure(str(exc))
     except SystemExit as exc:
         return int(exc.code or 0)
