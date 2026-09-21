@@ -7,7 +7,10 @@ runner keeps the record and says plainly which part of it nobody can vouch for.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+
+import pytest
 
 from conftest import current_user, run_cli, write_plan
 
@@ -90,3 +93,16 @@ def test_import_refuses_to_overwrite_an_existing_ledger(
     again = run_cli(repo, "runner", "import", str(legacy))
 
     assert (again["ok"], again["result"].get("reason")) == (False, "ledger_exists")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root is an operator, not an agent")
+def test_import_is_refused_for_an_agent_caller(repo, ledger_home, tmp_path, monkeypatch, sudo_shim):
+    """An agent reaches the runner through sudo like everyone else. If it could import,
+    it could hand the runner a history it wrote itself."""
+    legacy = _legacy_ledger(repo, ledger_home)
+    home = _become_the_runner(tmp_path, monkeypatch, sudo_shim, called_by=str(os.geteuid()))
+
+    out = run_cli(repo, "runner", "import", str(legacy))
+
+    refused = (out["result"].get("reason"), (home / legacy.name).exists())
+    assert refused == ("operator_only", False)
