@@ -13,6 +13,8 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from . import runner
+
 SCHEMA_VERSION = 11
 
 
@@ -276,9 +278,26 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def ledger_path(repo_path: Path) -> Path:
+def ledger_home() -> Path:
+    """The directory the ledgers live in.
+
+    `TDD_LEDGER_HOME` is the caller's to set, so a split-mode runner never reads it:
+    following it would put the ledger wherever the agent chose. The runner's home
+    comes from its own config, else from its own home directory.
+    """
+    split = runner.load()
+    if split is not None and split.role == "runner":
+        return split.ledger_home or _default_home()
     base = os.environ.get("TDD_LEDGER_HOME")
-    root = Path(base) if base else Path.home() / ".local" / "share" / "tdd-cli"
+    return Path(base) if base else _default_home()
+
+
+def _default_home() -> Path:
+    return Path.home() / ".local" / "share" / "tdd-cli"
+
+
+def ledger_path(repo_path: Path) -> Path:
+    root = ledger_home()
     slug = str(repo_path).replace(os.sep, "-").strip("-")
     root.mkdir(parents=True, exist_ok=True)
     return root / f"{slug}.sqlite3"
