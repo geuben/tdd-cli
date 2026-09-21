@@ -51,3 +51,13 @@ def test_split_doctor_ledger_check_follows_what_the_agent_can_read(
     verdicts, _ = _probe(repo, monkeypatch, "ledger out of the agent's reach", deny="test")
 
     assert verdicts == [False, True]
+
+
+def test_split_doctor_install_check_follows_what_the_agent_can_write(
+    repo, split_runner, monkeypatch
+):
+    """A runner whose code the agent can edit is the agent. This suite runs from a
+    checkout its own uid owns, so the check must fail here until `test -w` is refused."""
+    verdicts, _ = _probe(repo, monkeypatch, "install not writable by the agent", deny="test")
+
+    assert verdicts == [False, True]
