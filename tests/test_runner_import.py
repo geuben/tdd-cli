@@ -76,3 +76,17 @@ def test_import_copies_the_ledger_and_marks_it_pre_split(
         _marker(copy).get("last_run_id") if copy.is_file() else None,
     )
     assert imported == (True, [1], 1)
+
+
+def test_import_refuses_to_overwrite_an_existing_ledger(
+    repo, ledger_home, tmp_path, monkeypatch, sudo_shim
+):
+    """The runner's copy may have grown since: a second import would erase runs that
+    were recorded out of the agent's reach, in favour of ones that were not."""
+    legacy = _legacy_ledger(repo, ledger_home)
+    _become_the_runner(tmp_path, monkeypatch, sudo_shim, called_by=None)
+    run_cli(repo, "runner", "import", str(legacy))
+
+    again = run_cli(repo, "runner", "import", str(legacy))
+
+    assert (again["ok"], again["result"].get("reason")) == (False, "ledger_exists")
