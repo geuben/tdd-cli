@@ -1563,8 +1563,7 @@ def cmd_runner_import(args) -> Envelope:
         # With no runner there is nowhere out of reach to import into: the copy would
         # land back in the caller's own ledger home.
         return failure(
-            "this machine is not split, or this is not its runner: `tdd docs split`"
-            " sets one up",
+            "this machine is not split, or this is not its runner: `tdd docs split` sets one up",
             reason="not_split",
         )
     # sudo sets SUDO_UID itself. Unset means someone logged in as the runner; "0" means
@@ -1579,7 +1578,7 @@ def cmd_runner_import(args) -> Envelope:
     source = Path(args.ledger).resolve()
     if not source.is_file():
         return failure(f"{source} is not a file")
-    held =ledger_mod.ledger_home() / source.name
+    held = ledger_mod.ledger_home() / source.name
     if held.exists():
         # No merge, by design: the runner's copy may hold runs recorded out of the
         # agent's reach, and a second import would trade them for ones that were not.

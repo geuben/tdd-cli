@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS run (
     plan_contract_id INTEGER NOT NULL REFERENCES plan_contract(id),
     executor_model TEXT NOT NULL,
     executor_session TEXT,
-    executor_source TEXT NOT NULL,      -- transcript | human | unknown
+    executor_source TEXT NOT NULL,      -- transcript | human | declared | unknown; split mode: operator | claimed
     worktree_path TEXT NOT NULL,
     started_at TEXT NOT NULL,
     ended_at TEXT,
