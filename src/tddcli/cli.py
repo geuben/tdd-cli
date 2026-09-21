@@ -10,6 +10,7 @@ import concurrent.futures
 import difflib
 import json
 import os
+import pwd
 import socket
 import sqlite3
 import sys
@@ -309,6 +310,29 @@ def _cleanliness_detail(blocking: list[str], unrelated: list[str]) -> str:
     return ""
 
 
+def _split_checks(check: Callable, split: runner_mod.RunnerConfig) -> None:
+    """What split mode rests on, probed live and as the agent.
+
+    Each probe goes through the installed actor, so on a real machine it is answered
+    by the real sudo and the real accounts: that is the one place the uid change
+    itself is ever verified.
+    """
+    agent = os.environ.get("SUDO_USER", "")
+    asked = actor.current().run_argv(["id", "-u"])
+    try:
+        dropped = int(asked.stdout.strip()) == pwd.getpwnam(agent).pw_uid
+    except (ValueError, KeyError):
+        dropped = False
+    check(
+        "runs as the agent",
+        dropped,
+        ""
+        if dropped
+        else f"the runner could not run `id -u` as {agent!r}. Add to sudoers:"
+        f" `{split.user} ALL=({agent}) NOPASSWD:SETENV: ALL`",
+    )
+
+
 def cmd_doctor(args) -> Envelope:
     worktree = _worktree()
     checks, check = _doctor_checklist()
@@ -339,6 +363,8 @@ def cmd_doctor(args) -> Envelope:
             " which can open and edit it. `tdd docs split` sets up a runner the agent"
             " cannot reach.",
         )
+    else:
+        _split_checks(check, split)
 
     ex = identity.resolve(worktree)
     ex_detail = f"{ex.source}: {ex.model}"
