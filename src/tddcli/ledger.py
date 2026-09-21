@@ -285,16 +285,17 @@ def ledger_home() -> Path:
     following it would put the ledger wherever the agent chose. The runner's home
     comes from its own config, else from its own home directory.
     """
-    if _is_runner():
-        split = runner.load()
-        return (split and split.ledger_home) or _default_home()
+    split = _as_runner()
+    if split is not None:
+        return split.ledger_home or _default_home()
     base = os.environ.get("TDD_LEDGER_HOME")
     return Path(base) if base else _default_home()
 
 
-def _is_runner() -> bool:
+def _as_runner() -> runner.RunnerConfig | None:
+    """The machine's runner config, when this process is that runner."""
     split = runner.load()
-    return split is not None and split.role == "runner"
+    return split if split is not None and split.role == "runner" else None
 
 
 def _default_home() -> Path:
@@ -305,7 +306,7 @@ def ledger_path(repo_path: Path) -> Path:
     root = ledger_home()
     slug = str(repo_path).replace(os.sep, "-").strip("-")
     root.mkdir(parents=True, exist_ok=True)
-    if _is_runner():
+    if _as_runner() is not None:
         # Tightened on every open, not only at creation: a directory an operator made
         # by hand would otherwise stay readable by the agent for good.
         root.chmod(0o700)
