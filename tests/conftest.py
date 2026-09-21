@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import pwd
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -36,6 +38,40 @@ def _single_user_mode(tmp_path, monkeypatch):
     monkeypatch.setenv("TDD_RUNNER_CONFIG", str(tmp_path / "no-runner.toml"))
     for var in ("SUDO_USER", "SUDO_UID"):
         monkeypatch.delenv(var, raising=False)
+    yield
+    # `main` installs an actor process-wide and the suite drives the CLI in-process,
+    # so a split-mode test would otherwise leave its actor behind for the next one.
+    from tddcli import actor
+
+    actor.install(actor.LocalActor())
+
+
+#: A stand-in for sudo. It logs what it was asked, then runs the command as the same
+#: uid — everything about split mode except the uid change itself. `SUDO_DENY` names
+#: commands it refuses, which is how "the agent cannot" is reached without a second uid.
+SUDO_SHIM = """\
+#!/bin/sh
+echo "MARK=$MARK $@" >> "$SUDO_LOG"
+while [ "$1" != "--" ]; do shift; done; shift
+case " $SUDO_DENY " in *" $(basename "$1") "*) exit 1;; esac
+exec "$@"
+"""
+
+
+def current_user() -> str:
+    return pwd.getpwuid(os.geteuid()).pw_name
+
+
+@pytest.fixture
+def sudo_shim(tmp_path, monkeypatch):
+    shim = tmp_path / "bin" / "sudo"
+    shim.parent.mkdir()
+    shim.write_text(SUDO_SHIM)
+    shim.chmod(0o755)
+    log = tmp_path / "sudo.log"
+    log.write_text("")
+    monkeypatch.setenv("SUDO_LOG", str(log))
+    return SimpleNamespace(path=shim, log=log, lines=lambda: log.read_text().splitlines())
 
 
 @pytest.fixture

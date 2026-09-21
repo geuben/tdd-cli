@@ -89,6 +89,39 @@ class LocalActor:
         return None if extra is None else {**os.environ, **extra}
 
 
+class SudoActor(LocalActor):
+    """Acts as the agent, from a runner that is a different uid."""
+
+    def __init__(self, sudo: str, agent: str, env: dict[str, str] | None):
+        self.sudo = sudo
+        self.agent = agent
+        self.agent_env = env
+
+    def run_argv(self, argv, *, cwd=None, env=None, timeout=None, input=None):
+        raise NotImplementedError
+
+    def run_shell(self, command, *, cwd, env=None, timeout=None):
+        raise NotImplementedError
+
+    def read_text(self, path):
+        raise NotImplementedError
+
+    def write_file(self, path, data):
+        raise NotImplementedError
+
+    def remove_file(self, path):
+        raise NotImplementedError
+
+    def make_temp_dir(self, prefix):
+        raise NotImplementedError
+
+    def remove_tree(self, path):
+        raise NotImplementedError
+
+    def link(self, src, dst):
+        raise NotImplementedError
+
+
 _current: LocalActor = LocalActor()
 
 
