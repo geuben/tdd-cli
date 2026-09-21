@@ -19,6 +19,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import runner
+
 TRANSCRIPT_ROOT = Path.home() / ".claude" / "projects"
 
 
@@ -26,7 +28,7 @@ TRANSCRIPT_ROOT = Path.home() / ".claude" / "projects"
 class Executor:
     model: str
     session: str | None
-    source: str  # transcript | human | declared | unknown
+    source: str  # transcript | human | declared | unknown | operator
     reason: str | None = None
 
 
@@ -68,7 +70,24 @@ def _model_from_transcript(path: Path) -> str | None:
     return found
 
 
+def _operator_assigned() -> Executor | None:
+    """In split mode, the model the runner's operator assigned to the calling account.
+
+    It is the one identity an agent cannot write: the map lives in the runner's config,
+    and the account is `SUDO_USER`, which sudo sets itself.
+    """
+    split = runner.load()
+    if split is None or split.role != "runner":
+        return None
+    model = split.executors.get(os.environ.get("SUDO_USER", ""))
+    return Executor(model=model, session=None, source="operator") if model else None
+
+
 def resolve(project_path: Path | None = None, human_label: str | None = None) -> Executor:
+    assigned = _operator_assigned()
+    if assigned is not None:
+        return assigned
+
     session = os.environ.get("CLAUDE_CODE_SESSION_ID")
 
     declared = os.environ.get("TDD_EXECUTOR_MODEL")
