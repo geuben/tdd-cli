@@ -29,6 +29,15 @@ def _pinned_executor_identity(monkeypatch):
     monkeypatch.setenv("TDD_EXECUTOR_MODEL", "pytest-executor")
 
 
+@pytest.fixture(autouse=True)
+def _single_user_mode(tmp_path, monkeypatch):
+    """A developer machine may itself be split (`/etc/tdd-cli/runner.toml`); the suite
+    must never pick that up and start forwarding to a runner."""
+    monkeypatch.setenv("TDD_RUNNER_CONFIG", str(tmp_path / "no-runner.toml"))
+    for var in ("SUDO_USER", "SUDO_UID"):
+        monkeypatch.delenv(var, raising=False)
+
+
 @pytest.fixture
 def ledger_home(tmp_path, monkeypatch):
     home = tmp_path / "ledger-home"
