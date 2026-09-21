@@ -7,6 +7,7 @@ from one file, not from anything the caller says.
 
 from __future__ import annotations
 
+import json
 import os
 import pwd
 import stat
@@ -53,7 +54,10 @@ def forward(cfg: RunnerConfig, argv: list[str]) -> int:
     ledger home and leases default to under it.
     """
     asked = [cfg.sudo, "-n", "-H", "-u", cfg.user, "--", cfg.command, CONTEXT_FLAG, *argv]
-    proc = actor.LocalActor().relay(asked, input="")
+    # sudo resets the environment and the suites need the agent's, so it travels as
+    # data: the runner hands it back to the agent's own processes and uses none of it.
+    context = json.dumps({"env": dict(os.environ)})
+    proc = actor.LocalActor().relay(asked, input=context)
     sys.stdout.write(proc.stdout)
     return proc.returncode
 
