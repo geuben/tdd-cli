@@ -285,11 +285,16 @@ def ledger_home() -> Path:
     following it would put the ledger wherever the agent chose. The runner's home
     comes from its own config, else from its own home directory.
     """
-    split = runner.load()
-    if split is not None and split.role == "runner":
-        return split.ledger_home or _default_home()
+    if _is_runner():
+        split = runner.load()
+        return (split and split.ledger_home) or _default_home()
     base = os.environ.get("TDD_LEDGER_HOME")
     return Path(base) if base else _default_home()
+
+
+def _is_runner() -> bool:
+    split = runner.load()
+    return split is not None and split.role == "runner"
 
 
 def _default_home() -> Path:
@@ -300,6 +305,10 @@ def ledger_path(repo_path: Path) -> Path:
     root = ledger_home()
     slug = str(repo_path).replace(os.sep, "-").strip("-")
     root.mkdir(parents=True, exist_ok=True)
+    if _is_runner():
+        # Tightened on every open, not only at creation: a directory an operator made
+        # by hand would otherwise stay readable by the agent for good.
+        root.chmod(0o700)
     return root / f"{slug}.sqlite3"
 
 
