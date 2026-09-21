@@ -51,3 +51,13 @@ def test_agent_context_on_stdin_reaches_spawned_commands(repo, split_runner, mon
     run_cli(repo, "--agent-context-stdin", "doctor")
 
     assert any(line.startswith("MARK=from-agent ") for line in split_runner.shim.lines())
+
+
+def test_the_runner_without_an_agent_refuses_to_act(repo, split_runner, monkeypatch):
+    """Falling back to acting as itself would run the agent's code as the ledger's uid."""
+    monkeypatch.delenv("SUDO_USER")
+    monkeypatch.delenv("SUDO_UID")
+
+    out = run_cli(repo, "status")
+
+    assert (out["ok"], out.get("reason")) == (False, "no_agent")
