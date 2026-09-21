@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-import shutil
-import tempfile
 from collections.abc import Generator, Sequence
 from pathlib import Path
 
@@ -163,7 +161,7 @@ def staged_paths(worktree: Path) -> list[str]:
 def temporary_worktree(
     worktree: Path, sha: str, link_ignored_under: Sequence[str] = ()
 ) -> Generator[Path, None, None]:
-    tmp_dir = Path(tempfile.mkdtemp(prefix="tdd-probe-"))
+    tmp_dir = actor.current().make_temp_dir("tdd-probe-")
     try:
         git(worktree, "worktree", "add", "--detach", str(tmp_dir), sha)
         for root in link_ignored_under:
@@ -181,8 +179,7 @@ def temporary_worktree(
                 if dst.exists() or dst.is_symlink():
                     continue
                 try:
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    dst.symlink_to(src)
+                    actor.current().link(src, dst)
                 except OSError:
                     pass
         yield tmp_dir
@@ -191,4 +188,4 @@ def temporary_worktree(
             git(worktree, "worktree", "remove", "--force", str(tmp_dir))
         except GitError:
             pass
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        actor.current().remove_tree(tmp_dir)

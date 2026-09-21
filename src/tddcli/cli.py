@@ -20,6 +20,7 @@ from pathlib import Path
 
 from . import (
     __version__,
+    actor,
     adapters,
     fleet,
     gitutil,
@@ -200,7 +201,7 @@ def cmd_init(args) -> Envelope:
             "typecheck  = []",
             "",
         ]
-    path.write_text("\n".join(lines))
+    actor.current().write_file(path, "\n".join(lines).encode())
     return Envelope(
         result={
             "written": str(path),
@@ -1402,8 +1403,7 @@ def cmd_log_render(args) -> Envelope:
         out = Path(args.out)
         if not out.is_absolute():
             out = worktree / out
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(text)
+        actor.current().write_file(out, text.encode())
         written = str(out.relative_to(worktree)) if not Path(args.out).is_absolute() else str(out)
         return Envelope(
             result={"written": written, "path": str(out)},

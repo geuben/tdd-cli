@@ -65,6 +65,7 @@ import time
 from pathlib import Path
 from xml.etree import ElementTree
 
+from .. import actor
 from .base import (
     FAILED,
     NOT_COLLECTED,
@@ -248,7 +249,7 @@ class GradleAdapter(Adapter):
         """
         for path in self._result_files():
             try:
-                path.unlink()
+                actor.current().remove_file(path)
             except OSError:
                 pass
 

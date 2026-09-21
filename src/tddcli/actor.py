@@ -10,7 +10,9 @@ must never execute the agent's code as itself, so a different actor is installed
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
+import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -54,6 +56,32 @@ class LocalActor:
             timeout=timeout,
             env=self._env(env),
         )
+
+    def read_text(self, path: Path) -> str | None:
+        """None when the file is missing: callers ask "did it get written?" by reading."""
+        try:
+            return Path(path).read_text()
+        except FileNotFoundError:
+            return None
+
+    def write_file(self, path: Path, data: bytes) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+
+    def remove_file(self, path: Path) -> None:
+        Path(path).unlink(missing_ok=True)
+
+    def make_temp_dir(self, prefix: str) -> Path:
+        return Path(tempfile.mkdtemp(prefix=prefix))
+
+    def remove_tree(self, path: Path) -> None:
+        shutil.rmtree(path, ignore_errors=True)
+
+    def link(self, src: Path, dst: Path) -> None:
+        dst = Path(dst)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.symlink_to(src)
 
     @staticmethod
     def _env(extra: dict[str, str] | None) -> dict[str, str] | None:

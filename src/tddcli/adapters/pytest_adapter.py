@@ -14,9 +14,9 @@ from __future__ import annotations
 import json
 import re
 import shlex
-import tempfile
 from pathlib import Path
 
+from .. import actor
 from .base import (
     FAILED,
     NOT_COLLECTED,
@@ -101,20 +101,26 @@ class PytestAdapter(Adapter):
     def _suite_report(
         self, base_cmd: str, extra_env: dict[str, str] | None
     ) -> tuple[dict | None, str]:
-        with tempfile.TemporaryDirectory(prefix="tdd-pytest-") as tmp:
-            report_path = Path(tmp) / "report.json"
+        # The report directory belongs to whoever runs the suite, so it is made, read
+        # and removed through the actor: in split mode that is the agent, not us.
+        tmp = actor.current().make_temp_dir("tdd-pytest-")
+        try:
+            report_path = tmp / "report.json"
             # Only reporting flags are appended — parallelism, markers and plugins
             # stay exactly as the project declared them. json-report is xdist-safe:
             # `collectors` is omitted when nothing fails to collect, and present with
             # the failing entry when something does, which is when it is consulted.
             cmd = f"{base_cmd} --json-report --json-report-file={shlex.quote(str(report_path))}"
             code, out, err = self._run_suite(cmd, extra_env)
-            if not report_path.is_file():
+            report = actor.current().read_text(report_path)
+            if report is None:
                 return None, (
                     f"`{base_cmd}` produced no JSON report"
                     " (is pytest-json-report installed?): " + (err or out)[:500]
                 )
-            return json.loads(report_path.read_text()), ""
+            return json.loads(report), ""
+        finally:
+            actor.current().remove_tree(tmp)
 
     def run(self, target: str | None = None) -> Verdict:
         verdict = Verdict(project=self.project.name, adapter=self.name, target=target)
