@@ -30,3 +30,29 @@ def test_role_follows_the_runner_config(tmp_path, monkeypatch):
 
     expected = [None, "runner"] + (["client"] if os.geteuid() != 0 else [])
     assert roles == expected
+
+
+def test_an_untrusted_runner_config_is_refused(tmp_path, monkeypatch):
+    """The three ways a caller could have forged the file the runner trusts."""
+    cfg = tmp_path / "runner.toml"
+    monkeypatch.setenv("TDD_RUNNER_CONFIG", str(cfg))
+    real_euid = os.geteuid()
+
+    def refused(mode: int, euid: int) -> bool:
+        _write_config(cfg, _current_user())
+        cfg.chmod(mode)
+        monkeypatch.setattr(os, "geteuid", lambda: euid)
+        try:
+            runner.load()
+        except runner.RunnerConfigError:
+            return True
+        finally:
+            monkeypatch.setattr(os, "geteuid", lambda: real_euid)
+        return False
+
+    forgeries = {
+        "world-writable": refused(0o666, real_euid),
+        "group-writable": refused(0o664, real_euid),
+        "foreign owner": refused(0o644, real_euid + 1),
+    }
+    assert forgeries == dict.fromkeys(forgeries, True)
