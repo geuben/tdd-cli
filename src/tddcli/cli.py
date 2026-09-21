@@ -1543,6 +1543,9 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument("--version", action="version", version=f"tdd-cli {__version__}")
+    # Split mode's client adds this when it re-executes as the runner. It carries the
+    # agent's environment and nothing else: no phase, cycle number or identity (R8.3).
+    p.add_argument("--agent-context-stdin", action="store_true", help=argparse.SUPPRESS)
     sub = p.add_subparsers(dest="command", required=True)
 
     s = sub.add_parser("docs", help="print the documentation shipped with this version")
@@ -1672,7 +1675,9 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _actor_for(split: runner_mod.RunnerConfig | None) -> actor.LocalActor:
+def _actor_for(
+    split: runner_mod.RunnerConfig | None, agent_env: dict[str, str] | None
+) -> actor.LocalActor:
     """Who acts in the agent's territory for this invocation.
 
     The agent is `SUDO_USER`: sudo sets it itself, so a caller cannot name someone
@@ -1680,8 +1685,17 @@ def _actor_for(split: runner_mod.RunnerConfig | None) -> actor.LocalActor:
     """
     agent = os.environ.get("SUDO_USER")
     if split is not None and split.role == "runner" and agent:
-        return actor.SudoActor(sudo=split.sudo, agent=agent, env=None)
+        return actor.SudoActor(sudo=split.sudo, agent=agent, env=agent_env)
     return actor.LocalActor()
+
+
+def _agent_env(args) -> dict[str, str] | None:
+    """The environment the client sent. It only ever reaches processes spawned as the
+    agent, so nothing in it is trusted and nothing in it needs to be."""
+    if not args.agent_context_stdin:
+        return None
+    env = json.loads(sys.stdin.read() or "{}").get("env")
+    return {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1695,7 +1709,7 @@ def main(argv: list[str] | None = None) -> int:
         ).emit()
     try:
         args = build_parser().parse_args(argv)
-        actor.install(_actor_for(runner_mod.load()))
+        actor.install(_actor_for(runner_mod.load(), _agent_env(args)))
         envelope = args.fn(args)
     except (
         config_mod.ConfigError,
