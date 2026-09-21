@@ -94,6 +94,33 @@ def split_runner(tmp_path, monkeypatch, sudo_shim):
 
 
 @pytest.fixture
+def split_client(tmp_path, monkeypatch, sudo_shim):
+    """This process is an agent's `tdd` on a split machine.
+
+    `user = "root"` makes any non-root process a client. The runner's `command` is a
+    stub that records what reached it, answers with a fixed envelope, and exits 3.
+    """
+    stub = tmp_path / "bin" / "tdd-stub"
+    stub.write_text(
+        "#!/bin/sh\n"
+        f'echo "$@" > "{tmp_path}/stub.argv"\n'
+        f'cat > "{tmp_path}/stub.stdin"\n'
+        "echo '{\"ok\": true, \"stub\": true}'\n"
+        "exit 3\n"
+    )
+    stub.chmod(0o755)
+    cfg = tmp_path / "runner.toml"
+    cfg.write_text(f'[runner]\nuser = "root"\ncommand = "{stub}"\nsudo = "{sudo_shim.path}"\n')
+    monkeypatch.setenv("TDD_RUNNER_CONFIG", str(cfg))
+    return SimpleNamespace(
+        stub=stub,
+        argv=tmp_path / "stub.argv",
+        stdin=tmp_path / "stub.stdin",
+        shim=sudo_shim,
+    )
+
+
+@pytest.fixture
 def ledger_home(tmp_path, monkeypatch):
     home = tmp_path / "ledger-home"
     home.mkdir()
