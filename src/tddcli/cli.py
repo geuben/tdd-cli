@@ -1675,6 +1675,12 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+#: Verbs an agent's own `tdd` answers on a split machine. Neither reads or writes the
+#: ledger: `docs` prints what shipped with the binary, and `init` writes `tdd.toml`
+#: into the agent's own worktree. Everything else is the runner's to do.
+LOCAL_VERBS = {"docs", "init"}
+
+
 def _actor_for(
     split: runner_mod.RunnerConfig | None, agent_env: dict[str, str] | None
 ) -> actor.LocalActor:
@@ -1726,7 +1732,7 @@ def main(argv: list[str] | None = None) -> int:
         split = None
         args = build_parser().parse_args(argv)
         split = runner_mod.load()
-        if split is not None and split.role == "client":
+        if split is not None and split.role == "client" and args.command not in LOCAL_VERBS:
             # Parsed first, so `--help`, `--version` and a mistyped verb never cost a
             # round trip; forwarded verbatim, so the runner parses exactly what we did.
             return runner_mod.forward(split, list(sys.argv[1:] if argv is None else argv))
