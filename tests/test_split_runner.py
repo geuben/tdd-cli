@@ -8,6 +8,7 @@ import os
 import sys
 
 import pytest
+
 from conftest import current_user, run_cli, write_plan
 
 MINIMAL_PLAN = """\

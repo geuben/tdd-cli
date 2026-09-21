@@ -23,9 +23,7 @@ SPAWNS = re.compile(
 
 def _modules_matching(pattern: re.Pattern[str]) -> set[str]:
     return {
-        str(path.relative_to(SRC))
-        for path in SRC.rglob("*.py")
-        if pattern.search(path.read_text())
+        str(path.relative_to(SRC)) for path in SRC.rglob("*.py") if pattern.search(path.read_text())
     }
 
 
