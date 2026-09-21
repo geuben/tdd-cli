@@ -1561,6 +1561,14 @@ def cmd_runner_import(args) -> Envelope:
     source = Path(args.ledger).resolve()
     if not source.is_file():
         return failure(f"{source} is not a file")
+    held = ledger_mod.ledger_home() / source.name
+    if held.exists():
+        # No merge, by design: the runner's copy may hold runs recorded out of the
+        # agent's reach, and a second import would trade them for ones that were not.
+        return failure(
+            f"the runner already holds {held}; importing again would overwrite it",
+            reason="ledger_exists",
+        )
     target = ledger_mod.import_legacy(source)
     marker = json.loads(Ledger(target.parent, path=target).get_meta(PRE_SPLIT_IMPORT) or "{}")
     return Envelope(
