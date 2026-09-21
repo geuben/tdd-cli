@@ -49,6 +49,7 @@ packages = ["src/tddcli"]
 # tests/test_docs_command.py fails if a topic is not included here.
 [tool.hatch.build.targets.wheel.force-include]
 "docs/harness-integration.md" = "tddcli/_docs/docs/harness-integration.md"
+"docs/split-runner.md" = "tddcli/_docs/docs/split-runner.md"
 "examples/plan.md" = "tddcli/_docs/examples/plan.md"
 "examples/skills/tdd-drive/SKILL.md" = "tddcli/_docs/examples/skills/tdd-drive/SKILL.md"
 "examples/skills/tdd-handoff/SKILL.md" = "tddcli/_docs/examples/skills/tdd-handoff/SKILL.md"

@@ -20,8 +20,15 @@ stop silently mid-plan; and no record comparable across runs, plans, or models.
 
 This tool removes the agent from the reporting path. It runs the suites itself, computes
 every phase transition from what the tests observably did, and records the whole run in a
-ledger the agent cannot reach — which is also what makes the friction logs and metrics at
-the end trustworthy.
+ledger outside the worktree — which is what the friction logs and metrics at the end rest
+on.
+
+How far out of reach that ledger is depends on the machine. On a single-user install it
+belongs to the same account that runs the agent: an agent that edits files in its checkout
+cannot touch it, but one that goes looking for it can. In **split mode** a separate runner
+account owns the ledger and runs the agent's suites *as the agent*, so the agent's account
+cannot open it at all. `tdd doctor` says which mode a machine is in; `tdd docs split` sets
+the second one up.
 
 ## Install
 
@@ -641,6 +648,24 @@ One SQLite ledger **per repository**, in `~/.local/share/tdd-cli/` (override wit
 `TDD_LEDGER_HOME`), keyed by the common git dir. Never inside the worktree, never resolved
 from the current directory, never committed. `worktree_path` is a column, so concurrent runs
 in separate worktrees are isolated without a pruned worktree orphaning its history.
+
+That file is owned by whoever runs `tdd`. On a single-user machine that is the agent's own
+account, so "outside the worktree" is all the separation there is, and `tdd doctor` reports
+`mode: single` and says so. **Split mode** gives the ledger to a runner account the agent
+cannot become:
+
+- the agent's `tdd` forwards every verb except `docs` and `init` to the runner, through one
+  `sudoers` line;
+- the runner keeps the ledger in a mode-700 directory of its own and ignores the caller's
+  `TDD_LEDGER_HOME`;
+- suites, gates, hooks and git all run as the agent, in the agent's worktree;
+- executor identity is `operator` when the runner's config assigns the calling account a
+  model, and `claimed` otherwise;
+- `tdd runner import <ledger>` brings an existing ledger under the runner, marked as
+  pre-split history that `tdd metrics` reports.
+
+`tdd docs split` ([docs/split-runner.md](docs/split-runner.md)) has the setup, the
+verification checklist, and what split mode does not protect against.
 
 ## Enforcement boundary
 
