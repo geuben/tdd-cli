@@ -7,6 +7,11 @@ trusts only what its operator told it, and labels everything else a claim.
 
 from __future__ import annotations
 
+import io
+import json
+import os
+import sys
+
 from conftest import current_user, run_cli, write_plan
 from tddcli.ledger import Ledger
 
@@ -45,3 +50,15 @@ def test_a_mapped_agent_records_the_operator_assigned_model(repo, split_runner):
 
     seen = (out["result"]["executor_source"], *_recorded(repo))
     assert seen == ("operator", "model-from-operator", "operator")
+
+
+def test_an_unmapped_agent_is_recorded_as_claimed(repo, split_runner, monkeypatch):
+    """The claim is resolved on the agent's side, from the agent's environment, and is
+    recorded as exactly that: a consumer comparing models can leave it out."""
+    agent_env = {**os.environ, "TDD_EXECUTOR_MODEL": "model-the-agent-claims"}
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"env": agent_env})))
+
+    out = _start(repo, "--agent-context-stdin")
+
+    seen = (out["result"]["executor_source"], *_recorded(repo))
+    assert seen == ("claimed", "model-the-agent-claims", "claimed")
