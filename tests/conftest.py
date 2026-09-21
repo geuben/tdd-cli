@@ -75,6 +75,25 @@ def sudo_shim(tmp_path, monkeypatch):
 
 
 @pytest.fixture
+def split_runner(tmp_path, monkeypatch, sudo_shim):
+    """This process is the runner, called through sudo by an agent.
+
+    The agent is the current user, so every spawn the runner makes really executes:
+    the whole split-mode path runs, short of the uid change.
+    """
+    home = tmp_path / "runner-ledgers"
+    cfg = tmp_path / "runner.toml"
+    cfg.write_text(
+        f'[runner]\nuser = "{current_user()}"\ncommand = "tdd"\n'
+        f'sudo = "{sudo_shim.path}"\nledger_home = "{home}"\n'
+    )
+    monkeypatch.setenv("TDD_RUNNER_CONFIG", str(cfg))
+    monkeypatch.setenv("SUDO_USER", current_user())
+    monkeypatch.setenv("SUDO_UID", str(os.geteuid()))
+    return SimpleNamespace(config=cfg, ledger_home=home, shim=sudo_shim)
+
+
+@pytest.fixture
 def ledger_home(tmp_path, monkeypatch):
     home = tmp_path / "ledger-home"
     home.mkdir()
