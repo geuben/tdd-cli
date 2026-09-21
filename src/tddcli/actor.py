@@ -9,12 +9,16 @@ must never execute the agent's code as itself, so a different actor is installed
 
 from __future__ import annotations
 
+import base64
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
+
+from . import agentfs
 
 
 class LocalActor:
@@ -114,23 +118,32 @@ class SudoActor(LocalActor):
             return super()._env(extra)
         return {**self.agent_env, **(extra or {})}
 
+    def _agentfs(self, op: str, *args: object, input: str | None = None):
+        """One file operation, in a helper process that is the agent."""
+        argv = [sys.executable, "-m", "tddcli.agentfs", op, *(str(a) for a in args)]
+        proc = self.run_argv(argv, input=input)
+        if proc.returncode not in (0, agentfs.MISSING):
+            raise OSError(f"agentfs {op} {' '.join(map(str, args))}: {proc.stderr.strip()}")
+        return proc
+
     def read_text(self, path):
-        raise NotImplementedError
+        proc = self._agentfs("read", path)
+        return None if proc.returncode == agentfs.MISSING else proc.stdout
 
     def write_file(self, path, data):
-        raise NotImplementedError
+        self._agentfs("write", path, input=base64.b64encode(data).decode())
 
     def remove_file(self, path):
-        raise NotImplementedError
+        self._agentfs("unlink", path)
 
     def make_temp_dir(self, prefix):
-        raise NotImplementedError
+        return Path(self._agentfs("mkdtemp", prefix).stdout)
 
     def remove_tree(self, path):
-        raise NotImplementedError
+        self._agentfs("rmtree", path)
 
     def link(self, src, dst):
-        raise NotImplementedError
+        self._agentfs("symlink", src, dst)
 
 
 _current: LocalActor = LocalActor()
