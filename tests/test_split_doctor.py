@@ -23,3 +23,20 @@ def test_single_mode_doctor_says_the_agent_can_reach_the_ledger(repo):
     isolation = _check(out, "ledger isolation")
     said = (out["result"]["mode"], isolation["ok"], "same uid" in isolation["detail"])
     assert said == ("single", True, True)
+
+
+def _probe(repo, monkeypatch, name: str, deny: str) -> tuple[list[bool], str]:
+    """One split-mode check across two machines: one where sudo lets the agent run
+    `deny`, and one where it does not. Returns both verdicts and the second detail."""
+    allowed = _check(run_cli(repo, "doctor"), name)
+    monkeypatch.setenv("SUDO_DENY", deny)
+    refused = _check(run_cli(repo, "doctor"), name)
+    return [allowed["ok"], refused["ok"]], refused["detail"]
+
+
+def test_split_doctor_checks_the_drop_to_the_agent(repo, split_runner, monkeypatch):
+    """Everything else in split mode assumes the runner can become the agent. When it
+    cannot, the fix is one sudoers line, so the check quotes it."""
+    verdicts, detail = _probe(repo, monkeypatch, "runs as the agent", deny="id")
+
+    assert (verdicts, "NOPASSWD:SETENV" in detail) == ([True, False], True)
