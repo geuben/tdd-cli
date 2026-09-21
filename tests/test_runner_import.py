@@ -106,3 +106,16 @@ def test_import_is_refused_for_an_agent_caller(repo, ledger_home, tmp_path, monk
 
     refused = (out["result"].get("reason"), (home / legacy.name).exists())
     assert refused == ("operator_only", False)
+
+
+def test_import_is_refused_in_single_mode(repo, ledger_home, tmp_path):
+    """With no runner there is nowhere out of reach to import into: the copy would land
+    back in the caller's own ledger home and claim a protection nobody has."""
+    legacy = _legacy_ledger(repo, ledger_home)
+    elsewhere = tmp_path / "copied-aside.sqlite3"
+    elsewhere.write_bytes(legacy.read_bytes())
+
+    out = run_cli(repo, "runner", "import", str(elsewhere))
+
+    refused = (out["result"].get("reason"), (ledger_home / elsewhere.name).exists())
+    assert refused == ("not_split", False)
