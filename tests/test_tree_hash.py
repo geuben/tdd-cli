@@ -43,3 +43,10 @@ def test_an_ignored_file_does_not_change_the_hash(tmp_path):
     h0 = gitutil.tree_hash(r, ["p"])
     (r / "p" / "x.log").write_text("z")
     assert gitutil.tree_hash(r, ["p"]) == h0
+
+
+def test_a_change_outside_the_roots_does_not_change_the_hash(tmp_path):
+    r = _repo(tmp_path)
+    h0 = gitutil.tree_hash(r, ["p"])
+    (r / "q" / "b.py").write_text("y = 2\n")
+    assert gitutil.tree_hash(r, ["p"]) == h0
