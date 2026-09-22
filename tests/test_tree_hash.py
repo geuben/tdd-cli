@@ -50,3 +50,11 @@ def test_a_change_outside_the_roots_does_not_change_the_hash(tmp_path):
     h0 = gitutil.tree_hash(r, ["p"])
     (r / "q" / "b.py").write_text("y = 2\n")
     assert gitutil.tree_hash(r, ["p"]) == h0
+
+
+def test_hashing_leaves_the_index_untouched(tmp_path):
+    r = _repo(tmp_path)
+    (r / "p" / "a.py").write_text("x = 9\n")
+    (r / "p" / "new.py").write_text("1")
+    gitutil.tree_hash(r, ["p"])
+    assert git(r, "diff", "--cached", "--name-only") == ""
