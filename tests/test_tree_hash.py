@@ -28,3 +28,11 @@ def test_deleting_a_tracked_file_changes_the_hash(tmp_path):
     h0 = gitutil.tree_hash(r, ["p"])
     (r / "p" / "a.py").unlink()
     assert gitutil.tree_hash(r, ["p"]) != h0
+
+
+def test_editing_an_untracked_file_changes_the_hash(tmp_path):
+    r = _repo(tmp_path)
+    (r / "p" / "new.py").write_text("1")
+    h1 = gitutil.tree_hash(r, ["p"])
+    (r / "p" / "new.py").write_text("2")
+    assert gitutil.tree_hash(r, ["p"]) != h1
