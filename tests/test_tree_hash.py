@@ -63,3 +63,14 @@ def test_hashing_leaves_the_index_untouched(tmp_path):
 def test_a_missing_root_hashes_without_error(tmp_path):
     r = _repo(tmp_path)
     assert isinstance(gitutil.tree_hash(r, ["nope"]), str)
+
+
+def test_the_same_content_hashes_the_same_unstaged_staged_and_committed(tmp_path):
+    r = _repo(tmp_path)
+    (r / "p" / "a.py").write_text("x = 2\n")
+    unstaged = gitutil.tree_hash(r, ["p"])
+    git(r, "add", "-A")
+    staged = gitutil.tree_hash(r, ["p"])
+    git(r, "commit", "-q", "-m", "g")
+    committed = gitutil.tree_hash(r, ["p"])
+    assert len({unstaged, staged, committed}) == 1
