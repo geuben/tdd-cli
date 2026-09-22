@@ -109,24 +109,29 @@ def tree_hash(worktree: Path, roots: list[str]) -> str:
     `GIT_INDEX_FILE` must be absolute, since `git -C` moves the cwd. `add` takes
     no pathspec, because a root that exists neither on disk nor in the index is
     a pathspec error, and an artifact path is hashed before `regenerate` may have
-    created it.
+    created it. The temp dir, the copy and the git calls all go through the
+    actor: in split mode they are the agent's, not the runner's.
     """
     real_index = Path(
         git(worktree, "rev-parse", "--path-format=absolute", "--git-path", "index").strip()
     )
+    act = actor.current()
     h = hashlib.sha256()
-    with tempfile.TemporaryDirectory(prefix="tdd-tree-hash-") as tmp:
-        index = Path(tmp) / "index"
-        if real_index.is_file():
-            # copy2, not copyfile: the copy must keep the real index's mtime. Git
-            # re-reads any entry not older than its index file ("racy git"); a fresh
-            # mtime would let a same-size edit made in the same second pass as clean.
-            shutil.copy2(real_index, index)
-        env = {"GIT_INDEX_FILE": str(index.resolve())}
+    tmp = act.make_temp_dir("tdd-tree-hash-")
+    try:
+        index = tmp / "index"
+        # `cp -p`: the copy must keep the real index's mtime. Git re-reads any entry
+        # not older than its index file ("racy git"); a fresh mtime would let a
+        # same-size edit made in the same second pass as clean. The copy only seeds
+        # the stat cache, so a failed one (no index yet) just starts from empty.
+        act.run_argv(["cp", "-p", str(real_index), str(index)])
+        env = {"GIT_INDEX_FILE": str(index)}
         git(worktree, "add", "-A", env=env)
         for root in sorted(roots):
             h.update(root.encode())
             h.update(git(worktree, "ls-files", "-s", "--", root, env=env).encode())
+    finally:
+        act.remove_tree(tmp)
     return h.hexdigest()
 
 
