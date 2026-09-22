@@ -18,3 +18,8 @@
   `tests/test_docs_command.py` enforce the first two.
 - `CHANGELOG.md` is hand-edited under `## [Unreleased]` (see `RELEASING.md`).
 - There is no `docs/INVARIANTS.md` and no `perturb/` ledger in this repo.
+- `gitutil.tree_hash` is a content hash from #146 on (throwaway index + `git add -A`): staging or
+  committing alone is not a change. A test that closes a cycle with no refactor edit and expects
+  the cycle's own close-sweep suite to run must make a content edit first, or the §6.1 skip fires.
+- A plan that makes a dead condition live must probe what its consequent skips. #146's
+  `skip_own` had never fired, and it silently dropped the cycle's lint/typecheck gates as well.
