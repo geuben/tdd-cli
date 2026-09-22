@@ -55,6 +55,14 @@ def test_an_unknown_topic_names_the_known_ones(repo):
         assert topic.name in envelope["error"]
 
 
+def test_the_split_topic_explains_the_sudoers_setup(repo):
+    """`tdd doctor` sends a single-user machine to `tdd docs split`; what it finds there
+    has to be enough to set the runner up and to bring an old ledger under it."""
+    guide = run_cli_text(repo, "docs", "split")
+
+    assert ("NOPASSWD:SETENV" in guide, "tdd runner import" in guide) == (True, True)
+
+
 def test_every_topic_is_carried_into_the_wheel():
     """The drift guard: adding a topic without a force-include ships a broken command.
 

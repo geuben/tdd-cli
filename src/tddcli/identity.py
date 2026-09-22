@@ -16,8 +16,11 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+import sys
+from dataclasses import asdict, dataclass
 from pathlib import Path
+
+from . import actor, runner
 
 TRANSCRIPT_ROOT = Path.home() / ".claude" / "projects"
 
@@ -26,7 +29,7 @@ TRANSCRIPT_ROOT = Path.home() / ".claude" / "projects"
 class Executor:
     model: str
     session: str | None
-    source: str  # transcript | human | declared | unknown
+    source: str  # transcript | human | declared | unknown | operator | claimed
     reason: str | None = None
 
 
@@ -68,7 +71,53 @@ def _model_from_transcript(path: Path) -> str | None:
     return found
 
 
+def _operator_assigned(split: runner.RunnerConfig) -> Executor | None:
+    """The model the runner's operator assigned to the calling account.
+
+    It is the one identity an agent cannot write: the map lives in the runner's config,
+    and the account is `SUDO_USER`, which sudo sets itself.
+    """
+    model = split.executors.get(os.environ.get("SUDO_USER", ""))
+    return Executor(model=model, session=None, source="operator") if model else None
+
+
+def _claimed(project_path: Path | None, human_label: str | None) -> Executor:
+    """What the agent says it is, resolved on the agent's side and labelled as a claim.
+
+    The session id, the transcript and `TDD_EXECUTOR_MODEL` are all the agent's to
+    write, and none of them is in the runner's environment or home anyway. So the
+    ordinary resolution runs as the agent, and whatever it finds is recorded as
+    `claimed`: a consumer comparing models can leave it out.
+    """
+    argv = [sys.executable, "-m", "tddcli.identity", str(project_path or ""), human_label or ""]
+    proc = actor.current().run_argv(argv)
+    try:
+        found = Executor(**json.loads(proc.stdout))
+    except (json.JSONDecodeError, TypeError):
+        return Executor(
+            model="unknown",
+            session=None,
+            source="unknown",
+            reason=f"the agent-side resolver failed: {proc.stderr.strip()[:200]}",
+        )
+    if found.source == "unknown":
+        return found
+    return Executor(
+        model=found.model,
+        session=found.session,
+        source="claimed",
+        reason=f"resolved on the agent's side via {found.source}",
+    )
+
+
 def resolve(project_path: Path | None = None, human_label: str | None = None) -> Executor:
+    split = runner.load()
+    if split is not None and split.role == "runner":
+        return _operator_assigned(split) or _claimed(project_path, human_label)
+    return _resolve_locally(project_path, human_label)
+
+
+def _resolve_locally(project_path: Path | None, human_label: str | None) -> Executor:
     session = os.environ.get("CLAUDE_CODE_SESSION_ID")
 
     declared = os.environ.get("TDD_EXECUTOR_MODEL")
@@ -92,3 +141,18 @@ def resolve(project_path: Path | None = None, human_label: str | None = None) ->
         return Executor(model=human_label, session=session, source="human")
 
     return Executor(model="unknown", session=session, source="unknown", reason=reason)
+
+
+def main(argv: list[str]) -> int:
+    """`python -m tddcli.identity <worktree> <label>`: the runner runs this as the agent.
+
+    It resolves locally and never consults the runner config, so it cannot recurse.
+    """
+    project_path = Path(argv[0]) if argv and argv[0] else None
+    human_label = argv[1] if len(argv) > 1 and argv[1] else None
+    sys.stdout.write(json.dumps(asdict(_resolve_locally(project_path, human_label))))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

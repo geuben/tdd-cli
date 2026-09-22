@@ -6,6 +6,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Split mode: a ledger the agent's account cannot open** (#142). With
+  `/etc/tdd-cli/runner.toml` in place, a separate runner account owns the ledger
+  in a mode-700 directory. The agent's `tdd` forwards every verb except `docs`
+  and `init` to it through `sudo`, and the runner executes every suite, gate,
+  hook and git command as the agent. Executor identity is recorded as `operator`
+  when the runner's config assigns the calling account a model, and `claimed`
+  otherwise. `tdd runner import <ledger>` brings an existing ledger under the
+  runner, marked `pre_split_import`, which `tdd metrics` reports. Setup and a
+  verification checklist: `tdd docs split`.
+- `tdd doctor` reports `mode` (`single` or `split`). In split mode it probes,
+  live and as the agent, that the uid drop works, that the agent cannot read the
+  ledger, and that it cannot write the install.
+
+### Changed
+
+- `tdd doctor` on a single-user machine no longer lets "ledger outside
+  worktree" stand for isolation: a `ledger isolation` notice says the ledger is
+  owned by the same uid that runs the agent. The README and SECURITY.md say the
+  same. Single-user installs behave exactly as before.
+
 ### Fixed
 
 - **The close sweep re-ran a tree that had just passed** (#146): `gitutil.tree_hash` hashed git

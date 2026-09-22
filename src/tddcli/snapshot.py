@@ -16,7 +16,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from . import gitutil
+from . import actor, gitutil
 from .config import Config
 
 MAX_CAPTURE_BYTES = 4 * 1024 * 1024
@@ -67,20 +67,19 @@ def restore(worktree: Path, config: Config, snapshot_json: str) -> list[str]:
         if tracked:
             gitutil.checkout_paths(worktree, [rel])
         elif path.is_file():
-            path.unlink()
+            actor.current().remove_file(path)
         touched.append(rel)
 
     for rel, encoded in saved.items():
         path = worktree / rel
         if encoded is None:
             if path.is_file():
-                path.unlink()
+                actor.current().remove_file(path)
                 touched.append(rel)
             continue
         data = base64.b64decode(encoded)
         if not path.is_file() or path.read_bytes() != data:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(data)
+            actor.current().write_file(path, data)
             touched.append(rel)
 
     return sorted(set(touched))

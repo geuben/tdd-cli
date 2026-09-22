@@ -12,7 +12,7 @@ import shlex
 from pathlib import Path
 
 from conftest import git, run_cli, write_plan
-from tddcli import adapters
+from tddcli import actor, adapters
 from tddcli import config as config_mod
 
 PLAN = """---
@@ -54,7 +54,9 @@ def test_only_reporting_flags_are_appended(tmp_path, monkeypatch):
     """
     forced = tmp_path / "tdd-pytest-q1x2m3k4"
     forced.mkdir()
-    monkeypatch.setattr(adapters.pytest_adapter.tempfile, "mkdtemp", lambda *a, **k: str(forced))
+    # The report directory is made through the actor (issue 142), so that is where
+    # `tempfile` is reached from now; the pinned name and the assertions are unchanged.
+    monkeypatch.setattr(actor.tempfile, "mkdtemp", lambda *a, **k: str(forced))
 
     project = project_with(tmp_path, 'test_command = "uv run pytest tests/ -v -n auto"\n')
     adapter = adapters.build(project, tmp_path)

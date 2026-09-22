@@ -13,6 +13,8 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from . import runner
+
 SCHEMA_VERSION = 11
 
 
@@ -91,7 +93,7 @@ CREATE TABLE IF NOT EXISTS run (
     plan_contract_id INTEGER NOT NULL REFERENCES plan_contract(id),
     executor_model TEXT NOT NULL,
     executor_session TEXT,
-    executor_source TEXT NOT NULL,      -- transcript | human | unknown
+    executor_source TEXT NOT NULL,      -- transcript | human | declared | unknown; split mode: operator | claimed
     worktree_path TEXT NOT NULL,
     started_at TEXT NOT NULL,
     ended_at TEXT,
@@ -276,12 +278,71 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def ledger_path(repo_path: Path) -> Path:
+def ledger_home() -> Path:
+    """The directory the ledgers live in.
+
+    `TDD_LEDGER_HOME` is the caller's to set, so a split-mode runner never reads it:
+    following it would put the ledger wherever the agent chose. The runner's home
+    comes from its own config, else from its own home directory.
+    """
+    split = _as_runner()
+    if split is not None:
+        return split.ledger_home or _default_home()
     base = os.environ.get("TDD_LEDGER_HOME")
-    root = Path(base) if base else Path.home() / ".local" / "share" / "tdd-cli"
-    slug = str(repo_path).replace(os.sep, "-").strip("-")
+    return Path(base) if base else _default_home()
+
+
+def _as_runner() -> runner.RunnerConfig | None:
+    """The machine's runner config, when this process is that runner."""
+    split = runner.load()
+    return split if split is not None and split.role == "runner" else None
+
+
+def _default_home() -> Path:
+    return Path.home() / ".local" / "share" / "tdd-cli"
+
+
+def _ensured_home() -> Path:
+    root = ledger_home()
     root.mkdir(parents=True, exist_ok=True)
-    return root / f"{slug}.sqlite3"
+    if _as_runner() is not None:
+        # Tightened on every open, not only at creation: a directory an operator made
+        # by hand would otherwise stay readable by the agent for good.
+        root.chmod(0o700)
+    return root
+
+
+def ledger_path(repo_path: Path) -> Path:
+    slug = str(repo_path).replace(os.sep, "-").strip("-")
+    return _ensured_home() / f"{slug}.sqlite3"
+
+
+#: `meta` key written by `import_legacy`: everything up to `last_run_id` was recorded
+#: while the agent's uid could still open the ledger.
+PRE_SPLIT_IMPORT = "pre_split_import"
+
+
+def import_legacy(source: Path) -> tuple[Path, dict]:
+    """Bring a single-user ledger under the runner, marked as pre-split history.
+
+    Copied with SQLite's backup API rather than as a file: a ledger in WAL mode keeps
+    its newest rows in a sidecar, and a plain copy of the main file would drop them.
+    Returns where it landed and the marker written into it.
+    """
+    target = _ensured_home() / source.name
+    src = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+    dst = sqlite3.connect(target)
+    try:
+        src.backup(dst)
+    finally:
+        src.close()
+        dst.close()
+    imported = Ledger(target.parent, path=target)  # opening it migrates it forward
+    # MAX over no rows is one row holding NULL: an empty ledger imports with `None`.
+    last = imported.db.execute("SELECT MAX(id) FROM run").fetchone()[0]
+    marker = {"source": str(source), "imported_at": now(), "last_run_id": last}
+    imported.set_meta(PRE_SPLIT_IMPORT, json.dumps(marker))
+    return target, marker
 
 
 def claim_is_stale(hostname: str, pid: int, started_at: str) -> bool:
@@ -310,9 +371,10 @@ def claim_is_stale(hostname: str, pid: int, started_at: str) -> bool:
 class Ledger:
     _claim_is_stale = staticmethod(claim_is_stale)
 
-    def __init__(self, repo_path: Path):
+    def __init__(self, repo_path: Path, *, path: Path | None = None):
         self.repo_path = repo_path
-        self.path = ledger_path(repo_path)
+        # `path` is for a ledger that is not found by its repository: an imported one.
+        self.path = path or ledger_path(repo_path)
         # A generous busy timeout: two `run start` calls against one worktree open
         # separate connections and both write (claim, then run/baseline rows).
         # SQLite's default 5s timeout can be exceeded while one holds the write lock
@@ -359,6 +421,18 @@ class Ledger:
         except sqlite3.OperationalError:  # no meta table: fresh database
             return None
         return int(row[0]) if row else None
+
+    def get_meta(self, key: str) -> str | None:
+        row = self.db.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        self.db.execute(
+            "INSERT INTO meta(key, value) VALUES (?, ?)"
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+        self.db.commit()
 
     # -- generic helpers -------------------------------------------------
 

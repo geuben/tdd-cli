@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import time
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .. import leases
+from .. import actor, leases
 from ..envelope import heartbeat
 
 NOT_FOUND = "not_found"
@@ -103,15 +102,7 @@ def run_command(
     is readable by a human and useless to a query.
     """
     started = time.monotonic()
-    proc = subprocess.run(
-        command,
-        shell=True,
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        env=None if extra_env is None else {**os.environ, **extra_env},
-    )
+    proc = actor.current().run_shell(command, cwd=cwd, env=extra_env, timeout=timeout)
     if os.environ.get(TIMING_ENV):
         heartbeat(
             event="command_timing",

@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 import time
 
-from conftest import git
-from tddcli import gitutil
+from conftest import current_user, git
+from tddcli import actor, gitutil
 
 
 def _repo(tmp_path):
@@ -116,3 +116,26 @@ def test_a_same_size_edit_the_stat_cache_cannot_see_still_changes_the_hash(tmp_p
     os.utime(a, ns=(past, past))
 
     assert gitutil.tree_hash(r, ["p"]) != before
+
+
+#: Like `conftest.SUDO_SHIM`, but it resets the environment the way `sudo -H` does
+#: when the runner has no agent environment to pass: only PATH and HOME survive.
+RESETTING_SUDO = """\
+#!/bin/sh
+while [ "$1" != "--" ]; do shift; done; shift
+exec env -i PATH="$PATH" HOME="$HOME" "$@"
+"""
+
+
+def test_split_mode_hashing_leaves_the_agents_index_untouched(tmp_path):
+    shim = tmp_path / "bin" / "sudo"
+    shim.parent.mkdir()
+    shim.write_text(RESETTING_SUDO)
+    shim.chmod(0o755)
+    r = _repo(tmp_path)
+    (r / "p" / "a.py").write_text("x = 9\n")
+    actor.install(actor.SudoActor(str(shim), current_user(), None))
+
+    gitutil.tree_hash(r, ["p"])
+
+    assert git(r, "diff", "--cached", "--name-only") == ""

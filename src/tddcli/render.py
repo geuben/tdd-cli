@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 
-from .ledger import Ledger
+from .ledger import PRE_SPLIT_IMPORT, Ledger
 
 
 def _fmt_list(items) -> str:
@@ -278,6 +278,11 @@ def metrics(ledger: Ledger, worktree: str) -> dict:
             " Compare runs of the same contract only (R11.1)."
         ),
     }
+    imported = ledger.get_meta(PRE_SPLIT_IMPORT)
+    if imported:
+        # Runs up to `last_run_id` were recorded while the agent's uid could still open
+        # the ledger. Whoever compares runs decides what that is worth; we only say so.
+        out["pre_split_import"] = json.loads(imported)
     for run in runs:
         cycles = ledger.cycles(run["id"])
         # Pin cycles pass on arrival by design; refactor cycles have no test at all.

@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-import os
-import shutil
-import subprocess
-import tempfile
 from collections.abc import Generator, Sequence
 from pathlib import Path
+
+from . import actor
 
 
 class GitError(RuntimeError):
@@ -17,12 +15,13 @@ class GitError(RuntimeError):
 
 
 def git(worktree: Path, *args: str, check: bool = True, env: dict[str, str] | None = None) -> str:
-    proc = subprocess.run(
-        ["git", "-C", str(worktree), *args],
-        capture_output=True,
-        text=True,
-        env={**os.environ, **env} if env else None,
-    )
+    argv = ["git", "-C", str(worktree), *args]
+    if env:
+        # On the command line, not in the process environment: a SudoActor with no
+        # agent environment runs `sudo -H`, which resets the environment, and a lost
+        # GIT_INDEX_FILE would point `git add` at the agent's real index.
+        argv = ["env", *(f"{k}={v}" for k, v in env.items()), *argv]
+    proc = actor.current().run_argv(argv)
     if check and proc.returncode != 0:
         raise GitError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
     return proc.stdout
@@ -110,24 +109,29 @@ def tree_hash(worktree: Path, roots: list[str]) -> str:
     `GIT_INDEX_FILE` must be absolute, since `git -C` moves the cwd. `add` takes
     no pathspec, because a root that exists neither on disk nor in the index is
     a pathspec error, and an artifact path is hashed before `regenerate` may have
-    created it.
+    created it. The temp dir, the copy and the git calls all go through the
+    actor: in split mode they are the agent's, not the runner's.
     """
     real_index = Path(
         git(worktree, "rev-parse", "--path-format=absolute", "--git-path", "index").strip()
     )
+    act = actor.current()
     h = hashlib.sha256()
-    with tempfile.TemporaryDirectory(prefix="tdd-tree-hash-") as tmp:
-        index = Path(tmp) / "index"
-        if real_index.is_file():
-            # copy2, not copyfile: the copy must keep the real index's mtime. Git
-            # re-reads any entry not older than its index file ("racy git"); a fresh
-            # mtime would let a same-size edit made in the same second pass as clean.
-            shutil.copy2(real_index, index)
-        env = {"GIT_INDEX_FILE": str(index.resolve())}
+    tmp = act.make_temp_dir("tdd-tree-hash-")
+    try:
+        index = tmp / "index"
+        # `cp -p`: the copy must keep the real index's mtime. Git re-reads any entry
+        # not older than its index file ("racy git"); a fresh mtime would let a
+        # same-size edit made in the same second pass as clean. The copy only seeds
+        # the stat cache, so a failed one (no index yet) just starts from empty.
+        act.run_argv(["cp", "-p", str(real_index), str(index)])
+        env = {"GIT_INDEX_FILE": str(index)}
         git(worktree, "add", "-A", env=env)
         for root in sorted(roots):
             h.update(root.encode())
             h.update(git(worktree, "ls-files", "-s", "--", root, env=env).encode())
+    finally:
+        act.remove_tree(tmp)
     return h.hexdigest()
 
 
@@ -162,7 +166,7 @@ def staged_paths(worktree: Path) -> list[str]:
 def temporary_worktree(
     worktree: Path, sha: str, link_ignored_under: Sequence[str] = ()
 ) -> Generator[Path, None, None]:
-    tmp_dir = Path(tempfile.mkdtemp(prefix="tdd-probe-"))
+    tmp_dir = actor.current().make_temp_dir("tdd-probe-")
     try:
         git(worktree, "worktree", "add", "--detach", str(tmp_dir), sha)
         for root in link_ignored_under:
@@ -180,8 +184,7 @@ def temporary_worktree(
                 if dst.exists() or dst.is_symlink():
                     continue
                 try:
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    dst.symlink_to(src)
+                    actor.current().link(src, dst)
                 except OSError:
                     pass
         yield tmp_dir
@@ -190,4 +193,4 @@ def temporary_worktree(
             git(worktree, "worktree", "remove", "--force", str(tmp_dir))
         except GitError:
             pass
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        actor.current().remove_tree(tmp_dir)

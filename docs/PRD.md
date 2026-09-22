@@ -134,6 +134,12 @@ visible at the moment it can still be fixed.
 - **R5.2** Agents never supply executor identity by any path. Step 3 is a human affordance.
 - **R5.3** Resolution requires the tool to run on the same host as the agent. Remote or CI
   execution can set `TDD_EXECUTOR_MODEL` to declare the answer explicitly.
+- **R5.3a** In split mode (R13.10) every source above is the agent's to write, and none of it
+  is in the runner's environment or home. The runner therefore records one of two things. If
+  its own config assigns the calling account (`SUDO_USER`) a model, that model with source
+  `operator`. Otherwise the ordinary resolution runs on the agent's side and its answer is
+  recorded with source `claimed`, so a comparison between models can exclude it. `unknown`
+  stays `unknown`. R5.2 holds across the boundary: no verb carries an identity.
 
 ### Cycle
 | Field | Notes |
@@ -905,6 +911,21 @@ depend on any of them being installed.
 - **R13.5** Rationale: keying by worktree path orphans a run's entire history when the worktree is
   pruned — a live condition in the motivating repository. A repo-level ledger also makes
   cross-worktree metrics a `GROUP BY` rather than a merge.
+- **R13.3a** The "per-user data directory" is the directory of whoever runs `tdd`. On a
+  single-user install that is the agent's own account: the ledger is outside the worktree and
+  no further out of reach than that, and `tdd doctor` must say so (`mode: single`, the
+  `ledger isolation` notice) rather than claim isolation.
+- **R13.10** **Split mode.** A machine with `/etc/tdd-cli/runner.toml` has a *runner* account
+  that owns the ledger in a mode-700 directory and ignores the caller's `TDD_LEDGER_HOME`. Every
+  other account is a *client*: its `tdd` answers `docs` and `init` itself and forwards every
+  other verb, verbatim, to the runner through `sudo`. The runner executes every suite, gate,
+  hook and git command as the calling account and observes the results from outside; it never
+  acts as itself in the agent's territory, and with no caller it refuses to act. The config is
+  trusted only when owned by root or by the account reading it and not writable by others.
+  `tdd doctor` verifies, live and as the agent, that the uid drop works, that the agent cannot
+  read the ledger, and that it cannot write the install. `tdd runner import` brings an existing
+  ledger under the runner and marks it `pre_split_import`. Split mode is one machine's
+  arrangement; it adds no daemon, so R13.7 below stands.
 
 ### 13.3 Git integration
 - **R13.6** Commits made during a run carry `TDD-Run`, `TDD-Cycle` and `TDD-Phase` trailers.

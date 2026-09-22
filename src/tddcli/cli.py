@@ -10,6 +10,7 @@ import concurrent.futures
 import difflib
 import json
 import os
+import pwd
 import socket
 import sqlite3
 import sys
@@ -20,6 +21,7 @@ from pathlib import Path
 
 from . import (
     __version__,
+    actor,
     adapters,
     fleet,
     gitutil,
@@ -36,6 +38,8 @@ from . import (
 from . import (
     docs as docs_mod,
 )
+from . import ledger as ledger_mod
+from . import runner as runner_mod
 from . import target_lint as target_lint_mod
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
@@ -200,7 +204,7 @@ def cmd_init(args) -> Envelope:
             "typecheck  = []",
             "",
         ]
-    path.write_text("\n".join(lines))
+    actor.current().write_file(path, "\n".join(lines).encode())
     return Envelope(
         result={
             "written": str(path),
@@ -307,6 +311,51 @@ def _cleanliness_detail(blocking: list[str], unrelated: list[str]) -> str:
     return ""
 
 
+def _split_checks(check: Callable, split: runner_mod.RunnerConfig, ledger_file: Path) -> None:
+    """What split mode rests on, probed live and as the agent.
+
+    Each probe goes through the installed actor, so on a real machine it is answered
+    by the real sudo and the real accounts: that is the one place the uid change
+    itself is ever verified.
+    """
+    agent = os.environ.get("SUDO_USER", "")
+    asked = actor.current().run_argv(["id", "-u"])
+    try:
+        dropped = int(asked.stdout.strip()) == pwd.getpwnam(agent).pw_uid
+    except (ValueError, KeyError):
+        dropped = False
+    check(
+        "runs as the agent",
+        dropped,
+        ""
+        if dropped
+        else f"the runner could not run `id -u` as {agent!r}. Add to sudoers:"
+        f" `{split.user} ALL=({agent}) NOPASSWD:SETENV: ALL`",
+    )
+
+    readable = actor.current().run_argv(["test", "-r", str(ledger_file)]).returncode == 0
+    check(
+        "ledger out of the agent's reach",
+        not readable,
+        f"{agent!r} can read {ledger_file}. Its directory must belong to {split.user}"
+        " alone, at mode 700, somewhere the agent's account cannot otherwise reach"
+        if readable
+        else "",
+    )
+
+    # A runner whose code the agent can edit is the agent.
+    install = Path(__file__).resolve().parent
+    writable = actor.current().run_argv(["test", "-w", str(install)]).returncode == 0
+    check(
+        "install not writable by the agent",
+        not writable,
+        f"{agent!r} can write {install}. Install tdd-cli for the runner where the agent's"
+        " account has no write access (for example under /opt, owned by root)"
+        if writable
+        else "",
+    )
+
+
 def cmd_doctor(args) -> Envelope:
     worktree = _worktree()
     checks, check = _doctor_checklist()
@@ -325,6 +374,20 @@ def cmd_doctor(args) -> Envelope:
     check(
         "ledger outside worktree", not str(ledger.path).startswith(str(worktree)), str(ledger.path)
     )
+    split = runner_mod.load()
+    mode = "single" if split is None else "split"
+    if split is None:
+        # A notice, never a blocker: single-user installs must keep working. What it
+        # must not do is let "outside the worktree" pass for "out of reach".
+        check(
+            "ledger isolation",
+            True,
+            "single-user mode: the ledger is owned by the same uid that runs the agent,"
+            " which can open and edit it. `tdd docs split` sets up a runner the agent"
+            " cannot reach.",
+        )
+    else:
+        _split_checks(check, split, ledger.path)
 
     ex = identity.resolve(worktree)
     ex_detail = f"{ex.source}: {ex.model}"
@@ -463,7 +526,7 @@ def cmd_doctor(args) -> Envelope:
     ok = all(c["ok"] for c in checks)
     return Envelope(
         ok=ok,
-        result={"checks": checks, "projects": projects, "healthy": ok},
+        result={"checks": checks, "projects": projects, "healthy": ok, "mode": mode},
         next_action=NextAction(
             Verb.CONFIRM_CYCLE_APPLICABLE if ok else Verb.RESOLVE_BLOCKER,
             "Environment is ready." if ok else "Resolve the failing checks above.",
@@ -1402,8 +1465,7 @@ def cmd_log_render(args) -> Envelope:
         out = Path(args.out)
         if not out.is_absolute():
             out = worktree / out
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(text)
+        actor.current().write_file(out, text.encode())
         written = str(out.relative_to(worktree)) if not Path(args.out).is_absolute() else str(out)
         return Envelope(
             result={"written": written, "path": str(out)},
@@ -1494,6 +1556,47 @@ def cmd_metrics(args) -> Envelope:
     )
 
 
+def cmd_runner_import(args) -> Envelope:
+    """Needs no worktree: it is an operator's command, run as the runner, about a file."""
+    split = runner_mod.load()
+    if split is None or split.role != "runner":
+        # With no runner there is nowhere out of reach to import into: the copy would
+        # land back in the caller's own ledger home.
+        return failure(
+            "this machine is not split, or this is not its runner: `tdd docs split` sets one up",
+            reason="not_split",
+        )
+    # sudo sets SUDO_UID itself. Unset means someone logged in as the runner; "0" means
+    # root. Anything else reached us the way an agent does, and an agent that could
+    # import could hand the runner a history it wrote itself.
+    if os.environ.get("SUDO_UID") not in (None, "0"):
+        return failure(
+            "`tdd runner import` is for the machine's operator: run it as root, or"
+            " logged in as the runner",
+            reason="operator_only",
+        )
+    source = Path(args.ledger).resolve()
+    if not source.is_file():
+        return failure(f"{source} is not a file")
+    held = ledger_mod.ledger_home() / source.name
+    if held.exists():
+        # No merge, by design: the runner's copy may hold runs recorded out of the
+        # agent's reach, and a second import would trade them for ones that were not.
+        return failure(
+            f"the runner already holds {held}; importing again would overwrite it",
+            reason="ledger_exists",
+        )
+    target, marker = ledger_mod.import_legacy(source)
+    return Envelope(
+        result={"imported": str(target), "pre_split_import": marker},
+        next_action=NextAction(
+            Verb.COMPLETE,
+            f"Imported to {target}. Runs up to {marker['last_run_id']} predate the"
+            " split and are marked as such.",
+        ),
+    )
+
+
 def cmd_docs(args) -> Envelope:
     """The shipped documentation, printed. No network, and versioned with the binary.
 
@@ -1542,6 +1645,9 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument("--version", action="version", version=f"tdd-cli {__version__}")
+    # Split mode's client adds this when it re-executes as the runner. It carries the
+    # agent's environment and nothing else: no phase, cycle number or identity (R8.3).
+    p.add_argument("--agent-context-stdin", action="store_true", help=argparse.SUPPRESS)
     sub = p.add_subparsers(dest="command", required=True)
 
     s = sub.add_parser("docs", help="print the documentation shipped with this version")
@@ -1668,7 +1774,66 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("metrics")
     s.set_defaults(fn=cmd_metrics)
+
+    runner_p = sub.add_parser("runner", help="split-mode runner administration").add_subparsers(
+        dest="runner_command", required=True
+    )
+    s = runner_p.add_parser("import")
+    s.add_argument("ledger")
+    s.set_defaults(fn=cmd_runner_import)
     return p
+
+
+#: Verbs an agent's own `tdd` answers on a split machine. Neither reads or writes the
+#: ledger: `docs` prints what shipped with the binary, and `init` writes `tdd.toml`
+#: into the agent's own worktree. Everything else is the runner's to do.
+LOCAL_VERBS = {"docs", "init"}
+
+
+def _actor_for(
+    split: runner_mod.RunnerConfig | None, agent_env: dict[str, str] | None
+) -> actor.LocalActor:
+    """Who acts in the agent's territory for this invocation.
+
+    The agent is `SUDO_USER`: sudo sets it itself, so a caller cannot name someone
+    else. Installed on every invocation, because the suite drives `main` in-process.
+
+    The runner never gets a `LocalActor`, even with no caller to act for. `_refusal`
+    stops such an invocation before it spawns anything; if one ever got past it, a
+    `sudo -u ""` that fails is the right outcome, and the agent's code running as the
+    ledger's uid is the wrong one.
+    """
+    if split is not None and split.role == "runner":
+        agent = os.environ.get("SUDO_USER", "")
+        return actor.SudoActor(sudo=split.sudo, agent=agent, env=agent_env)
+    return actor.LocalActor()
+
+
+def _refusal(split: runner_mod.RunnerConfig | None, args) -> Envelope | None:
+    """A runner that was not called through sudo acts for nobody.
+
+    It must not fall back to acting as itself: that would run the agent's suites, and
+    the agent's git hooks, as the uid that owns the ledger. `runner` verbs are the
+    exception: they are the operator's, touch no worktree and spawn nothing.
+    """
+    if split is None or split.role != "runner" or os.environ.get("SUDO_USER"):
+        return None
+    if args.command == "runner":
+        return None
+    return failure(
+        f"this is the split-mode runner ({split.user}) and no agent called it: run `tdd`"
+        " from the agent's account, which reaches the runner through sudo",
+        reason="no_agent",
+    )
+
+
+def _agent_env(args) -> dict[str, str] | None:
+    """The environment the client sent. It only ever reaches processes spawned as the
+    agent, so nothing in it is trusted and nothing in it needs to be."""
+    if not args.agent_context_stdin:
+        return None
+    env = json.loads(sys.stdin.read() or "{}").get("env")
+    return {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1681,9 +1846,31 @@ def main(argv: list[str] | None = None) -> int:
             reason="unsupported_platform",
         ).emit()
     try:
+        split = None
         args = build_parser().parse_args(argv)
-        envelope = args.fn(args)
-    except (config_mod.ConfigError, gitutil.GitError, LedgerVersionError) as exc:
+        split = runner_mod.load()
+        if split is not None and split.role == "client" and args.command not in LOCAL_VERBS:
+            # Parsed first, so `--help`, `--version` and a mistyped verb never cost a
+            # round trip; forwarded verbatim, so the runner parses exactly what we did.
+            return runner_mod.forward(split, list(sys.argv[1:] if argv is None else argv))
+        actor.install(_actor_for(split, _agent_env(args)))
+        envelope = _refusal(split, args) or args.fn(args)
+    except PermissionError as exc:
+        # Only the runner reads someone else's files. Anywhere else this is a bug, and
+        # a traceback is the right report for one.
+        if split is None or split.role != "runner":
+            raise
+        envelope = failure(
+            f"the runner ({split.user}) cannot read {exc.filename}: split mode needs the"
+            " worktree readable by that user (`chmod -R go+rX` it, or share a group)",
+            reason="worktree_unreadable",
+        )
+    except (
+        config_mod.ConfigError,
+        gitutil.GitError,
+        LedgerVersionError,
+        runner_mod.RunnerConfigError,
+    ) as exc:
         envelope = failure(str(exc))
     except SystemExit as exc:
         return int(exc.code or 0)

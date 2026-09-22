@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import pwd
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -27,6 +29,95 @@ def _pinned_executor_identity(monkeypatch):
     identity so both behave the same; the attribution tests delenv this to
     exercise the unknown paths."""
     monkeypatch.setenv("TDD_EXECUTOR_MODEL", "pytest-executor")
+
+
+@pytest.fixture(autouse=True)
+def _single_user_mode(tmp_path, monkeypatch):
+    """A developer machine may itself be split (`/etc/tdd-cli/runner.toml`); the suite
+    must never pick that up and start forwarding to a runner."""
+    monkeypatch.setenv("TDD_RUNNER_CONFIG", str(tmp_path / "no-runner.toml"))
+    for var in ("SUDO_USER", "SUDO_UID"):
+        monkeypatch.delenv(var, raising=False)
+    yield
+    # `main` installs an actor process-wide and the suite drives the CLI in-process,
+    # so a split-mode test would otherwise leave its actor behind for the next one.
+    from tddcli import actor
+
+    actor.install(actor.LocalActor())
+
+
+#: A stand-in for sudo. It logs what it was asked, then runs the command as the same
+#: uid — everything about split mode except the uid change itself. `SUDO_DENY` names
+#: commands it refuses, which is how "the agent cannot" is reached without a second uid.
+SUDO_SHIM = """\
+#!/bin/sh
+echo "MARK=$MARK $@" >> "$SUDO_LOG"
+while [ "$1" != "--" ]; do shift; done; shift
+case " $SUDO_DENY " in *" $(basename "$1") "*) exit 1;; esac
+exec "$@"
+"""
+
+
+def current_user() -> str:
+    return pwd.getpwuid(os.geteuid()).pw_name
+
+
+@pytest.fixture
+def sudo_shim(tmp_path, monkeypatch):
+    shim = tmp_path / "bin" / "sudo"
+    shim.parent.mkdir()
+    shim.write_text(SUDO_SHIM)
+    shim.chmod(0o755)
+    log = tmp_path / "sudo.log"
+    log.write_text("")
+    monkeypatch.setenv("SUDO_LOG", str(log))
+    return SimpleNamespace(path=shim, log=log, lines=lambda: log.read_text().splitlines())
+
+
+@pytest.fixture
+def split_runner(tmp_path, monkeypatch, sudo_shim):
+    """This process is the runner, called through sudo by an agent.
+
+    The agent is the current user, so every spawn the runner makes really executes:
+    the whole split-mode path runs, short of the uid change.
+    """
+    home = tmp_path / "runner-ledgers"
+    cfg = tmp_path / "runner.toml"
+    cfg.write_text(
+        f'[runner]\nuser = "{current_user()}"\ncommand = "tdd"\n'
+        f'sudo = "{sudo_shim.path}"\nledger_home = "{home}"\n'
+    )
+    monkeypatch.setenv("TDD_RUNNER_CONFIG", str(cfg))
+    monkeypatch.setenv("SUDO_USER", current_user())
+    monkeypatch.setenv("SUDO_UID", str(os.geteuid()))
+    return SimpleNamespace(config=cfg, ledger_home=home, shim=sudo_shim)
+
+
+@pytest.fixture
+def split_client(tmp_path, monkeypatch, sudo_shim):
+    """This process is an agent's `tdd` on a split machine.
+
+    `user = "root"` makes any non-root process a client. The runner's `command` is a
+    stub that records what reached it, answers with a fixed envelope, and exits 3.
+    """
+    stub = tmp_path / "bin" / "tdd-stub"
+    stub.write_text(
+        "#!/bin/sh\n"
+        f'echo "$@" > "{tmp_path}/stub.argv"\n'
+        f'cat > "{tmp_path}/stub.stdin"\n'
+        'echo \'{"ok": true, "stub": true}\'\n'
+        "exit 3\n"
+    )
+    stub.chmod(0o755)
+    cfg = tmp_path / "runner.toml"
+    cfg.write_text(f'[runner]\nuser = "root"\ncommand = "{stub}"\nsudo = "{sudo_shim.path}"\n')
+    monkeypatch.setenv("TDD_RUNNER_CONFIG", str(cfg))
+    return SimpleNamespace(
+        stub=stub,
+        argv=tmp_path / "stub.argv",
+        stdin=tmp_path / "stub.stdin",
+        shim=sudo_shim,
+    )
 
 
 @pytest.fixture

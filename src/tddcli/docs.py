@@ -63,6 +63,11 @@ TOPICS: tuple[Topic, ...] = (
         "an annotated example plan contract",
     ),
     Topic(
+        "split",
+        "docs/split-runner.md",
+        "split mode: a runner account that owns the ledger, where the agent cannot reach it",
+    ),
+    Topic(
         "readme",
         "README.md",
         "configuration, adapters, baselines, and the full command surface",
