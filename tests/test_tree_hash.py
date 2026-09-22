@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import time
+
 from conftest import git
 from tddcli import gitutil
 
@@ -74,3 +77,42 @@ def test_the_same_content_hashes_the_same_unstaged_staged_and_committed(tmp_path
     git(r, "commit", "-q", "-m", "g")
     committed = gitutil.tree_hash(r, ["p"])
     assert len({unstaged, staged, committed}) == 1
+
+
+def test_a_repo_with_no_index_yet_hashes_without_error(tmp_path):
+    r = tmp_path / "r"
+    r.mkdir()
+    git(r, "init", "-q")
+    (r / "a.py").write_text("x = 1\n")
+    assert isinstance(gitutil.tree_hash(r, ["."]), str)
+
+
+def test_a_same_size_edit_the_stat_cache_cannot_see_still_changes_the_hash(tmp_path):
+    """The throwaway index must keep the real index's mtime.
+
+    An entry whose mtime is not older than its index file is "racily clean", and
+    git re-reads it rather than trusting stat. Here the entry and the real index
+    share one mtime, and the edit keeps the size, inode and mtime (ctime is not
+    trusted), so only that racy check can see it. A copy with a fresh mtime makes
+    the entry look older than its index, stat is trusted, and the edit is missed.
+    """
+    r = tmp_path / "r"
+    r.mkdir()
+    git(r, "init", "-q")
+    git(r, "config", "user.email", "t@example.com")
+    git(r, "config", "user.name", "T")
+    git(r, "config", "core.trustctime", "false")
+    (r / "p").mkdir()
+    a = r / "p" / "a.py"
+    a.write_text("x = 1\n")
+    past = time.time_ns() - 100 * 10**9
+    os.utime(a, ns=(past, past))
+    git(r, "add", "-A")
+    git(r, "commit", "-q", "-m", "init")
+    os.utime(r / ".git" / "index", ns=(past, past))
+    before = gitutil.tree_hash(r, ["p"])
+
+    a.write_text("x = 2\n")
+    os.utime(a, ns=(past, past))
+
+    assert gitutil.tree_hash(r, ["p"]) != before
