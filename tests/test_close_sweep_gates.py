@@ -5,8 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from conftest import git, run_cli, write_plan
+from tddcli import config as config_mod
 from tddcli import gitutil
 from tddcli.ledger import Ledger
+from tddcli.machine import Engine
 
 # ── inner plan used by every test to reach the close sweep ────────────────────
 
@@ -359,3 +361,26 @@ def test_a_skipped_gate_records_a_skipped_row(repo, tmp_path):
         (run_id,),
     )
     assert [r["skipped"] for r in rows] == [0, 1]
+
+
+# ── issue 146 ── a sweep that skips its own suites still runs their gates
+
+
+def test_skip_own_still_runs_the_cycle_projects_gates(repo):
+    (repo / "tdd.toml").write_text(_toml(["sh -c 'exit 1'"]))
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "configure gates")
+    plan = write_plan(repo, SIMPLE_PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    out = run_cli(repo, "run", "start", "--plan", plan)
+
+    ledger = Ledger(gitutil.repo_identity(repo))
+    run_row = ledger.one("SELECT * FROM run WHERE id = ?", (out["run"]["id"],))
+    cycle_row = ledger.one(
+        "SELECT * FROM cycle WHERE run_id = ? ORDER BY id ASC LIMIT 1", (run_row["id"],)
+    )
+    engine = Engine(ledger, config_mod.load(repo), repo, run_row)
+
+    outcome = engine.sweep(cycle_row, set(), skip_own=True)
+
+    assert [(p, k) for p, k, _ in outcome.gates] == [("backend", "lint")]
