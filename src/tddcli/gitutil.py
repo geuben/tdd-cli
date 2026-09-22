@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import os
 import shutil
 import subprocess
 import tempfile
@@ -15,11 +16,12 @@ class GitError(RuntimeError):
     pass
 
 
-def git(worktree: Path, *args: str, check: bool = True) -> str:
+def git(worktree: Path, *args: str, check: bool = True, env: dict[str, str] | None = None) -> str:
     proc = subprocess.run(
         ["git", "-C", str(worktree), *args],
         capture_output=True,
         text=True,
+        env={**os.environ, **env} if env else None,
     )
     if check and proc.returncode != 0:
         raise GitError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
@@ -96,22 +98,35 @@ def diff_text(worktree: Path) -> str:
 
 
 def tree_hash(worktree: Path, roots: list[str]) -> str:
-    """Hash of tracked content under the given roots, plus untracked file contents.
+    """Hash of working-tree content under the given roots: tracked and untracked,
+    ignored files excluded. Independent of index and commit state, so the same
+    content hashes the same before and after it is staged or committed.
 
     Backs `no_change_since_last_run` (§6) and the refactor-phase skip (§6.1).
+
+    The content is read by `git add -A` into a throwaway index, seeded from the
+    real one (mtime included) so git's stat cache spares unchanged files a re-hash. The real index
+    is never touched: staging derives commits from it. `GIT_INDEX_FILE` must be
+    absolute, since `git -C` moves the cwd. `add` takes no pathspec, because a
+    root that exists neither on disk nor in the index is a pathspec error, and an
+    artifact path is hashed before `regenerate` may have created it.
     """
+    real_index = Path(
+        git(worktree, "rev-parse", "--path-format=absolute", "--git-path", "index").strip()
+    )
     h = hashlib.sha256()
-    for root in sorted(roots):
-        h.update(root.encode())
-        h.update(git(worktree, "ls-files", "-s", "--", root).encode())
-        diff = git(worktree, "diff", "--", root)
-        h.update(diff.encode())
-        untracked = git(worktree, "ls-files", "-o", "--exclude-standard", "--", root)
-        for rel in sorted(untracked.split()):
-            h.update(rel.encode())
-            p = worktree / rel
-            if p.is_file():
-                h.update(p.read_bytes())
+    with tempfile.TemporaryDirectory(prefix="tdd-tree-hash-") as tmp:
+        index = Path(tmp) / "index"
+        if real_index.is_file():
+            # copy2, not copyfile: the copy must keep the real index's mtime. Git
+            # re-reads any entry not older than its index file ("racy git"); a fresh
+            # mtime would let a same-size edit made in the same second pass as clean.
+            shutil.copy2(real_index, index)
+        env = {"GIT_INDEX_FILE": str(index.resolve())}
+        git(worktree, "add", "-A", env=env)
+        for root in sorted(roots):
+            h.update(root.encode())
+            h.update(git(worktree, "ls-files", "-s", "--", root, env=env).encode())
     return h.hexdigest()
 
 
