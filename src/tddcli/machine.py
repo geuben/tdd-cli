@@ -258,12 +258,11 @@ class Engine:
         `skip_own` drops the cycle's own suites when the tree is unchanged since GREEN:
         they just passed on an identical tree. Downstream projects still run, having
         not run at all yet. Never set for a refactor cycle, where the existing suite
-        is the only guard there is.
+        is the only guard there is. Only suites are skipped: lint/typecheck gates
+        still run for every sweep project, the cycle's own included.
         """
         cycle_projects = json.loads(cycle_row["projects"])
         names = self.config.close_sweep_projects(cycle_projects, touched)
-        if skip_own:
-            names = [n for n in names if n not in cycle_projects]
         baselines = self._baselines()
         failures: list[str] = []
         gates: list[tuple[str, str, str]] = []
@@ -320,6 +319,8 @@ class Engine:
                     failures=failures, gates=gates, unbaselined=unbaselined, unobserved=unobserved
                 )
 
+        if skip_own:
+            names = [n for n in names if n not in cycle_projects]
         for name in names:
             adapter = adapters_by_name[name]
             started = time.monotonic()

@@ -238,6 +238,11 @@ def test_accept_failures_accepts_a_test_that_fails_at_the_start_sha(repo):
         "UPDATE baseline SET failing = '[]' WHERE run_id = ? AND project = 'backend'", (run_id,)
     )
     ledger.db.commit()
+    # A refactor edit, so the close sweep runs this cycle's own suite rather than
+    # skipping it as unchanged since GREEN (§6.1).
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    return a + b\n# refactor\n"
+    )
     run_cli(repo, "advance")
     run_cli(repo, "blocker", "--kind", "pre_existing_failure", "--detail", "x")
     resumed = run_cli(repo, "resume", "--unblock", "--note", "n", "--accept-failures")

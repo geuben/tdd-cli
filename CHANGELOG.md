@@ -6,6 +6,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The close sweep re-ran a tree that had just passed** (#146): `gitutil.tree_hash` hashed git
+  state (index entries plus the unstaged diff), so the same content hashed differently before
+  and after the GREEN commit, and the §6.1 skip of a cycle's own suites never fired. It now
+  hashes working-tree content through a throwaway index, independent of what is staged or
+  committed. A skipped close sweep still runs the cycle project's lint/typecheck gates; before
+  this fix, the skip would have dropped them too. `--reuse-baselines` cache entries written by
+  earlier versions no longer match and are re-probed once.
+
 ## [0.12.2] - 2026-09-17
 
 ### Fixed

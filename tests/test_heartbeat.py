@@ -180,6 +180,11 @@ def test_close_sweep_emits_a_project_completed_line(repo, capsys):
     run_cli(repo, "advance")  # -> green, then the close sweep
     capsys.readouterr()
 
+    # A refactor edit, so the close sweep runs this cycle's own suite rather than
+    # skipping it as unchanged since GREEN (§6.1).
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    return a + b\n# refactor\n"
+    )
     run_cli(repo, "advance")  # the close sweep itself
 
     lines = [
