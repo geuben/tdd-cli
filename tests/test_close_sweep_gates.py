@@ -384,3 +384,17 @@ def test_skip_own_still_runs_the_cycle_projects_gates(repo):
     outcome = engine.sweep(cycle_row, set(), skip_own=True)
 
     assert [(p, k) for p, k, _ in outcome.gates] == [("backend", "lint")]
+
+
+# ── issue 146 ── a cycle with no refactor edit skips its own close-sweep suite
+
+
+def test_a_cycle_with_no_refactor_edit_skips_its_own_close_sweep_suite(repo):
+    out = _drive_to_close(repo, lint_cmds=["true"])
+    led = Ledger(gitutil.repo_identity(repo))
+    count = led.one(
+        "SELECT COUNT(*) AS n FROM invocation"
+        " WHERE run_id = ? AND phase_at = 'CLOSE_SWEEP' AND project = 'backend'",
+        (out["run"]["id"],),
+    )["n"]
+    assert (out["next_action"]["verb"], count) == ("complete", 0)
