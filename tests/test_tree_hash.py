@@ -36,3 +36,10 @@ def test_editing_an_untracked_file_changes_the_hash(tmp_path):
     h1 = gitutil.tree_hash(r, ["p"])
     (r / "p" / "new.py").write_text("2")
     assert gitutil.tree_hash(r, ["p"]) != h1
+
+
+def test_an_ignored_file_does_not_change_the_hash(tmp_path):
+    r = _repo(tmp_path)
+    h0 = gitutil.tree_hash(r, ["p"])
+    (r / "p" / "x.log").write_text("z")
+    assert gitutil.tree_hash(r, ["p"]) == h0
