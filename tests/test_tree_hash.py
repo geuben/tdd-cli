@@ -58,3 +58,8 @@ def test_hashing_leaves_the_index_untouched(tmp_path):
     (r / "p" / "new.py").write_text("1")
     gitutil.tree_hash(r, ["p"])
     assert git(r, "diff", "--cached", "--name-only") == ""
+
+
+def test_a_missing_root_hashes_without_error(tmp_path):
+    r = _repo(tmp_path)
+    assert isinstance(gitutil.tree_hash(r, ["nope"]), str)
