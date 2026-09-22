@@ -106,10 +106,11 @@ def tree_hash(worktree: Path, roots: list[str]) -> str:
 
     The content is read by `git add -A` into a throwaway index, seeded from the
     real one (mtime included) so git's stat cache spares unchanged files a
-    re-hash. The real index is never touched: staging derives commits from it. `GIT_INDEX_FILE` must be
-    absolute, since `git -C` moves the cwd. `add` takes no pathspec, because a
-    root that exists neither on disk nor in the index is a pathspec error, and an
-    artifact path is hashed before `regenerate` may have created it.
+    re-hash. The real index is never touched: staging derives commits from it.
+    `GIT_INDEX_FILE` must be absolute, since `git -C` moves the cwd. `add` takes
+    no pathspec, because a root that exists neither on disk nor in the index is
+    a pathspec error, and an artifact path is hashed before `regenerate` may have
+    created it.
     """
     real_index = Path(
         git(worktree, "rev-parse", "--path-format=absolute", "--git-path", "index").strip()
