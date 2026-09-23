@@ -42,6 +42,18 @@ def test_a_target_only_pytest_run_executes_only_the_target(tmp_path):
     assert sorted(v.passed + v.failed) == ["backend::tests/test_two.py::test_a"]
 
 
+def test_a_pytest_run_with_a_target_but_not_target_only_runs_every_test(tmp_path):
+    """GREEN (R9.1b): the whole suite runs, and the target is read from it."""
+    a = _pytest(tmp_path)
+
+    v = a.run("backend::tests/test_two.py::test_a")
+
+    assert sorted(v.passed + v.failed) == [
+        "backend::tests/test_two.py::test_a",
+        "backend::tests/test_two.py::test_b",
+    ]
+
+
 def test_a_target_only_pytest_run_uses_the_owning_override(tmp_path):
     a = _pytest(
         tmp_path,
@@ -96,7 +108,7 @@ def _vitest(tmp_path, extra=""):
     return VitestAdapter(config_mod.load(tmp_path).project("frontend"), tmp_path)
 
 
-def _captured_vitest_run(adapter, target):
+def _captured_vitest_run(adapter, target, target_only=True):
     seen = []
 
     def capture(cmd, env=None, timeout=None):
@@ -104,8 +116,17 @@ def _captured_vitest_run(adapter, target):
         return (0, '{"testResults": []}', "")
 
     with patch.object(VitestAdapter, "_run_suite", side_effect=capture):
-        adapter.run(target, target_only=True)
+        adapter.run(target, target_only=target_only)
     return seen
+
+
+def test_a_vitest_run_with_a_target_but_not_target_only_has_no_name_filter(tmp_path):
+    """GREEN (R9.1b): the whole suite runs, and the target is read from it."""
+    seen = _captured_vitest_run(
+        _vitest(tmp_path), "frontend::src/a.test.ts > outer > adds (1+1)", target_only=False
+    )
+
+    assert [c for c, _ in seen] == ["npx vitest run --reporter=json"]
 
 
 def test_a_target_only_vitest_run_selects_the_file_and_an_anchored_name(tmp_path):

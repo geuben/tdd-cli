@@ -253,6 +253,14 @@ def test_a_run_with_a_target_but_not_target_only_runs_the_whole_suite(tmp_path):
     assert "--exact" not in rs.call_args.args[0]
 
 
+def test_a_target_only_run_is_narrowed_to_the_target(tmp_path):
+    """RED (R9.1a): one integration target, filtered to the exact test path."""
+    a = make_adapter(tmp_path)
+    with patch.object(CargoAdapter, "_run_suite", return_value=(0, TARGETED_PASS, "")) as rs:
+        a.run(INT_PASS, target_only=True)
+    assert "--test roundtrip -- --exact renders_cover_only" in rs.call_args.args[0]
+
+
 # ---------------------------------------------------------------------------
 # Suite run parsing
 # ---------------------------------------------------------------------------

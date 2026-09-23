@@ -63,6 +63,16 @@ def test_an_adopted_target_is_evaluated_in_the_same_advance(repo):
     assert out["next_action"]["verb"] == "write_implementation", out
 
 
+def test_an_adopted_targets_failure_comes_from_its_own_run(repo):
+    _exec_repo(repo)
+    _start(repo, "gates", "scripts/check-answer.sh")
+    _sh(repo / "gates" / "scripts" / "check-reply.sh", 'test "$(cat lib/answer.txt)" = 42')
+
+    out = run_cli(repo, "advance")
+
+    assert "answer.txt" in out["result"]["failure"], out
+
+
 def test_red_is_not_blocked_by_a_failing_test_elsewhere(repo):
     _start(repo, "backend", "tests/test_add.py::test_adding")
     tests = repo / "backend" / "tests"
