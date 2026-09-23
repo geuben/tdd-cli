@@ -251,6 +251,7 @@ class Engine:
                 total_passed=len(verdict.passed),
                 total_failed=len(verdict.failed),
                 other_failures=json.dumps(other),
+                others_observed=int(observed),
                 duration_ms=verdict.duration_ms,
                 retried=int(retried),
                 tree_hash=tree,
