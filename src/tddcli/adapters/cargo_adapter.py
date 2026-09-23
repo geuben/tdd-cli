@@ -402,7 +402,9 @@ class CargoAdapter(Adapter):
         env = self._suite_env(None)
 
         native = self.strip(target) if target is not None else None
-        if native is not None:
+        # Narrowed only for a target-only run (R9.1a); with a target otherwise, the
+        # whole suite runs and the target is read from it by header (R9.1b).
+        if native is not None and target_only:
             cmd = self._targeted_cmd(native)
             default = native.partition("::")[0]
         else:
