@@ -58,3 +58,14 @@ def test_a_target_only_pytest_run_uses_the_owning_override(tmp_path):
     v = a.run("backend::tests/special/test_flag.py::test_flag", target_only=True)
 
     assert v.target_outcome == "passed"
+
+
+def test_a_target_only_pytest_run_reports_an_uncollectable_file_as_not_collected(tmp_path):
+    a = _pytest(tmp_path)
+    (tmp_path / "backend" / "tests" / "test_broken.py").write_text(
+        "import nosuchmod\n\n\ndef test_c():\n    pass\n"
+    )
+
+    v = a.run("backend::tests/test_broken.py::test_c", target_only=True)
+
+    assert v.target_outcome == "not_collected"
