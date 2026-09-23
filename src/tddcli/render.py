@@ -155,6 +155,8 @@ def friction_log(ledger: Ledger, run) -> str:
             a(f"> **note** _(during {n['phase']})_: {n['text']}")
         a("")
 
+    lines.extend(_time_section(_time_summary(ledger, run)))
+
     run_notes = ledger.all(
         "SELECT * FROM note WHERE run_id = ? AND cycle_id IS NULL ORDER BY id",
         (run["id"],),
@@ -292,6 +294,22 @@ def _time_summary(ledger: Ledger, run) -> dict:
     def order(phase: str) -> tuple:
         return (PHASE_ORDER.index(phase), "") if phase in PHASE_ORDER else (len(PHASE_ORDER), phase)
 
+    cycles = [
+        {
+            "ordinal": c["ordinal"],
+            # An open cycle has no wall clock yet; a blocked run's last cycle stays open.
+            "wall_clock_s": _seconds(c["opened_at"], c["closed_at"]) if c["closed_at"] else None,
+            "suite_s": c["ms"] / 1000,
+            "runs": c["n"],
+        }
+        for c in ledger.all(
+            "SELECT c.ordinal, c.opened_at, c.closed_at,"
+            " COUNT(i.id) n, COALESCE(SUM(i.duration_ms), 0) ms"
+            " FROM cycle c LEFT JOIN invocation i ON i.cycle_id = c.id"
+            " WHERE c.run_id = ? GROUP BY c.id ORDER BY c.ordinal",
+            (run["id"],),
+        )
+    ]
     wall = _seconds(run["started_at"], run["ended_at"])
     suite = sum(p["suite_s"] for p in by_phase.values())
     return {
@@ -299,7 +317,33 @@ def _time_summary(ledger: Ledger, run) -> dict:
         "suite_s": suite,
         "suite_share": suite / wall if wall else None,
         "by_phase": {phase: by_phase[phase] for phase in sorted(by_phase, key=order)},
+        "cycles": cycles,
     }
+
+
+def _time_section(summary: dict) -> list[str]:
+    """The friction log's `## Time`: the run's split, then per phase, then #145's
+    per-cycle table."""
+    share = summary["suite_share"]
+    lines = [
+        "## Time",
+        "",
+        f"- Wall clock: {summary['wall_clock_s'] / 60:.1f} min."
+        f" Suite: {summary['suite_s'] / 60:.1f} min"
+        + (f" ({share:.0%})." if share is not None else "."),
+        "",
+        "| Phase | Suite runs | Suite (min) | Average (s) |",
+        "|---|---|---|---|",
+    ]
+    for phase, p in summary["by_phase"].items():
+        lines.append(
+            f"| {phase} | {p['runs']} | {p['suite_s'] / 60:.1f} | {p['suite_s'] / p['runs']:.1f} |"
+        )
+    lines += ["", "| Cycle | Wall (min) | Suite (min) | Suite runs |", "|---|---|---|---|"]
+    for c in summary["cycles"]:
+        wall = f"{c['wall_clock_s'] / 60:.1f}" if c["wall_clock_s"] is not None else "—"
+        lines.append(f"| {c['ordinal']} | {wall} | {c['suite_s'] / 60:.1f} | {c['runs']} |")
+    return lines + [""]
 
 
 def _time_json(summary: dict) -> dict:
