@@ -78,8 +78,7 @@ def _observed_by_phase(repo, *phases):
     ledger = Ledger(gitutil.repo_identity(repo))
     marks = ", ".join("?" for _ in phases)
     rows = ledger.all(
-        f"SELECT phase_at, others_observed FROM invocation WHERE phase_at IN ({marks})"
-        " ORDER BY id",
+        f"SELECT phase_at, others_observed FROM invocation WHERE phase_at IN ({marks}) ORDER BY id",
         phases,
     )
     return [tuple(r) for r in rows]
