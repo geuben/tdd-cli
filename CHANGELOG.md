@@ -8,6 +8,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Where a run's time went** (#147). `tdd metrics` gains a per-run `time` object:
+  `wall_clock_s`, `suite_s`, `suite_share` and `by_phase` (runs and suite seconds for
+  every phase recorded). A live run's wall clock runs to now. The friction log gains a
+  `## Time` section with the same split, a per-phase table and a per-cycle table
+  (wall clock, suite time and suite runs). Nothing new is recorded: these are the
+  ledger's existing timestamps and `invocation.duration_ms`.
 - **Split mode: a ledger the agent's account cannot open** (#142). With
   `/etc/tdd-cli/runner.toml` in place, a separate runner account owns the ledger
   in a mode-700 directory. The agent's `tdd` forwards every verb except `docs`

@@ -877,7 +877,8 @@ Adapter.typecheck(project)               -> GateResult
 | Tests removed or weakened | `collect()` set diff + assertion-count diff, minus `modifies_tests` |
 | Files outside declared blast radius | `git diff --name-only` vs contract |
 | Commits per cycle | commit trailers (§13.3) |
-| Suite duration, wall clock, cost | invocation records |
+| Suite duration and wall clock | `invocation.duration_ms` summed per phase and per cycle; wall clock from `run.started_at`/`ended_at` (to now while live) and `cycle.opened_at`/`closed_at` — reported by `tdd metrics` (`time`) and the friction log's `## Time` section |
+| Cost | not recorded |
 | Plan fidelity | declared vs executed cycles and tests |
 
 ### 11.2 Contributed by the agent
