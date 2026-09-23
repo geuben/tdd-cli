@@ -155,6 +155,8 @@ def friction_log(ledger: Ledger, run) -> str:
             a(f"> **note** _(during {n['phase']})_: {n['text']}")
         a("")
 
+    lines.extend(_time_section(_time_summary(ledger, run)))
+
     run_notes = ledger.all(
         "SELECT * FROM note WHERE run_id = ? AND cycle_id IS NULL ORDER BY id",
         (run["id"],),
@@ -187,12 +189,17 @@ PHASE_SHORT = {
 }
 
 
-def _elapsed(start: str, end: str | None) -> str:
+def _seconds(start: str, end: str | None) -> float:
+    """Seconds from `start` to `end`, or to now while `end` is unset (a live run)."""
     from datetime import datetime, timezone
 
     began = datetime.fromisoformat(start)
     finished = datetime.fromisoformat(end) if end else datetime.now(timezone.utc)
-    total = int((finished - began).total_seconds())
+    return (finished - began).total_seconds()
+
+
+def _elapsed(start: str, end: str | None) -> str:
+    total = int(_seconds(start, end))
     hours, rem = divmod(total, 3600)
     mins, secs = divmod(rem, 60)
     return f"{hours}h{mins:02d}m" if hours else f"{mins}m{secs:02d}s"
@@ -269,6 +276,90 @@ def progress(ledger: Ledger, run) -> str:
     return "\n".join(out) + "\n"
 
 
+#: The order a cycle meets its suite runs in; any other `phase_at` sorts after these.
+PHASE_ORDER = ("AWAITING_TEST", "AWAITING_PIN", "SENSITIVITY", "AWAITING_IMPL", "CLOSE_SWEEP")
+
+
+def _time_summary(ledger: Ledger, run) -> dict:
+    """Where a run's time went (#147): its wall clock, and the suite's share of it by
+    phase. One source for `tdd metrics` and the friction log, so they cannot disagree.
+    Every invocation of the run counts, so the phases sum to the suite total."""
+    rows = ledger.all(
+        "SELECT phase_at, COUNT(*) n, SUM(duration_ms) ms FROM invocation"
+        " WHERE run_id = ? GROUP BY phase_at",
+        (run["id"],),
+    )
+    by_phase = {r["phase_at"]: {"runs": r["n"], "suite_s": r["ms"] / 1000} for r in rows}
+
+    def order(phase: str) -> tuple:
+        return (PHASE_ORDER.index(phase), "") if phase in PHASE_ORDER else (len(PHASE_ORDER), phase)
+
+    cycles = [
+        {
+            "ordinal": c["ordinal"],
+            # An open cycle has no wall clock yet; a blocked run's last cycle stays open.
+            "wall_clock_s": _seconds(c["opened_at"], c["closed_at"]) if c["closed_at"] else None,
+            "suite_s": c["ms"] / 1000,
+            "runs": c["n"],
+        }
+        for c in ledger.all(
+            "SELECT c.ordinal, c.opened_at, c.closed_at,"
+            " COUNT(i.id) n, COALESCE(SUM(i.duration_ms), 0) ms"
+            " FROM cycle c LEFT JOIN invocation i ON i.cycle_id = c.id"
+            " WHERE c.run_id = ? GROUP BY c.id ORDER BY c.ordinal",
+            (run["id"],),
+        )
+    ]
+    wall = _seconds(run["started_at"], run["ended_at"])
+    suite = sum(p["suite_s"] for p in by_phase.values())
+    return {
+        "wall_clock_s": wall,
+        "suite_s": suite,
+        "suite_share": suite / wall if wall else None,
+        "by_phase": {phase: by_phase[phase] for phase in sorted(by_phase, key=order)},
+        "cycles": cycles,
+    }
+
+
+def _time_section(summary: dict) -> list[str]:
+    """The friction log's `## Time`: the run's split, then per phase, then #145's
+    per-cycle table."""
+    share = summary["suite_share"]
+    lines = [
+        "## Time",
+        "",
+        f"- Wall clock: {summary['wall_clock_s'] / 60:.1f} min."
+        f" Suite: {summary['suite_s'] / 60:.1f} min"
+        + (f" ({share:.0%})." if share is not None else "."),
+        "",
+        "| Phase | Suite runs | Suite (min) | Average (s) |",
+        "|---|---|---|---|",
+    ]
+    for phase, p in summary["by_phase"].items():
+        lines.append(
+            f"| {phase} | {p['runs']} | {p['suite_s'] / 60:.1f} | {p['suite_s'] / p['runs']:.1f} |"
+        )
+    lines += ["", "| Cycle | Wall (min) | Suite (min) | Suite runs |", "|---|---|---|---|"]
+    for c in summary["cycles"]:
+        wall = f"{c['wall_clock_s'] / 60:.1f}" if c["wall_clock_s"] is not None else "—"
+        lines.append(f"| {c['ordinal']} | {wall} | {c['suite_s'] / 60:.1f} | {c['runs']} |")
+    return lines + [""]
+
+
+def _time_json(summary: dict) -> dict:
+    """`tdd metrics`' view: seconds to one decimal, the share to three."""
+    share = summary["suite_share"]
+    return {
+        "wall_clock_s": round(summary["wall_clock_s"], 1),
+        "suite_s": round(summary["suite_s"], 1),
+        "suite_share": round(share, 3) if share is not None else None,
+        "by_phase": {
+            phase: {"runs": p["runs"], "suite_s": round(p["suite_s"], 1)}
+            for phase, p in summary["by_phase"].items()
+        },
+    }
+
+
 def _impl_attempts(rows) -> int:
     """GREEN attempts, as target-only rows. Every advance since R9.1e starts with a
     target-only run (`others_observed = 0`, one row per project), and a passing one
@@ -339,6 +430,7 @@ def metrics(ledger: Ledger, worktree: str) -> dict:
                 "human_interventions": len(
                     ledger.all("SELECT id FROM human_intervention WHERE run_id = ?", (run["id"],))
                 ),
+                "time": _time_json(_time_summary(ledger, run)),
                 "integrity_events": {
                     r["kind"]: r["n"]
                     for r in ledger.all(

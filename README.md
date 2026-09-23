@@ -302,7 +302,8 @@ cycle's RED path empirically, assigns cycle kinds, and authors the contract — 
 back to the **planning** process. It reports plan fidelity (declared vs delivered vs
 skipped vs never-reached cycles, human interventions) and, per cycle: the target, suite
 runs by phase, the first-run outcome against expectation, sensitivity checks, commits,
-and integrity events.
+and integrity events. A `## Time` section says where the run's time went: the wall clock,
+suite time and its share, per phase and per cycle.
 
 Every observable fact in it is projected from recorded events. The agent that did the
 work cannot compose it — that is what makes it worth reading, and why the log is
@@ -327,7 +328,8 @@ rendered, never written. Judgement enters in exactly two ways:
   narrative as the agent's opinion.
 
 `tdd metrics` is the quantitative companion: attempts per cycle, RED-first violation
-rate, fidelity, blockers, interventions. Cross-plan aggregates are deliberately labelled
+rate, fidelity, blockers, interventions, and suite time per phase against the run's wall
+clock. Cross-plan aggregates are deliberately labelled
 non-comparable — cycle difficulty varies too much — so compare runs of the same contract
 only (e.g. the same plan executed by two models).
 
@@ -466,7 +468,7 @@ and is never reclassified as a pin.
 | `tdd blocker --kind --detail` | typed blocker; releases the stop hook |
 | `tdd resume [--unblock --note]` | reconstruct position; human intervention |
 | `tdd log render [--out]` | project the ledger into a friction log |
-| `tdd metrics` | fidelity, attempts, violations, interventions |
+| `tdd metrics` | fidelity, attempts, violations, interventions, time |
 | `tdd fleet [--json]` | all active runs across every worktree; read-only |
 
 ## Scoped baseline capture (R9.5c)
