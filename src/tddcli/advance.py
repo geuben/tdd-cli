@@ -176,6 +176,30 @@ def _outcome_from_verdicts(verdicts, test_id: str) -> str | None:
     return None
 
 
+def _evaluate_adopted(
+    engine: Engine,
+    cycle,
+    projects: list[str],
+    kept: list[str],
+    adopted: str,
+    verdicts,
+    retried: bool,
+) -> tuple[str | None, str]:
+    """The adopted target's outcome, plus its failure text when it had to be run.
+
+    A target-only run (R9.1a) executed the declared id, not the new test, so the
+    verdicts in hand may not hold it. Run it now rather than asking for another
+    advance, which the unchanged tree would refuse as `no_change_since_last_run`.
+    """
+    outcome = _outcome_from_verdicts(verdicts, adopted)
+    if outcome is not None:
+        return outcome, ""
+    outcomes, _, _, failure = engine.run_projects(
+        projects, kept + [adopted], cycle, cycle["phase"], retried, target_only=True
+    )
+    return outcomes.get(adopted), failure
+
+
 # -- handlers ------------------------------------------------------------
 
 
@@ -203,7 +227,9 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
             kept = [t for t in targets if t not in missing]
             engine.ledger.update("cycle", cycle["id"], target_tests=json.dumps(kept + candidates))
             cycle = engine.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle["id"],))
-            adopted_outcome = _outcome_from_verdicts(verdicts, candidates[0])
+            adopted_outcome, adopted_failure = _evaluate_adopted(
+                engine, cycle, projects, kept, candidates[0], verdicts, retried
+            )
             if adopted_outcome is None:
                 return _reply(
                     engine,
@@ -215,6 +241,7 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
                 )
             targets = kept + candidates
             outcomes = {candidates[0]: adopted_outcome}
+            failure = adopted_failure or failure
             others = [t for t in others if t != candidates[0]]
         elif len(candidates) > 1:
             owner = missing[0].split("::", 1)[0]
@@ -234,7 +261,9 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
                     "cycle", cycle["id"], target_tests=json.dumps(kept + [resolved])
                 )
                 cycle = engine.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle["id"],))
-                adopted_outcome = _outcome_from_verdicts(verdicts, resolved)
+                adopted_outcome, adopted_failure = _evaluate_adopted(
+                    engine, cycle, projects, kept, resolved, verdicts, retried
+                )
                 if adopted_outcome is None:
                     return _reply(
                         engine,
@@ -246,6 +275,7 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
                     )
                 targets = kept + [resolved]
                 outcomes = {resolved: adopted_outcome}
+                failure = adopted_failure or failure
                 others = [t for t in others if t != resolved]
             else:
                 engine.ledger.event(
