@@ -69,3 +69,11 @@ def test_a_target_only_pytest_run_reports_an_uncollectable_file_as_not_collected
     v = a.run("backend::tests/test_broken.py::test_c", target_only=True)
 
     assert v.target_outcome == "not_collected"
+
+
+def test_a_target_only_pytest_run_of_a_missing_file_is_not_found(tmp_path):
+    a = _pytest(tmp_path)
+
+    v = a.run("backend::tests/test_nofile.py::test_x", target_only=True)
+
+    assert (v.target_outcome, v.error) == ("not_found", None)
