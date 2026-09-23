@@ -210,8 +210,10 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
     targets = json.loads(cycle["target_tests"])
     phase = cycle["phase"]
 
+    # R9.1a: RED and pin run only the target; GREEN's whole-suite run is what
+    # attributes a regression to the cycle.
     outcomes, others, verdicts, failure = engine.run_projects(
-        projects, targets, cycle, phase, retried
+        projects, targets, cycle, phase, retried, target_only=True
     )
 
     missing = [t for t, o in outcomes.items() if o == NOT_FOUND]

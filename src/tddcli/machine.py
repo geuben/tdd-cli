@@ -208,7 +208,7 @@ class Engine:
             adapter = adapters.build(project, self.worktree)
             target = next((t for t in targets if t.startswith(f"{name}::")), None)
             started = time.monotonic()
-            verdict = adapter.run(target)
+            verdict = adapter.run(target, target_only=target_only)
             elapsed = time.monotonic() - started
             verdicts.append(verdict)
             # Unconditional, not past a duration threshold — a conditional heartbeat
@@ -224,7 +224,14 @@ class Engine:
             )
 
             base = baselines.get(name, set())
-            other = [f for f in verdict.failed if f not in base and f not in targets]
+            # A target-only run (R9.1a) observed nothing outside its target, so it has
+            # no other failures to report — not zero of them.
+            observed = not (target_only and target is not None)
+            other = (
+                [f for f in verdict.failed if f not in base and f not in targets]
+                if observed
+                else []
+            )
             others.extend(other)
             if target is not None:
                 outcomes[target] = verdict.target_outcome
