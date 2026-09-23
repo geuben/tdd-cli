@@ -184,7 +184,7 @@ def test_targeting_runs_only_that_script(tmp_path):
     write_script(scripts / "check-a.sh", "exit 0")
     write_script(scripts / "check-b.sh", 'echo "FAIL"; exit 1')
 
-    verdict = adapter.run("gates::scripts/check-a.sh")
+    verdict = adapter.run("gates::scripts/check-a.sh", target_only=True)
 
     assert verdict.target_outcome == PASSED
     # check-b was skipped — not in passed or failed

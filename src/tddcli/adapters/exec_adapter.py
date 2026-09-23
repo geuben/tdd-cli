@@ -144,8 +144,9 @@ class ExecAdapter(Adapter):
             rel = str(path.relative_to(self.root))
             qualified = self.qualify(rel)
 
-            # When targeting, skip every other test for speed.
-            if target is not None and qualified != target:
+            # A target-only run (R9.1a) skips every other script; any other run with a
+            # target is GREEN, which must see them all (R9.1b).
+            if target_only and target is not None and qualified != target:
                 continue
 
             if not self._is_runnable(path):
