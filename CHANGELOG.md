@@ -23,6 +23,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **GREEN runs the target first** (#149). An `AWAITING_IMPL` advance whose target
+  still fails now says so after running only the target. A passing target is followed
+  by the whole-suite run that decides GREEN, as before. `tdd metrics` counts
+  `impl_attempts` from each advance's target-only run only, and still counts every
+  `AWAITING_IMPL` run in cycles recorded before this change.
 - `tdd doctor` on a single-user machine no longer lets "ledger outside
   worktree" stand for isolation: a `ledger isolation` notice says the ledger is
   owned by the same uid that runs the agent. The README and SECURITY.md say the

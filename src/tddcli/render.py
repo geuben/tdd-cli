@@ -269,6 +269,15 @@ def progress(ledger: Ledger, run) -> str:
     return "\n".join(out) + "\n"
 
 
+def _impl_attempts(rows) -> int:
+    """GREEN attempts, as target-only rows. Every advance since R9.1e starts with a
+    target-only run (`others_observed = 0`, one row per project), and a passing one
+    adds a whole-suite run, which must not count twice. A cycle recorded earlier has
+    no target-only GREEN rows: each of its attempts was a whole-suite run."""
+    target_only = [r for r in rows if not r["others_observed"]]
+    return len(target_only) if target_only else len(rows)
+
+
 def metrics(ledger: Ledger, worktree: str) -> dict:
     runs = ledger.all("SELECT * FROM run WHERE worktree_path = ? ORDER BY id", (worktree,))
     out = {
@@ -291,7 +300,9 @@ def metrics(ledger: Ledger, worktree: str) -> dict:
             "SELECT * FROM integrity_event WHERE run_id = ? AND kind = 'red_first_violation'",
             (run["id"],),
         )
-        impl_attempts = [len(ledger.invocations(c["id"], "AWAITING_IMPL")) for c in cycles]
+        impl_attempts = [
+            _impl_attempts(ledger.invocations(c["id"], "AWAITING_IMPL")) for c in cycles
+        ]
         blockers = ledger.all(
             "SELECT kind, COUNT(*) n FROM blocker WHERE run_id = ? GROUP BY kind",
             (run["id"],),

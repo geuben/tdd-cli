@@ -71,7 +71,7 @@ skill that duplicates any of it will fight the ledger.
 |---|---|---|
 | `write_test` | the cycle needs its test (or the test still fails to fail correctly) | write the declared target test — for a pin cycle, a characterisation test that passes on arrival — then `tdd advance` |
 | `create_stub` | the target test cannot be collected: the module it imports does not exist | create the declared stub file(s) with no logic — the `detail` quotes the language's idiom — then `tdd advance` |
-| `write_implementation` | RED is confirmed and committed | write the minimum code to pass the target, then `tdd advance` |
+| `write_implementation` | RED is confirmed and committed, or the target still fails at GREEN (only the target ran) | write the minimum code to pass the target, then `tdd advance` |
 | `fix_regression` | tests outside the cycle are failing at GREEN, or the close sweep / lint / typecheck gates failed | fix them without breaking the target, then `tdd advance` |
 | `run_sensitivity_check` | a test passed where proof it *can* fail is required | `tdd sensitivity begin`, mutate the behaviour under test, `tdd sensitivity check`, then `tdd sensitivity end` |
 | `name_target_test` | several new tests appeared; a cycle covers one behaviour | pick the intended one: `tdd target <id>` |
