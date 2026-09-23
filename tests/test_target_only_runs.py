@@ -115,3 +115,25 @@ def test_a_target_only_vitest_run_selects_the_file_and_an_anchored_name(tmp_path
     assert [c for c, _ in seen] == [
         "npx vitest run --reporter=json src/a.test.ts -t '^outer adds \\(1\\+1\\)$'"
     ]
+
+
+def test_a_target_only_vitest_run_uses_the_owning_override(tmp_path):
+    adapter = _vitest(
+        tmp_path,
+        extra=(
+            "\n[[project.frontend.override]]\n"
+            'pattern         = "src/__contract__/"\n'
+            'test_command    = "npx vitest run --config c.ts"\n'
+            'collect_command = "npx vitest list --config c.ts"\n'
+            'env             = { API_URL = "x" }\n'
+        ),
+    )
+
+    seen = _captured_vitest_run(adapter, "frontend::src/__contract__/x.test.ts > works")
+
+    assert seen == [
+        (
+            "npx vitest run --config c.ts --reporter=json src/__contract__/x.test.ts -t '^works$'",
+            {"API_URL": "x"},
+        )
+    ]
