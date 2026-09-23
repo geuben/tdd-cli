@@ -48,3 +48,10 @@
   the space-joined `fullName`. Anchor it and escape only the JavaScript metacharacters.
 - exec ids are file paths, so the `_disambiguate`-resolved adoption branch cannot be reached
   from an exec end-to-end test. Only a single-candidate adoption can.
+- To test anything in `render.py` (`metrics`, `friction_log`), build a fixture ledger:
+  `Ledger(tmp_path / "somerepo")` with the `ledger_home` fixture, then `Ledger.insert` rows with
+  fixed timestamps and durations. A real run through `run_cli` has wall-clock timestamps, so its
+  times cannot be asserted exactly. Choose durations that are exact at one decimal, because
+  Python's `round` and `:.1f` round halves unpredictably.
+- A small change whose planning probe is the change itself gets implemented directly, with no
+  plan (#149). Check this before writing the plan file, not after.
