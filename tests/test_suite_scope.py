@@ -114,3 +114,22 @@ def test_a_pin_is_not_blocked_by_a_failing_test_elsewhere(repo):
     out = run_cli(repo, "advance")
 
     assert out["next_action"]["verb"] == "run_sensitivity_check", out
+
+
+def test_a_sensitivity_check_runs_only_the_target(repo):
+    calc = repo / "backend" / "app" / "calc.py"
+    calc.write_text("def add(a, b):\n    return a + b\n")
+    (repo / "backend" / "tests" / "test_add.py").write_text(
+        "from app.calc import add\n\n\ndef test_adding():\n    assert add(2, 3) == 5\n"
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "add and its test")
+    _start(repo, "backend", "tests/test_add.py::test_adding", kind=PIN)
+    run_cli(repo, "advance")
+    run_cli(repo, "sensitivity", "begin")
+    calc.write_text("def add(a, b):\n    return a - b\n")
+    run_cli(repo, "sensitivity", "check")
+
+    observed = _observed_by_phase(repo, "SENSITIVITY")
+
+    assert observed == [("SENSITIVITY", 0)]
