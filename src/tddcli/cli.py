@@ -1356,7 +1356,7 @@ def cmd_sensitivity(args) -> Envelope:
 
     if args.step == "check":
         outcomes, _, verdicts, failure_text = engine.run_projects(
-            projects, targets, cycle, "SENSITIVITY", False
+            projects, targets, cycle, "SENSITIVITY", False, target_only=True
         )
         # A mutation that breaks collection also proves the test depends on the code.
         bites = bool(outcomes) and all(o in (FAILED, NOT_COLLECTED) for o in outcomes.values())
