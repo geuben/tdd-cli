@@ -285,7 +285,7 @@ def test_targeted_run_appends_tests_filter(tmp_path):
         return (0, "", "")
 
     with patch.object(type(adapter), "_run_suite", side_effect=capture):
-        adapter.run(PASS)
+        adapter.run(PASS, target_only=True)
 
     assert len(commands_run) == 1
     assert "--tests com.example.PollCadenceTest.scalesOnlyUnderE2E" in commands_run[0]
