@@ -41,6 +41,16 @@ def _extract_json(raw: str) -> dict | None:
     return None
 
 
+#: The characters a JavaScript regex treats as syntax. Only these are escaped: vitest
+#: may compile `-t` with the `u` flag, which rejects the identity escapes (`\ `, `\-`)
+#: that Python's `re.escape` emits.
+_JS_REGEX_SYNTAX = frozenset("\\^$.*+?()[]{}|")
+
+
+def _js_escape(text: str) -> str:
+    return "".join(f"\\{c}" if c in _JS_REGEX_SYNTAX else c for c in text)
+
+
 class VitestAdapter(Adapter):
     name = "vitest"
 
@@ -90,6 +100,26 @@ class VitestAdapter(Adapter):
     def _collect_cmd(self) -> str:
         return self.project.collect_command or "npx vitest list"
 
+    def _run_invocations(
+        self, target: str | None, target_only: bool
+    ) -> list[tuple[str, dict[str, str] | None]]:
+        """Every suite, or — for a target-only run (R9.1a) — the owning suite filtered to
+        the target's file and its name. `-t` is an unanchored regex over the space-joined
+        fullName, so the name is escaped and anchored: unanchored, `adds (1+1)` also
+        runs `adds (1+1) twice`."""
+        if not (target_only and target is not None):
+            return [(f"{base} --reporter=json", env) for base, env in self._suite_invocations()]
+        file, _, name = self.strip(self.normalise_id(target)).partition(" > ")
+        override = self.project.override_for(file)
+        base = override.test_command if override else self._test_cmd()
+        pattern = f"^{_js_escape(name)}$"
+        return [
+            (
+                f"{base} --reporter=json {shlex.quote(file)} -t {shlex.quote(pattern)}",
+                self._suite_env(override),
+            )
+        ]
+
     def run(self, target: str | None = None, *, target_only: bool = False) -> Verdict:
         verdict = Verdict(project=self.project.name, adapter=self.name, target=target)
         # Union across the default suite and every override suite (R7.13). A suite
@@ -97,11 +127,11 @@ class VitestAdapter(Adapter):
         # report a target living in that suite as `not_found`.
         suites: list[dict] = []
         suite_ids: list[set[str]] = []
-        for base, extra_env in self._suite_invocations():
-            code, out, err = self._run_suite(f"{base} --reporter=json", extra_env)
+        for cmd, extra_env in self._run_invocations(target, target_only):
+            code, out, err = self._run_suite(cmd, extra_env)
             report = _extract_json(out)
             if report is None:
-                verdict.error = f"`{base}` produced no JSON output: {(err or out)[:500]}"
+                verdict.error = f"`{cmd}` produced no JSON output: {(err or out)[:500]}"
                 return verdict
             verdict.duration_ms += int(report.get("duration") or 0)
             results = report.get("testResults", [])
