@@ -9,6 +9,8 @@ from __future__ import annotations
 import stat
 
 from conftest import git, run_cli, write_plan
+from tddcli import gitutil
+from tddcli.ledger import Ledger
 
 PLAN = """---
 cycles:
@@ -70,3 +72,32 @@ def test_red_is_not_blocked_by_a_failing_test_elsewhere(repo):
     out = run_cli(repo, "advance")
 
     assert out["next_action"]["verb"] == "write_implementation", out
+
+
+def _observed_by_phase(repo, *phases):
+    ledger = Ledger(gitutil.repo_identity(repo))
+    marks = ", ".join("?" for _ in phases)
+    rows = ledger.all(
+        f"SELECT phase_at, others_observed FROM invocation WHERE phase_at IN ({marks})"
+        " ORDER BY id",
+        phases,
+    )
+    return [tuple(r) for r in rows]
+
+
+def test_red_records_others_unobserved_and_green_records_them_observed(repo):
+    calc = repo / "backend" / "app" / "calc.py"
+    calc.write_text("def add(a, b):\n    raise NotImplementedError\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "calc stub")
+    _start(repo, "backend", "tests/test_add.py::test_adding")
+    (repo / "backend" / "tests" / "test_add.py").write_text(
+        "from app.calc import add\n\n\ndef test_adding():\n    assert add(2, 3) == 5\n"
+    )
+    run_cli(repo, "advance")
+    calc.write_text("def add(a, b):\n    return a + b\n")
+    run_cli(repo, "advance")
+
+    observed = _observed_by_phase(repo, "AWAITING_TEST", "AWAITING_IMPL")
+
+    assert observed == [("AWAITING_TEST", 0), ("AWAITING_IMPL", 1)]
