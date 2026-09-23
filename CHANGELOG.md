@@ -6,6 +6,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-23
+
 ### Added
 
 - **Where a run's time went** (#147). `tdd metrics` gains a per-run `time` object:
