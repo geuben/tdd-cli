@@ -7,8 +7,11 @@ about pytest, not about our parsing. vitest's command is captured instead; its
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from tddcli import config as config_mod
 from tddcli.adapters.pytest_adapter import PytestAdapter
+from tddcli.adapters.vitest_adapter import VitestAdapter
 
 # A path-scoped test_command is deliberate: appending a node id to it would not
 # narrow the run, so the target-only path must not be built on it.
@@ -77,3 +80,38 @@ def test_a_target_only_pytest_run_of_a_missing_file_is_not_found(tmp_path):
     v = a.run("backend::tests/test_nofile.py::test_x", target_only=True)
 
     assert (v.target_outcome, v.error) == ("not_found", None)
+
+
+VT_TOML = """
+[project.frontend]
+root       = "frontend"
+adapter    = "vitest"
+test_paths = ["**/*.test.ts"]
+"""
+
+
+def _vitest(tmp_path, extra=""):
+    (tmp_path / "tdd.toml").write_text(VT_TOML + extra)
+    (tmp_path / "frontend").mkdir()
+    return VitestAdapter(config_mod.load(tmp_path).project("frontend"), tmp_path)
+
+
+def _captured_vitest_run(adapter, target):
+    seen = []
+
+    def capture(cmd, env=None, timeout=None):
+        seen.append((cmd, env))
+        return (0, '{"testResults": []}', "")
+
+    with patch.object(VitestAdapter, "_run_suite", side_effect=capture):
+        adapter.run(target, target_only=True)
+    return seen
+
+
+def test_a_target_only_vitest_run_selects_the_file_and_an_anchored_name(tmp_path):
+    # Nested `>` is deliberate: vitest's -t matches the space-joined fullName.
+    seen = _captured_vitest_run(_vitest(tmp_path), "frontend::src/a.test.ts > outer > adds (1+1)")
+
+    assert [c for c, _ in seen] == [
+        "npx vitest run --reporter=json src/a.test.ts -t '^outer adds \\(1\\+1\\)$'"
+    ]
