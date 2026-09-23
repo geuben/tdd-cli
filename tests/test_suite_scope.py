@@ -94,7 +94,8 @@ def _observed_by_phase(repo, *phases):
     return [tuple(r) for r in rows]
 
 
-def test_red_records_others_unobserved_and_green_records_them_observed(repo):
+def _red_on_calc(repo):
+    """A committed `add` stub and a confirmed RED on `test_adding`; returns calc.py."""
     calc = repo / "backend" / "app" / "calc.py"
     calc.write_text("def add(a, b):\n    raise NotImplementedError\n")
     git(repo, "add", "-A")
@@ -104,12 +105,74 @@ def test_red_records_others_unobserved_and_green_records_them_observed(repo):
         "from app.calc import add\n\n\ndef test_adding():\n    assert add(2, 3) == 5\n"
     )
     run_cli(repo, "advance")
-    calc.write_text("def add(a, b):\n    return a + b\n")
+    return calc
+
+
+IMPLEMENTED = "def add(a, b):\n    return a + b\n"
+
+
+def test_red_records_others_unobserved_and_green_records_them_observed(repo):
+    calc = _red_on_calc(repo)
+    calc.write_text(IMPLEMENTED)
     run_cli(repo, "advance")
 
     observed = _observed_by_phase(repo, "AWAITING_TEST", "AWAITING_IMPL")
 
-    assert observed == [("AWAITING_TEST", 0), ("AWAITING_IMPL", 1)]
+    # GREEN runs the target alone first (R9.1e), then the whole suite once it passes.
+    assert observed == [("AWAITING_TEST", 0), ("AWAITING_IMPL", 0), ("AWAITING_IMPL", 1)]
+
+
+def test_a_green_whose_target_still_fails_runs_only_the_target(repo):
+    _red_on_calc(repo)
+
+    out = run_cli(repo, "advance")  # nothing implemented yet
+
+    assert (out["next_action"]["verb"], _observed_by_phase(repo, "AWAITING_IMPL")) == (
+        "write_implementation",
+        [("AWAITING_IMPL", 0)],
+    )
+
+
+def test_a_green_whose_target_passes_then_runs_the_whole_suite(repo):
+    calc = _red_on_calc(repo)
+    calc.write_text(IMPLEMENTED)
+
+    out = run_cli(repo, "advance")
+
+    assert (out["next_action"]["verb"], _observed_by_phase(repo, "AWAITING_IMPL")) == (
+        "refactor_or_advance",
+        [("AWAITING_IMPL", 0), ("AWAITING_IMPL", 1)],
+    )
+
+
+def _impl_attempts(repo):
+    return run_cli(repo, "metrics")["result"]["runs"][0]["impl_attempts_total"]
+
+
+def test_impl_attempts_count_one_per_green_advance(repo):
+    calc = _red_on_calc(repo)
+    run_cli(repo, "advance")  # attempt 1: target still fails
+    calc.write_text(IMPLEMENTED)
+    run_cli(repo, "advance")  # attempt 2: target passes, whole suite runs
+
+    assert _impl_attempts(repo) == 2
+
+
+def test_impl_attempts_count_every_row_in_a_cycle_recorded_before_target_first_green(repo):
+    """A ledger written before R9.1e has one whole-suite row per attempt and no
+    target-only GREEN rows; each of those rows is an attempt."""
+    calc = _red_on_calc(repo)
+    run_cli(repo, "advance")
+    calc.write_text(IMPLEMENTED)
+    run_cli(repo, "advance")
+    ledger = Ledger(gitutil.repo_identity(repo))
+    # Reshape into the old form: two attempts, each a single whole-suite row.
+    ledger._write(
+        "DELETE FROM invocation WHERE phase_at = 'AWAITING_IMPL' AND others_observed = 1", ()
+    )
+    ledger._write("UPDATE invocation SET others_observed = 1 WHERE phase_at = 'AWAITING_IMPL'", ())
+
+    assert _impl_attempts(repo) == 2
 
 
 PIN = "pin_cycle: true\n    "
@@ -159,3 +222,40 @@ def test_green_on_an_exec_project_is_blocked_by_a_failing_script_elsewhere(repo)
     out = run_cli(repo, "advance")
 
     assert out["next_action"]["verb"] == "fix_regression", out
+
+
+CONTRACT_PLAN = """---
+cycles:
+  - n: 1
+    projects: ["backend", "svc"]
+    contract_cycle: true
+    title: "t"
+    tests: ["backend::tests/test_add.py::test_adding", "svc::tests/test_sub.py::test_sub"]
+    commit_red: "test: t"
+    commit_green: "feat: t"
+---
+"""
+
+
+def test_a_contract_green_with_one_target_still_failing_runs_only_the_targets(repo_three):
+    repo = repo_three
+    calc = repo / "backend" / "app" / "calc.py"
+    calc.write_text("def add(a, b):\n    raise NotImplementedError\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "calc stub")
+    plan = write_plan(repo, CONTRACT_PLAN)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+    (repo / "backend" / "tests" / "test_add.py").write_text(
+        "from app.calc import add\n\n\ndef test_adding():\n    assert add(2, 3) == 5\n"
+    )
+    (repo / "svc" / "tests" / "test_sub.py").write_text("def test_sub():\n    assert False\n")
+    run_cli(repo, "advance")
+    calc.write_text(IMPLEMENTED)  # backend's target passes; svc's still fails
+
+    out = run_cli(repo, "advance")
+
+    assert (out["next_action"]["verb"], _observed_by_phase(repo, "AWAITING_IMPL")) == (
+        "write_implementation",
+        [("AWAITING_IMPL", 0), ("AWAITING_IMPL", 0)],
+    )

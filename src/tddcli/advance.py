@@ -408,6 +408,23 @@ def _handle_impl(engine: Engine, cycle, retried: bool) -> Envelope:
     projects = json.loads(cycle["projects"])
     targets = json.loads(cycle["target_tests"])
 
+    # R9.1e: a target that still fails is all a failed attempt needs to report, so
+    # it is learned from the target alone. Only a passing target earns the whole-suite
+    # run (R9.1b) that decides GREEN, and that run is the attempt's last row, which the
+    # close sweep's skip reads.
+    first, _, _, first_failure = engine.run_projects(
+        projects, targets, cycle, AWAITING_IMPL, retried, target_only=True
+    )
+    if not all(o == PASSED for o in first.values()):
+        return _reply(
+            engine,
+            cycle,
+            Verb.WRITE_IMPLEMENTATION,
+            "Target still failing. Adjust the implementation and `tdd advance`.",
+            outcomes=first,
+            failure=first_failure,
+        )
+
     outcomes, others, _, failure = engine.run_projects(
         projects, targets, cycle, AWAITING_IMPL, retried
     )

@@ -231,7 +231,7 @@ AWAITING_TEST ──advance──▶ AWAITING_IMPL ──advance──▶ AWAITI
 | Phase | Agent's job | `advance` passes when |
 |---|---|---|
 | `AWAITING_TEST` | write exactly one failing test | target **fails**; only the target runs (R9.1a) |
-| `AWAITING_IMPL` | write the minimum implementation | target **passes**, no new failures elsewhere; the whole suite runs (R9.1b) |
+| `AWAITING_IMPL` | write the minimum implementation | target **passes**, no new failures elsewhere; the target runs first, and the whole suite only once it passes (R9.1b, R9.1e) |
 | `AWAITING_REFACTOR` | refactor, or nothing | lint/typecheck clean and the close sweep green (R9.2). The cycle's own suites are **skipped** when the tree hash is unchanged since the GREEN commit — they just passed on an identical tree. The downstream sweep always runs, having not run yet. |
 
 Outcomes that are not simple advancement:
@@ -596,6 +596,13 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   72-minute run (#145), and the time grows with suite size. The guarantee that every phase sees
   the whole suite is given up at RED only. GREEN keeps it, because a whole-suite run at GREEN is
   what blames a regression on a cycle. Decided in #148.
+- **R9.1e** Each `AWAITING_IMPL` advance runs **the targets alone first**. If any target does
+  not pass, the reply is `write_implementation` and nothing else runs: a still-failing target is
+  all a failed attempt has to report. Only when every target passes does the whole-suite run of
+  R9.1b follow, and it alone decides GREEN, so a passing GREEN proves exactly what R9.1b says. That
+  whole-suite run is the attempt's last invocation, which is the one the close sweep's skip
+  compares against (§6.1). A target that fails while something else also broke is reported first;
+  the other breakage is reported once the target passes. Decided in #149.
 - **R9.2** On the transition out of `AWAITING_REFACTOR`, the close sweep runs: the cycle's own
   projects, plus every project **downstream of an artifact the cycle modified** per the
   `consumed_by` edges in §7.1, plus lint and typecheck for each. Projects with
@@ -863,7 +870,7 @@ Adapter.typecheck(project)               -> GateResult
 | Fact | Source |
 |---|---|
 | RED-first violation | invocation verdict in `AWAITING_TEST` |
-| Implementation attempts | `COUNT(invocation)` where phase = `AWAITING_IMPL` |
+| Implementation attempts | `COUNT(invocation)` where phase = `AWAITING_IMPL` and `others_observed = 0`: the target-only run every attempt starts with (R9.1e). A cycle recorded before R9.1e has none, and counts every `AWAITING_IMPL` invocation |
 | Convergence vs thrash | trajectory of `other_failures` across attempts in a cycle |
 | Implementation written during RED | staged-set classification at the RED commit (R9.14) — exact, both languages |
 | Stub-only *content* during RED | Python: `ast` check that added function bodies are sentinels. TypeScript: line-count heuristic only. **The metric is labelled partial for TS rather than reported as uniform.** Secondary to R9.14 |
