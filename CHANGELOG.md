@@ -27,8 +27,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   worktree" stand for isolation: a `ledger isolation` notice says the ledger is
   owned by the same uid that runs the agent. The README and SECURITY.md say the
   same. Single-user installs behave exactly as before.
+- **RED runs only the target test** (#148). `AWAITING_TEST`, `AWAITING_PIN` and
+  `tdd sensitivity check` now run the target alone: pytest runs the owning suite's
+  collect command with the node id, and vitest filters to the file and an anchored,
+  escaped `-t` name. A failure elsewhere no longer blocks RED. It is caught at
+  GREEN, which runs the whole suite for **every** adapter. A collection error in
+  the target's own file is still `not_collected`. A target adopted in place of the
+  declared id is run in the same advance. The ledger is now schema 12:
+  `invocation.others_observed` is `0` for a target-only run.
 
 ### Fixed
+
+- **GREEN ran only the target on cargo, gradle, xctest and exec** (#153), so a
+  regression elsewhere reached the close sweep unseen, and the sweep could skip the
+  cycle's own project without the whole suite ever running. These adapters now
+  narrow only when asked for a target-only run.
 
 - **The close sweep re-ran a tree that had just passed** (#146): `gitutil.tree_hash` hashed git
   state (index entries plus the unstaged diff), so the same content hashed differently before

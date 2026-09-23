@@ -15,7 +15,7 @@ from pathlib import Path
 
 from . import runner
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 
 class LedgerVersionError(RuntimeError):
@@ -52,6 +52,8 @@ MIGRATIONS: dict[int, str] = {
         "ALTER TABLE gate_result ADD COLUMN tree_hash TEXT;"
         " ALTER TABLE gate_result ADD COLUMN skipped INTEGER NOT NULL DEFAULT 0;"
     ),
+    # v11 -> v12 added others_observed column to invocation; ALTER TABLE covers old ledgers.
+    11: "ALTER TABLE invocation ADD COLUMN others_observed INTEGER NOT NULL DEFAULT 1;",
 }
 
 SCHEMA = """
@@ -151,6 +153,7 @@ CREATE TABLE IF NOT EXISTS invocation (
     total_passed INTEGER NOT NULL DEFAULT 0,
     total_failed INTEGER NOT NULL DEFAULT 0,
     other_failures TEXT NOT NULL,       -- json, baseline-subtracted
+    others_observed INTEGER NOT NULL DEFAULT 1,  -- 0: a target-only run saw nothing else
     duration_ms INTEGER NOT NULL DEFAULT 0,
     retried INTEGER NOT NULL DEFAULT 0,
     tree_hash TEXT,

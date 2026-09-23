@@ -301,12 +301,14 @@ class GradleAdapter(Adapter):
     # Suite run
     # ------------------------------------------------------------------
 
-    def run(self, target: str | None = None) -> Verdict:
+    def run(self, target: str | None = None, *, target_only: bool = False) -> Verdict:
         verdict = Verdict(project=self.project.name, adapter=self.name, target=target)
         env = self._suite_env(None)
 
         cmd = self._test_cmd()
-        if target is not None:
+        # Narrowed only for a target-only run (R9.1a); GREEN reads the target from the
+        # whole run's XML (R9.1b).
+        if target is not None and target_only:
             native = self.strip(target)
             cmd = f"{cmd} --tests {shlex.quote(self._gradle_filter(native))}"
 

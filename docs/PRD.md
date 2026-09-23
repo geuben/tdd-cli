@@ -161,6 +161,7 @@ One execution of one project's test suite. **Never overwritten; append-only.**
 | `target_failure_excerpt` | truncated |
 | `total_passed`, `total_failed` | |
 | `other_failures` | after baseline subtraction (§9.2) |
+| `others_observed` | `1` when the run could see failures outside the target; `0` for a target-only run (R9.1a), whose `other_failures` is `[]` because nothing else ran, not because nothing else failed |
 | `lint_outcome`, `typecheck_outcome` | per §9.4 |
 | `duration_ms`, `started_at` | |
 
@@ -229,8 +230,8 @@ AWAITING_TEST ──advance──▶ AWAITING_IMPL ──advance──▶ AWAITI
 
 | Phase | Agent's job | `advance` passes when |
 |---|---|---|
-| `AWAITING_TEST` | write exactly one failing test | target **fails**, no new failures elsewhere |
-| `AWAITING_IMPL` | write the minimum implementation | target **passes**, no new failures elsewhere |
+| `AWAITING_TEST` | write exactly one failing test | target **fails**; only the target runs (R9.1a) |
+| `AWAITING_IMPL` | write the minimum implementation | target **passes**, no new failures elsewhere; the whole suite runs (R9.1b) |
 | `AWAITING_REFACTOR` | refactor, or nothing | lint/typecheck clean and the close sweep green (R9.2). The cycle's own suites are **skipped** when the tree hash is unchanged since the GREEN commit — they just passed on an identical tree. The downstream sweep always runs, having not run yet. |
 
 Outcomes that are not simple advancement:
@@ -349,8 +350,9 @@ Requirements:
 - **R7.8** Generator tools that are not hand-edited during TDD — `codegen` being the motivating
   case — are modelled as artifact regeneration commands, never as projects.
 - **R7.12** A project declares its own suite command (`test_command`, and `collect_command` for
-  collection). Adapters append only reporting flags: parallelism, plugins and markers stay
-  exactly as the project declared, so the suite under TDD is the suite the team trusts.
+  collection). Adapters append only reporting flags — and, for a target-only run (R9.1a),
+  the selector that picks the target: parallelism, plugins and markers stay exactly as the
+  project declared, so the suite under TDD is the suite the team trusts.
 - **R7.13** A project may declare **per-pattern suite overrides**: an alternate `test_command`
   (plus optional `collect_command` and `env`) for files matching a root-relative pattern.
   Collection and suite runs union the default suite with every override suite, so a cycle can
@@ -573,9 +575,27 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
 ## 9. Execution semantics
 
 ### 9.1 Regression scope
-- **R9.1** During `AWAITING_TEST` and `AWAITING_IMPL`, the suites of the **union of projects named
-  by the cycle's targets** run. For an ordinary cycle that is one project; for a contract cycle
-  (§9.3) it is all projects the cycle spans.
+- **R9.1** A cycle's phases run in the **union of projects named by the cycle's targets**. For an
+  ordinary cycle that is one project; for a contract cycle (§9.3) it is all projects the cycle
+  spans. How much of each project's suite runs depends on the phase (R9.1a–R9.1c).
+- **R9.1a** `AWAITING_TEST` and `AWAITING_PIN` run **only the target tests**, for every adapter
+  that can select a single test id. RED asks one question: does the named test fail? A collection
+  error in the target's own file is still caught, because it is reported for the target itself,
+  and it remains `not_collected` (§6.1). Failures elsewhere are **not observed** at RED: the
+  invocation records `others_observed = 0`, and RED is never blocked by failures outside the
+  cycle. A target adopted in place of the declared id (R8.9) is run in the same advance when
+  the target-only run did not execute it.
+- **R9.1b** `AWAITING_IMPL` runs the **whole suite** of each project, for **every** adapter,
+  and reads the target outcome from that run. This is what makes R9.1a safe. A RED that breaks
+  a shared fixture or helper is caught at GREEN, and it is blamed on the same cycle, because the
+  GREEN invocation carries the cycle id. It is also what lets the close sweep skip the cycle's own
+  suites when the tree is unchanged since GREEN (§6.1).
+- **R9.1c** `tdd sensitivity check` runs only the target tests. It asks whether the target fails
+  with the mutation in place, and nothing else.
+- **R9.1d** Rationale: on a 33-second suite, running the whole suite at RED cost 16 minutes of a
+  72-minute run (#145), and the time grows with suite size. The guarantee that every phase sees
+  the whole suite is given up at RED only. GREEN keeps it, because a whole-suite run at GREEN is
+  what blames a regression on a cycle. Decided in #148.
 - **R9.2** On the transition out of `AWAITING_REFACTOR`, the close sweep runs: the cycle's own
   projects, plus every project **downstream of an artifact the cycle modified** per the
   `consumed_by` edges in §7.1, plus lint and typecheck for each. Projects with
@@ -651,6 +671,8 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   wrong reused baseline is recoverable via `resume --unblock --accept-failures` (R9.5b),
   which treats a reused baseline row as an ordinary row, for tests that fail at the start sha.
 - **R9.6** Baseline failures are subtracted from `other_failures` in every subsequent invocation.
+  A target-only invocation (R9.1a) has nothing to subtract from: it records `others_observed = 0`,
+  and its empty `other_failures` must not be read as a clean run.
   A baseline row is only ever captured from `run.start_sha`, never from the current tree.
 - **R9.7** A baseline failure that starts passing is recorded, not ignored.
 - **R9.5g** `run start` refuses a baseline whose failure ratio exceeds the implausibility threshold

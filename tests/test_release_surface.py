@@ -216,3 +216,18 @@ def test_gate_result_gains_tree_hash_and_skipped_columns(tmp_path, ledger_home):
     cols2 = {r[1] for r in reopened.db.execute("PRAGMA table_info(gate_result)").fetchall()}
     assert "tree_hash" in cols2
     assert "skipped" in cols2
+
+
+def test_invocation_gains_others_observed_column(tmp_path, ledger_home):
+    ledger = Ledger(tmp_path / "somerepo")
+    fresh = {r[1] for r in ledger.db.execute("PRAGMA table_info(invocation)").fetchall()}
+
+    # Migration path: force back to v11 (before the column), drop it if present, reopen
+    ledger._write("UPDATE meta SET value = '11' WHERE key = 'schema_version'", ())
+    if "others_observed" in fresh:
+        ledger.db.execute("ALTER TABLE invocation DROP COLUMN others_observed")
+    ledger.db.close()
+
+    reopened = Ledger(tmp_path / "somerepo")
+    migrated = {r[1] for r in reopened.db.execute("PRAGMA table_info(invocation)").fetchall()}
+    assert "others_observed" in fresh & migrated

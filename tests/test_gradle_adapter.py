@@ -285,10 +285,26 @@ def test_targeted_run_appends_tests_filter(tmp_path):
         return (0, "", "")
 
     with patch.object(type(adapter), "_run_suite", side_effect=capture):
-        adapter.run(PASS)
+        adapter.run(PASS, target_only=True)
 
     assert len(commands_run) == 1
     assert "--tests com.example.PollCadenceTest.scalesOnlyUnderE2E" in commands_run[0]
+
+
+def test_a_run_with_a_target_but_not_target_only_has_no_tests_filter(tmp_path):
+    """GREEN (R9.1b): the target is read from the whole run's XML, not narrowed to."""
+    adapter = make_adapter(tmp_path)
+    commands_run = []
+
+    def capture(cmd, env=None):
+        commands_run.append(cmd)
+        write_results(adapter, JUNIT_XML)
+        return (0, "", "")
+
+    with patch.object(type(adapter), "_run_suite", side_effect=capture):
+        adapter.run(PASS)
+
+    assert "--tests" not in commands_run[0]
 
 
 def test_full_suite_run_has_no_tests_filter(tmp_path):

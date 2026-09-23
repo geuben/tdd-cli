@@ -122,7 +122,20 @@ class PytestAdapter(Adapter):
         finally:
             actor.current().remove_tree(tmp)
 
-    def run(self, target: str | None = None) -> Verdict:
+    def _run_invocations(
+        self, target: str | None, target_only: bool
+    ) -> list[tuple[str, dict[str, str] | None]]:
+        """Every suite, or — for a target-only run (R9.1a) — the owning suite's collect
+        command with the node id appended. Not `test_command`: one scoped to a path
+        (`pytest tests/`) runs that whole path however many node ids follow it, while
+        the collect command is the one the registry already hands a path (R10.3)."""
+        if not (target_only and target is not None):
+            return self._suite_invocations()
+        native = self.strip(target)
+        base, env = self._collect_cmd_for(native.split("::", 1)[0])
+        return [(f"{base} {shlex.quote(native)}", env)]
+
+    def run(self, target: str | None = None, *, target_only: bool = False) -> Verdict:
         verdict = Verdict(project=self.project.name, adapter=self.name, target=target)
         # Union across the default suite and every override suite (R7.13). A suite
         # that produces no report is a loud error, not a silent gap: swallowing it
@@ -131,7 +144,7 @@ class PytestAdapter(Adapter):
         tests: list[dict] = []
         collectors: list[dict] = []
         suite_ids: list[set[str]] = []
-        for base_cmd, extra_env in self._suite_invocations():
+        for base_cmd, extra_env in self._run_invocations(target, target_only):
             report, error = self._suite_report(base_cmd, extra_env)
             if report is None:
                 verdict.error = error
