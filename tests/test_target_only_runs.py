@@ -37,3 +37,24 @@ def test_a_target_only_pytest_run_executes_only_the_target(tmp_path):
     v = a.run("backend::tests/test_two.py::test_a", target_only=True)
 
     assert sorted(v.passed + v.failed) == ["backend::tests/test_two.py::test_a"]
+
+
+def test_a_target_only_pytest_run_uses_the_owning_override(tmp_path):
+    a = _pytest(
+        tmp_path,
+        extra=(
+            "\n[[project.backend.override]]\n"
+            'pattern      = "tests/special/"\n'
+            'test_command = "pytest tests/special/"\n'
+            'env          = { FLAG = "on" }\n'
+        ),
+    )
+    special = tmp_path / "backend" / "tests" / "special"
+    special.mkdir()
+    (special / "test_flag.py").write_text(
+        'import os\n\n\ndef test_flag():\n    assert os.environ.get("FLAG") == "on"\n'
+    )
+
+    v = a.run("backend::tests/special/test_flag.py::test_flag", target_only=True)
+
+    assert v.target_outcome == "passed"
