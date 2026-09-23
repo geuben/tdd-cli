@@ -231,6 +231,21 @@ def test_targeted_run_appends_only_testing_flag(tmp_path):
     assert "-only-testing:AppTests/PollCadenceTests/testFoo" in commands_run[0]
 
 
+def test_a_run_with_a_target_but_not_target_only_has_no_only_testing(tmp_path):
+    """GREEN (R9.1b): the target is read from the whole run's case lines."""
+    adapter = make_adapter(tmp_path)
+    commands_run = []
+
+    def capture_suite(cmd, env=None):
+        commands_run.append(cmd)
+        return (0, XCODEBUILD_OUTPUT, "")
+
+    with patch.object(type(adapter), "_run_suite", side_effect=capture_suite):
+        adapter.run("native-ios::AppTests/PollCadenceTests/testFoo")
+
+    assert "-only-testing:" not in commands_run[0]
+
+
 def test_full_suite_run_does_not_add_only_testing(tmp_path):
     adapter = make_adapter(tmp_path)
     commands_run = []
