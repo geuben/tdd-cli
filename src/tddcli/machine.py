@@ -193,6 +193,7 @@ class Engine:
         cycle_row,
         phase: str,
         retried: bool = False,
+        target_only: bool = False,
     ) -> tuple[dict[str, str], list[str], list, str]:
         """Run each project once. Returns (target outcomes, other failures, verdicts, failure text)."""
         baselines = self._baselines()

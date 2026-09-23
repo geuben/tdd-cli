@@ -122,7 +122,7 @@ class PytestAdapter(Adapter):
         finally:
             actor.current().remove_tree(tmp)
 
-    def run(self, target: str | None = None) -> Verdict:
+    def run(self, target: str | None = None, *, target_only: bool = False) -> Verdict:
         verdict = Verdict(project=self.project.name, adapter=self.name, target=target)
         # Union across the default suite and every override suite (R7.13). A suite
         # that produces no report is a loud error, not a silent gap: swallowing it

@@ -301,7 +301,7 @@ class GradleAdapter(Adapter):
     # Suite run
     # ------------------------------------------------------------------
 
-    def run(self, target: str | None = None) -> Verdict:
+    def run(self, target: str | None = None, *, target_only: bool = False) -> Verdict:
         verdict = Verdict(project=self.project.name, adapter=self.name, target=target)
         env = self._suite_env(None)
 

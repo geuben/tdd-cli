@@ -90,7 +90,7 @@ class VitestAdapter(Adapter):
     def _collect_cmd(self) -> str:
         return self.project.collect_command or "npx vitest list"
 
-    def run(self, target: str | None = None) -> Verdict:
+    def run(self, target: str | None = None, *, target_only: bool = False) -> Verdict:
         verdict = Verdict(project=self.project.name, adapter=self.name, target=target)
         # Union across the default suite and every override suite (R7.13). A suite
         # producing no JSON is a loud error, not a silent gap: swallowing it would

@@ -139,7 +139,7 @@ class Adapter:
         """
         return test_id
 
-    def run(self, target: str | None = None) -> Verdict:
+    def run(self, target: str | None = None, *, target_only: bool = False) -> Verdict:
         raise NotImplementedError
 
     def _run_suite(
