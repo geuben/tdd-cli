@@ -100,3 +100,17 @@ def test_red_records_others_unobserved_and_green_records_them_observed(repo):
     observed = _observed_by_phase(repo, "AWAITING_TEST", "AWAITING_IMPL")
 
     assert observed == [("AWAITING_TEST", 0), ("AWAITING_IMPL", 1)]
+
+
+PIN = "pin_cycle: true\n    "
+
+
+def test_a_pin_is_not_blocked_by_a_failing_test_elsewhere(repo):
+    _start(repo, "backend", "tests/test_smoke.py::test_smoke", kind=PIN)
+    (repo / "backend" / "tests" / "test_other.py").write_text(
+        "def test_other():\n    assert False\n"
+    )
+
+    out = run_cli(repo, "advance")
+
+    assert out["next_action"]["verb"] == "run_sensitivity_check", out
