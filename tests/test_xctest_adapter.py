@@ -225,7 +225,7 @@ def test_targeted_run_appends_only_testing_flag(tmp_path):
         return (0, XCODEBUILD_OUTPUT, "")
 
     with patch.object(type(adapter), "_run_suite", side_effect=capture_suite):
-        adapter.run(target)
+        adapter.run(target, target_only=True)
 
     assert len(commands_run) == 1
     assert "-only-testing:AppTests/PollCadenceTests/testFoo" in commands_run[0]

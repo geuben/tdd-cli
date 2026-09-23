@@ -253,7 +253,9 @@ class XCTestAdapter(Adapter):
         env = self._suite_env(None)
 
         cmd = self._test_cmd()
-        if target is not None:
+        # Narrowed only for a target-only run (R9.1a); GREEN reads the target from the
+        # whole run's case lines (R9.1b).
+        if target is not None and target_only:
             native = self.strip(target)
             cmd = f"{cmd} -only-testing:{native}"
 
