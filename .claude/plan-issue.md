@@ -38,3 +38,13 @@
   the cycle's own close-sweep suite to run must make a content edit first, or the §6.1 skip fires.
 - A plan that makes a dead condition live must probe what its consequent skips. #146's
   `skip_own` had never fired, and it silently dropped the cycle's lint/typecheck gates as well.
+- To find the test blast radius of a change to what a phase runs, simulate the whole change
+  with a quick hack in a scratch `git worktree` and run the suite there. For #148 it found
+  exactly 6 breaking tests, 3 of them in adoption (`tests/test_advance_adoption.py`), which
+  reads the adopted target's outcome from the verdicts the run already produced.
+- Narrowing a suite to one test: appending a pytest node id to a **path-scoped**
+  `test_command` (`pytest tests/`) still runs the whole path. Narrow with the owning suite's
+  collect command (`PytestAdapter._collect_cmd_for`). vitest's `-t` is an unanchored regex over
+  the space-joined `fullName`. Anchor it and escape only the JavaScript metacharacters.
+- exec ids are file paths, so the `_disambiguate`-resolved adoption branch cannot be reached
+  from an exec end-to-end test. Only a single-candidate adoption can.
