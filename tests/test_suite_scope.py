@@ -59,3 +59,14 @@ def test_an_adopted_target_is_evaluated_in_the_same_advance(repo):
     out = run_cli(repo, "advance")
 
     assert out["next_action"]["verb"] == "write_implementation", out
+
+
+def test_red_is_not_blocked_by_a_failing_test_elsewhere(repo):
+    _start(repo, "backend", "tests/test_add.py::test_adding")
+    tests = repo / "backend" / "tests"
+    (tests / "test_other.py").write_text("def test_other():\n    assert False\n")
+    (tests / "test_add.py").write_text("def test_adding():\n    assert False\n")
+
+    out = run_cli(repo, "advance")
+
+    assert out["next_action"]["verb"] == "write_implementation", out
