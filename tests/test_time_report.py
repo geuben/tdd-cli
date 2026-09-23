@@ -93,3 +93,13 @@ def test_metrics_reports_suite_time_by_phase_and_the_wall_clock(tmp_path, ledger
             "CLOSE_SWEEP": {"runs": 2, "suite_s": 60.0},
         },
     }
+
+
+def test_metrics_measures_a_live_runs_wall_clock_to_now(tmp_path, ledger_home):
+    ledger, run_id = _ledger(tmp_path)
+    ledger._write("UPDATE run SET ended_at = NULL, outcome = NULL WHERE id = ?", (run_id,))
+
+    m = render.metrics(ledger, "/wt")["runs"][0]
+
+    # Started 2026-09-01 and still running: far more than the ten minutes it had at 10:10.
+    assert m["time"]["wall_clock_s"] > 600
