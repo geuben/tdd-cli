@@ -103,3 +103,28 @@ def test_metrics_measures_a_live_runs_wall_clock_to_now(tmp_path, ledger_home):
 
     # Started 2026-09-01 and still running: far more than the ten minutes it had at 10:10.
     assert m["time"]["wall_clock_s"] > 600
+
+
+TIME_SECTION = """
+- Wall clock: 10.0 min. Suite: 3.7 min (37%).
+
+| Phase | Suite runs | Suite (min) | Average (s) |
+|---|---|---|---|
+| AWAITING_TEST | 2 | 1.0 | 30.0 |
+| AWAITING_IMPL | 3 | 1.7 | 34.0 |
+| CLOSE_SWEEP | 2 | 1.0 | 30.0 |
+
+| Cycle | Wall (min) | Suite (min) | Suite runs |
+|---|---|---|---|
+| 1 | 4.0 | 1.5 | 3 |
+| 2 | — | 2.2 | 4 |
+"""
+
+
+def test_the_friction_log_carries_a_time_section(tmp_path, ledger_home):
+    ledger, run_id = _ledger(tmp_path)
+
+    text = render.friction_log(ledger, ledger.one("SELECT * FROM run WHERE id = ?", (run_id,)))
+
+    section = text.split("\n## Time\n", 1)[1].split("\n## ", 1)[0] if "\n## Time\n" in text else ""
+    assert section.strip() == TIME_SECTION.strip()
