@@ -245,6 +245,14 @@ def test_run_merges_stderr_into_stdout(tmp_path):
     assert cmd.endswith("2>&1"), cmd
 
 
+def test_a_run_with_a_target_but_not_target_only_runs_the_whole_suite(tmp_path):
+    """GREEN (R9.1b): the target is read from the whole run, not narrowed to."""
+    a = make_adapter(tmp_path)
+    with patch.object(CargoAdapter, "_run_suite", return_value=(101, FULL_RUN, "")) as rs:
+        a.run(INT_PASS)
+    assert "--exact" not in rs.call_args.args[0]
+
+
 # ---------------------------------------------------------------------------
 # Suite run parsing
 # ---------------------------------------------------------------------------
