@@ -133,3 +133,19 @@ def test_a_sensitivity_check_runs_only_the_target(repo):
     observed = _observed_by_phase(repo, "SENSITIVITY")
 
     assert observed == [("SENSITIVITY", 0)]
+
+
+def test_green_on_an_exec_project_is_blocked_by_a_failing_script_elsewhere(repo):
+    """R9.1b for an adapter that can narrow: GREEN is the whole suite, so the
+    close-sweep skip after it is sound (#153)."""
+    _exec_repo(repo)
+    _start(repo, "gates", "scripts/check-answer.sh")
+    gates = repo / "gates"
+    _sh(gates / "scripts" / "check-answer.sh", 'test "$(cat lib/answer.txt)" = 42')
+    run_cli(repo, "advance")
+    (gates / "lib" / "answer.txt").write_text("42\n")
+    (gates / "lib" / "mode.txt").write_text("new\n")  # breaks the committed check-mode.sh
+
+    out = run_cli(repo, "advance")
+
+    assert out["next_action"]["verb"] == "fix_regression", out
