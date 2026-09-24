@@ -1361,6 +1361,8 @@ def cmd_run_abandon(args) -> Envelope:
         at=at,
     )
     ledger.insert("human_intervention", run_id=run["id"], note=f"abandoned: {args.reason}", at=at)
+    ledger.release_claim(run["worktree_path"])
+    ledger.release_advance_claim(run["worktree_path"])
     return Envelope(
         result={"run_id": run["id"]},
         next_action=NextAction(Verb.COMPLETE, f"Run {run['id']} abandoned."),
