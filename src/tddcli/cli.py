@@ -1336,6 +1336,14 @@ def cmd_run_abandon(args) -> Envelope:
             return failure(f"no run {args.run} in this ledger", reason="run_not_found")
         if run["ended_at"] is not None and run["outcome"] != "blocked":
             return failure(f"run {args.run} already ended {run['outcome']}", reason="run_ended")
+        # By id only when the worktree is gone or is the caller's own: on a split runner
+        # every agent reaches the same ledger, and one must not end another's live run.
+        if run["worktree_path"] != str(worktree) and Path(run["worktree_path"]).exists():
+            return failure(
+                f"run {args.run}'s worktree {run['worktree_path']} still exists;"
+                " abandon it from there",
+                reason="worktree_exists",
+            )
     else:
         run = ledger.active_run(str(worktree)) or _latest_blocked_run(ledger, worktree)
         if run is None:
