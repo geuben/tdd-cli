@@ -62,3 +62,13 @@ def test_metrics_reports_the_reason_and_who_abandoned_the_run(repo):
             "executor_source": "declared",
         },
     }
+
+
+def test_abandoning_records_a_human_intervention(repo):
+    plan = register(repo)
+    start(repo, plan)
+
+    run_cli(repo, "run", "abandon", "--reason", "superseded by #145")
+
+    notes = [r["note"] for r in ledger(repo).all("SELECT note FROM human_intervention")]
+    assert notes == ["abandoned: superseded by #145"]
