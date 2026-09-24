@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import socket
+import subprocess
+
 from conftest import current_user, git, run_cli, write_plan
 from tddcli import gitutil
 from tddcli.ledger import Ledger
@@ -211,3 +214,19 @@ def test_abandon_by_id_refuses_a_run_whose_worktree_still_exists(repo, tmp_path)
     out = run_cli(repo, "run", "abandon", "--run", str(run_id), "--reason", "x")
 
     assert (out["result"].get("reason"), outcome(repo, run_id)) == ("worktree_exists", None)
+
+
+def test_abandoning_releases_the_worktrees_claims(repo):
+    plan = register(repo)
+    start(repo, plan)
+    wt = str(gitutil.worktree_root(repo))
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    claims = ledger(repo)
+    claims.claim(wt, socket.gethostname(), dead.pid, 1)
+    claims.claim_advance(wt, socket.gethostname(), dead.pid)
+
+    run_cli(repo, "run", "abandon", "--reason", "superseded by #145")
+
+    f = run_cli(repo, "fleet", "--json")["result"]
+    assert (f["collecting"], f["advancing"]) == ([], [])
