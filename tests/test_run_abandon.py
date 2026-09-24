@@ -114,3 +114,16 @@ def test_abandon_by_id_ends_a_run_whose_worktree_is_gone(repo, tmp_path):
     )
 
     assert outcome(repo, run_id) == "abandoned"
+
+
+def test_a_new_run_starts_in_a_fresh_worktree_after_abandon(repo, tmp_path):
+    plan = register(repo)
+    wt = add_worktree(repo, tmp_path / "wt-a")
+    start(wt, plan)
+    run_id = last_run_id(repo)
+    remove_worktree(repo, wt)
+    run_cli(repo, "run", "abandon", "--run", str(run_id), "--reason", "superseded by #145")
+
+    add_worktree(repo, wt)
+
+    assert run_cli(wt, "run", "start", "--plan", plan)["ok"] is True
