@@ -1327,7 +1327,11 @@ def cmd_run_abandon(args) -> Envelope:
     if args.run is not None:
         run = ledger.one("SELECT * FROM run WHERE id = ?", (args.run,))
     else:
-        run = ledger.active_run(str(worktree))
+        run = ledger.active_run(str(worktree)) or ledger.one(
+            "SELECT * FROM run WHERE worktree_path = ? AND outcome = 'blocked'"
+            " ORDER BY id DESC LIMIT 1",
+            (str(worktree),),
+        )
     executor = identity.resolve(worktree)
     at = now()
     ledger.update("run", run["id"], ended_at=at, outcome="abandoned")
