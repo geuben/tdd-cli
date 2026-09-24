@@ -157,3 +157,13 @@ def test_abandon_accepts_live_and_blocked_runs_in_every_accepted_form(repo, tmp_
         "abandoned",
         "abandoned",
     ]
+
+
+def test_abandon_refuses_a_blank_reason(repo):
+    plan = register(repo)
+    start(repo, plan)
+    run_id = last_run_id(repo)
+
+    out = run_cli(repo, "run", "abandon", "--reason", "   ")
+
+    assert (out["result"].get("reason"), outcome(repo, run_id)) == ("reason_required", None)
