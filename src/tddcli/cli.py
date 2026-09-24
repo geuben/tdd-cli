@@ -1325,6 +1325,16 @@ def cmd_resume(args) -> Envelope:
     )
 
 
+def _calling_account() -> str:
+    """The account that asked. On a split runner that is the agent behind sudo, which
+    sets `SUDO_USER` itself; elsewhere the effective uid. Never `getpass.getuser()`: it
+    trusts `LOGNAME`/`USER`, which the caller controls."""
+    split = runner_mod.load()
+    if split is not None and split.role == "runner" and os.environ.get("SUDO_USER"):
+        return os.environ["SUDO_USER"]
+    return pwd.getpwuid(os.geteuid()).pw_name
+
+
 def cmd_run_abandon(args) -> Envelope:
     if not args.reason.strip():
         return failure("--reason must say why the run is abandoned", reason="reason_required")
@@ -1363,7 +1373,7 @@ def cmd_run_abandon(args) -> Envelope:
         "abandonment",
         run_id=run["id"],
         reason=args.reason,
-        account=pwd.getpwuid(os.geteuid()).pw_name,
+        account=_calling_account(),
         executor_model=executor.model,
         executor_source=executor.source,
         at=at,

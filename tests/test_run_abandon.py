@@ -245,9 +245,7 @@ def test_abandon_refuses_while_an_advance_is_in_flight(repo):
     assert (out["result"].get("reason"), outcome(repo, run_id)) == ("advance_in_flight", None)
 
 
-def test_a_split_runner_records_the_calling_agent_as_the_account(
-    repo, split_runner, monkeypatch
-):
+def test_a_split_runner_records_the_calling_agent_as_the_account(repo, split_runner, monkeypatch):
     monkeypatch.setenv("SUDO_USER", "agent-7")
     plan = register(repo)
     start(repo, plan)
