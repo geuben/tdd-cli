@@ -243,3 +243,16 @@ def test_abandon_refuses_while_an_advance_is_in_flight(repo):
     out = run_cli(repo, "run", "abandon", "--reason", "superseded by #145")
 
     assert (out["result"].get("reason"), outcome(repo, run_id)) == ("advance_in_flight", None)
+
+
+def test_a_split_runner_records_the_calling_agent_as_the_account(
+    repo, split_runner, monkeypatch
+):
+    monkeypatch.setenv("SUDO_USER", "agent-7")
+    plan = register(repo)
+    start(repo, plan)
+
+    run_cli(repo, "run", "abandon", "--reason", "superseded by #145")
+
+    entry = run_cli(repo, "metrics")["result"]["runs"][0]
+    assert entry["abandoned"]["by"]["account"] == "agent-7"
