@@ -1332,6 +1332,8 @@ def cmd_run_abandon(args) -> Envelope:
     ledger = Ledger(gitutil.repo_identity(worktree))
     if args.run is not None:
         run = ledger.one("SELECT * FROM run WHERE id = ?", (args.run,))
+        if run is None:
+            return failure(f"no run {args.run} in this ledger", reason="run_not_found")
     else:
         run = ledger.active_run(str(worktree)) or _latest_blocked_run(ledger, worktree)
         if run is None:
