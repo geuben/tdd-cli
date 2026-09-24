@@ -1264,6 +1264,14 @@ def _accept_failures_into_baseline(
     return accepted, refused
 
 
+def _latest_blocked_run(ledger: Ledger, worktree: Path) -> sqlite3.Row | None:
+    return ledger.one(
+        "SELECT * FROM run WHERE worktree_path = ? AND outcome = 'blocked'"
+        " ORDER BY id DESC LIMIT 1",
+        (str(worktree),),
+    )
+
+
 def cmd_resume(args) -> Envelope:
     worktree = _worktree()
     cfg = config_mod.load(worktree)
@@ -1278,11 +1286,7 @@ def cmd_resume(args) -> Envelope:
     if args.unblock:
         if run is not None:
             return failure("run is already live; --unblock applies to a blocked run")
-        blocked = ledger.one(
-            "SELECT * FROM run WHERE worktree_path = ? AND outcome = 'blocked'"
-            " ORDER BY id DESC LIMIT 1",
-            (str(worktree),),
-        )
+        blocked = _latest_blocked_run(ledger, worktree)
         if blocked is None:
             return failure("no blocked run to unblock in this worktree")
         if not args.note:
@@ -1327,11 +1331,7 @@ def cmd_run_abandon(args) -> Envelope:
     if args.run is not None:
         run = ledger.one("SELECT * FROM run WHERE id = ?", (args.run,))
     else:
-        run = ledger.active_run(str(worktree)) or ledger.one(
-            "SELECT * FROM run WHERE worktree_path = ? AND outcome = 'blocked'"
-            " ORDER BY id DESC LIMIT 1",
-            (str(worktree),),
-        )
+        run = ledger.active_run(str(worktree)) or _latest_blocked_run(ledger, worktree)
     executor = identity.resolve(worktree)
     at = now()
     ledger.update("run", run["id"], ended_at=at, outcome="abandoned")
