@@ -167,3 +167,13 @@ def test_abandon_refuses_a_blank_reason(repo):
     out = run_cli(repo, "run", "abandon", "--reason", "   ")
 
     assert (out["result"].get("reason"), outcome(repo, run_id)) == ("reason_required", None)
+
+
+def test_abandon_without_a_live_or_blocked_run_is_refused(repo):
+    plan = register(repo)
+    start(repo, plan)
+    run_cli(repo, "cycle", "skip", "--reason", "r")
+
+    out = run_cli(repo, "run", "abandon", "--reason", "nothing to end")
+
+    assert out["result"].get("reason") == "no_run"
