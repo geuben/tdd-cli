@@ -72,3 +72,12 @@ def test_abandoning_records_a_human_intervention(repo):
 
     notes = [r["note"] for r in ledger(repo).all("SELECT note FROM human_intervention")]
     assert notes == ["abandoned: superseded by #145"]
+
+
+def test_fleet_stops_listing_an_abandoned_run(repo):
+    plan = register(repo)
+    start(repo, plan)
+
+    run_cli(repo, "run", "abandon", "--reason", "superseded by #145")
+
+    assert run_cli(repo, "fleet", "--json")["result"]["runs"] == []
