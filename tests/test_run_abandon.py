@@ -200,3 +200,14 @@ def test_abandon_refuses_a_run_that_already_ended(repo):
     b = run_cli(repo, "run", "abandon", "--run", str(b_id), "--reason", "x")
 
     assert [a["result"].get("reason"), b["result"].get("reason")] == ["run_ended", "run_ended"]
+
+
+def test_abandon_by_id_refuses_a_run_whose_worktree_still_exists(repo, tmp_path):
+    plan = register(repo)
+    wt = add_worktree(repo, tmp_path / "wt-d")
+    start(wt, plan)
+    run_id = last_run_id(repo)
+
+    out = run_cli(repo, "run", "abandon", "--run", str(run_id), "--reason", "x")
+
+    assert (out["result"].get("reason"), outcome(repo, run_id)) == ("worktree_exists", None)
