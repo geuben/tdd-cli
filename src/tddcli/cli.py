@@ -1334,6 +1334,8 @@ def cmd_run_abandon(args) -> Envelope:
         run = ledger.one("SELECT * FROM run WHERE id = ?", (args.run,))
         if run is None:
             return failure(f"no run {args.run} in this ledger", reason="run_not_found")
+        if run["ended_at"] is not None and run["outcome"] != "blocked":
+            return failure(f"run {args.run} already ended {run['outcome']}", reason="run_ended")
     else:
         run = ledger.active_run(str(worktree)) or _latest_blocked_run(ledger, worktree)
         if run is None:
