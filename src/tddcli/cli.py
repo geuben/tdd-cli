@@ -1324,7 +1324,10 @@ def cmd_resume(args) -> Envelope:
 def cmd_run_abandon(args) -> Envelope:
     worktree = _worktree()
     ledger = Ledger(gitutil.repo_identity(worktree))
-    run = ledger.active_run(str(worktree))
+    if args.run is not None:
+        run = ledger.one("SELECT * FROM run WHERE id = ?", (args.run,))
+    else:
+        run = ledger.active_run(str(worktree))
     executor = identity.resolve(worktree)
     at = now()
     ledger.update("run", run["id"], ended_at=at, outcome="abandoned")
@@ -1734,6 +1737,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = run_p.add_parser("abandon", help="end a run that will not be finished; human only")
     s.add_argument("--reason", required=True)
+    s.add_argument("--run", type=int, default=None, help="a run whose worktree is gone")
     s.set_defaults(fn=cmd_run_abandon)
 
     s = sub.add_parser("status")
