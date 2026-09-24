@@ -177,3 +177,11 @@ def test_abandon_without_a_live_or_blocked_run_is_refused(repo):
     out = run_cli(repo, "run", "abandon", "--reason", "nothing to end")
 
     assert out["result"].get("reason") == "no_run"
+
+
+def test_abandon_refuses_an_unknown_run_id(repo):
+    register(repo)
+
+    out = run_cli(repo, "run", "abandon", "--run", "999", "--reason", "x")
+
+    assert out["result"].get("reason") == "run_not_found"
