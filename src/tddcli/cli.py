@@ -1348,6 +1348,14 @@ def cmd_run_abandon(args) -> Envelope:
         run = ledger.active_run(str(worktree)) or _latest_blocked_run(ledger, worktree)
         if run is None:
             return failure("no live or blocked run in this worktree", reason="no_run")
+    # A stale claim is released below, not obeyed; a live one means an advance is mid-flight.
+    claim = ledger.active_advance_claim(run["worktree_path"])
+    if claim is not None and not claim["stale"]:
+        return failure(
+            f"an advance is in flight (pid {claim['pid']}); stop it first",
+            reason="advance_in_flight",
+            pid=claim["pid"],
+        )
     executor = identity.resolve(worktree)
     at = now()
     ledger.update("run", run["id"], ended_at=at, outcome="abandoned")
