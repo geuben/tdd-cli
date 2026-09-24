@@ -1326,6 +1326,8 @@ def cmd_resume(args) -> Envelope:
 
 
 def cmd_run_abandon(args) -> Envelope:
+    if not args.reason.strip():
+        return failure("--reason must say why the run is abandoned", reason="reason_required")
     worktree = _worktree()
     ledger = Ledger(gitutil.repo_identity(worktree))
     if args.run is not None:
