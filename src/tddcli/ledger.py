@@ -260,6 +260,16 @@ CREATE TABLE IF NOT EXISTS human_intervention (
     at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS abandonment (
+    id INTEGER PRIMARY KEY,
+    run_id INTEGER NOT NULL UNIQUE REFERENCES run(id),
+    reason TEXT NOT NULL,
+    account TEXT NOT NULL,
+    executor_model TEXT NOT NULL,
+    executor_source TEXT NOT NULL,
+    at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS baseline_cache (
     id INTEGER PRIMARY KEY,
     project TEXT NOT NULL,

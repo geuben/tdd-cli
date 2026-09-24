@@ -1326,6 +1326,16 @@ def cmd_run_abandon(args) -> Envelope:
     ledger = Ledger(gitutil.repo_identity(worktree))
     run = ledger.active_run(str(worktree))
     ledger.update("run", run["id"], ended_at=now(), outcome="abandoned")
+    executor = identity.resolve(worktree)
+    ledger.insert(
+        "abandonment",
+        run_id=run["id"],
+        reason=args.reason,
+        account=pwd.getpwuid(os.geteuid()).pw_name,
+        executor_model=executor.model,
+        executor_source=executor.source,
+        at=now(),
+    )
     return Envelope(
         result={"run_id": run["id"]},
         next_action=NextAction(Verb.COMPLETE, f"Run {run['id']} abandoned."),

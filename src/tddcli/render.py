@@ -441,4 +441,14 @@ def metrics(ledger: Ledger, worktree: str) -> dict:
                 },
             }
         )
+        abandonment = ledger.one("SELECT * FROM abandonment WHERE run_id = ?", (run["id"],))
+        if abandonment is not None:
+            out["runs"][-1]["abandoned"] = {
+                "reason": abandonment["reason"],
+                "by": {
+                    "account": abandonment["account"],
+                    "executor": abandonment["executor_model"],
+                    "executor_source": abandonment["executor_source"],
+                },
+            }
     return out
