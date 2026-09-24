@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from conftest import run_cli, write_plan
-
 from tddcli import gitutil
 from tddcli.ledger import Ledger
 
