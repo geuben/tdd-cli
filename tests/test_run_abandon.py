@@ -185,3 +185,18 @@ def test_abandon_refuses_an_unknown_run_id(repo):
     out = run_cli(repo, "run", "abandon", "--run", "999", "--reason", "x")
 
     assert out["result"].get("reason") == "run_not_found"
+
+
+def test_abandon_refuses_a_run_that_already_ended(repo):
+    plan = register(repo)
+    start(repo, plan)
+    a_id = last_run_id(repo)
+    run_cli(repo, "cycle", "skip", "--reason", "r")
+    start(repo, plan)
+    b_id = last_run_id(repo)
+    run_cli(repo, "run", "abandon", "--reason", "superseded")
+
+    a = run_cli(repo, "run", "abandon", "--run", str(a_id), "--reason", "x")
+    b = run_cli(repo, "run", "abandon", "--run", str(b_id), "--reason", "x")
+
+    assert [a["result"].get("reason"), b["result"].get("reason")] == ["run_ended", "run_ended"]
