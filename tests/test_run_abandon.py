@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from conftest import current_user, run_cli, write_plan
+from conftest import current_user, git, run_cli, write_plan
 from tddcli import gitutil
 from tddcli.ledger import Ledger
 
@@ -35,6 +35,19 @@ def start(path, plan):
 
 def outcome(repo, run_id):
     return ledger(repo).one("SELECT outcome FROM run WHERE id = ?", (run_id,))["outcome"]
+
+
+def last_run_id(repo):
+    return ledger(repo).one("SELECT id FROM run ORDER BY id DESC LIMIT 1")["id"]
+
+
+def add_worktree(repo, path):
+    git(repo, "worktree", "add", "-q", "--detach", str(path))
+    return path
+
+
+def remove_worktree(repo, path):
+    git(repo, "worktree", "remove", "--force", str(path))
 
 
 def test_abandon_ends_the_live_run_as_abandoned(repo):
@@ -81,3 +94,23 @@ def test_fleet_stops_listing_an_abandoned_run(repo):
     run_cli(repo, "run", "abandon", "--reason", "superseded by #145")
 
     assert run_cli(repo, "fleet", "--json")["result"]["runs"] == []
+
+
+def test_abandon_by_id_ends_a_run_whose_worktree_is_gone(repo, tmp_path):
+    plan = register(repo)
+    wt = add_worktree(repo, tmp_path / "wt-a")
+    start(wt, plan)
+    run_id = last_run_id(repo)
+    remove_worktree(repo, wt)
+
+    run_cli(
+        repo,
+        "run",
+        "abandon",
+        "--run",
+        str(run_id),
+        "--reason",
+        "worktree removed; superseded by #145",
+    )
+
+    assert outcome(repo, run_id) == "abandoned"
