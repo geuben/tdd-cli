@@ -53,5 +53,9 @@
   fixed timestamps and durations. A real run through `run_cli` has wall-clock timestamps, so its
   times cannot be asserted exactly. Choose durations that are exact at one decimal, because
   Python's `round` and `:.1f` round halves unpredictably.
+- A new ledger *table* needs no `SCHEMA_VERSION` bump, and so no frozen referee: `SCHEMA` is
+  `CREATE TABLE IF NOT EXISTS`, run on every open, and an older tool never reads the table.
+  Bump only when an existing table's shape changes (`ALTER TABLE`), which older tools would
+  misread (#150).
 - A small change whose planning probe is the change itself gets implemented directly, with no
   plan (#149). Check this before writing the plan file, not after.
