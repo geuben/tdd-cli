@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import socket
 import subprocess
 
@@ -230,3 +231,15 @@ def test_abandoning_releases_the_worktrees_claims(repo):
 
     f = run_cli(repo, "fleet", "--json")["result"]
     assert (f["collecting"], f["advancing"]) == ([], [])
+
+
+def test_abandon_refuses_while_an_advance_is_in_flight(repo):
+    plan = register(repo)
+    start(repo, plan)
+    run_id = last_run_id(repo)
+    wt = str(gitutil.worktree_root(repo))
+    ledger(repo).claim_advance(wt, socket.gethostname(), os.getpid())
+
+    out = run_cli(repo, "run", "abandon", "--reason", "superseded by #145")
+
+    assert (out["result"].get("reason"), outcome(repo, run_id)) == ("advance_in_flight", None)
