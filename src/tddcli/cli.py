@@ -1321,6 +1321,17 @@ def cmd_resume(args) -> Envelope:
     )
 
 
+def cmd_run_abandon(args) -> Envelope:
+    worktree = _worktree()
+    ledger = Ledger(gitutil.repo_identity(worktree))
+    run = ledger.active_run(str(worktree))
+    ledger.update("run", run["id"], ended_at=now(), outcome="abandoned")
+    return Envelope(
+        result={"run_id": run["id"]},
+        next_action=NextAction(Verb.COMPLETE, f"Run {run['id']} abandoned."),
+    )
+
+
 def cmd_sensitivity(args) -> Envelope:
     worktree, cfg, ledger, run = _context()
     cycle = ledger.open_cycle(run["id"])
@@ -1708,6 +1719,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="override the implausibility gate and record the baseline anyway",
     )
     s.set_defaults(fn=cmd_run_start)
+
+    s = run_p.add_parser("abandon", help="end a run that will not be finished; human only")
+    s.add_argument("--reason", required=True)
+    s.set_defaults(fn=cmd_run_abandon)
 
     s = sub.add_parser("status")
     s.set_defaults(fn=cmd_status)
