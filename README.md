@@ -268,6 +268,26 @@ When the last declared cycle closes, the tool gathers every path that appeared i
   emitted (visible in `tdd metrics` and the friction log) and the run completes. The event
   makes a silent drop visible without blocking, since the file is already gone.
 
+### Abandoning a run
+
+A run that will not be finished — stopped on purpose, or blocked for good — is ended with
+`tdd run abandon --reason "<why>"` rather than `resume --unblock`. It takes the worktree's
+live run, else its most recent blocked run. It sets the run's `outcome` to `abandoned`,
+records the reason and who abandoned it (the account, and the executor identity as `run
+start` resolves it; on a split runner the account is the calling agent's `SUDO_USER`),
+records a `human_intervention`, and releases the worktree's baseline and advance claims.
+`tdd fleet` stops listing the run, `tdd metrics` reports it as `abandoned` with an
+`abandoned: {reason, by}` entry, and a new run can start at the same worktree path.
+
+When the worktree is gone, abandon by id from any worktree of the repo: `tdd run abandon
+--run <id> --reason "<why>"`. `--run` is accepted only for a run whose worktree no longer
+exists or is the caller's own, so one agent cannot end another's live run.
+
+Refusals, under `result.reason`, write nothing: `reason_required` (blank reason),
+`no_run` (no live or blocked run here), `run_not_found`, `run_ended` (already complete or
+abandoned), `worktree_exists` (`--run` names another worktree that still exists), and
+`advance_in_flight` (a live `tdd advance` holds the worktree; a stale claim is released).
+
 The gate composes with `ancillary_files`: declared paths never fire `undeclared_file_touched`,
 so they are never seen by the gate.
 
@@ -467,6 +487,7 @@ and is never reclassified as a pin.
 | `tdd note "<text>"` | attach a free-text narrative note to the current cycle or run |
 | `tdd blocker --kind --detail` | typed blocker; releases the stop hook |
 | `tdd resume [--unblock --note]` | reconstruct position; human intervention |
+| `tdd run abandon --reason <text> [--run <id>]` | end a run that will not be finished; human only |
 | `tdd log render [--out]` | project the ledger into a friction log |
 | `tdd metrics` | fidelity, attempts, violations, interventions, time |
 | `tdd fleet [--json]` | all active runs across every worktree; read-only |

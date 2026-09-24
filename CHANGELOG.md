@@ -6,6 +6,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`tdd run abandon`: end a run that will not be finished** (#150). `tdd run abandon
+  --reason <text>` ends the worktree's live or blocked run with `outcome = abandoned`;
+  `--run <id>` does the same for a run whose worktree is gone. It records the reason and
+  who did it (account and executor) in a new `abandonment` table, counts as a human
+  intervention, and releases the worktree's claims. `tdd fleet` stops listing the run,
+  `tdd metrics` reports it with an `abandoned: {reason, by}` entry, and a new run can
+  start at the same path. The table is added on open; the ledger schema version is
+  unchanged.
+
 ## [0.13.0] - 2026-09-23
 
 ### Added

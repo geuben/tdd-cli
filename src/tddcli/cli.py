@@ -1264,6 +1264,14 @@ def _accept_failures_into_baseline(
     return accepted, refused
 
 
+def _latest_blocked_run(ledger: Ledger, worktree: Path) -> sqlite3.Row | None:
+    return ledger.one(
+        "SELECT * FROM run WHERE worktree_path = ? AND outcome = 'blocked'"
+        " ORDER BY id DESC LIMIT 1",
+        (str(worktree),),
+    )
+
+
 def cmd_resume(args) -> Envelope:
     worktree = _worktree()
     cfg = config_mod.load(worktree)
@@ -1278,11 +1286,7 @@ def cmd_resume(args) -> Envelope:
     if args.unblock:
         if run is not None:
             return failure("run is already live; --unblock applies to a blocked run")
-        blocked = ledger.one(
-            "SELECT * FROM run WHERE worktree_path = ? AND outcome = 'blocked'"
-            " ORDER BY id DESC LIMIT 1",
-            (str(worktree),),
-        )
+        blocked = _latest_blocked_run(ledger, worktree)
         if blocked is None:
             return failure("no blocked run to unblock in this worktree")
         if not args.note:
@@ -1318,6 +1322,68 @@ def cmd_resume(args) -> Envelope:
             Verb.REFACTOR_OR_ADVANCE,
             f"Resumed at cycle {cycle['ordinal']}, phase {cycle['phase']}. Run `tdd advance`.",
         ),
+    )
+
+
+def _calling_account() -> str:
+    """The account that asked. On a split runner that is the agent behind sudo, which
+    sets `SUDO_USER` itself; elsewhere the effective uid. Never `getpass.getuser()`: it
+    trusts `LOGNAME`/`USER`, which the caller controls."""
+    split = runner_mod.load()
+    if split is not None and split.role == "runner" and os.environ.get("SUDO_USER"):
+        return os.environ["SUDO_USER"]
+    return pwd.getpwuid(os.geteuid()).pw_name
+
+
+def cmd_run_abandon(args) -> Envelope:
+    if not args.reason.strip():
+        return failure("--reason must say why the run is abandoned", reason="reason_required")
+    worktree = _worktree()
+    ledger = Ledger(gitutil.repo_identity(worktree))
+    if args.run is not None:
+        run = ledger.one("SELECT * FROM run WHERE id = ?", (args.run,))
+        if run is None:
+            return failure(f"no run {args.run} in this ledger", reason="run_not_found")
+        if run["ended_at"] is not None and run["outcome"] != "blocked":
+            return failure(f"run {args.run} already ended {run['outcome']}", reason="run_ended")
+        # By id only when the worktree is gone or is the caller's own: on a split runner
+        # every agent reaches the same ledger, and one must not end another's live run.
+        if run["worktree_path"] != str(worktree) and Path(run["worktree_path"]).exists():
+            return failure(
+                f"run {args.run}'s worktree {run['worktree_path']} still exists;"
+                " abandon it from there",
+                reason="worktree_exists",
+            )
+    else:
+        run = ledger.active_run(str(worktree)) or _latest_blocked_run(ledger, worktree)
+        if run is None:
+            return failure("no live or blocked run in this worktree", reason="no_run")
+    # A stale claim is released below, not obeyed; a live one means an advance is mid-flight.
+    claim = ledger.active_advance_claim(run["worktree_path"])
+    if claim is not None and not claim["stale"]:
+        return failure(
+            f"an advance is in flight (pid {claim['pid']}); stop it first",
+            reason="advance_in_flight",
+            pid=claim["pid"],
+        )
+    executor = identity.resolve(worktree)
+    at = now()
+    ledger.update("run", run["id"], ended_at=at, outcome="abandoned")
+    ledger.insert(
+        "abandonment",
+        run_id=run["id"],
+        reason=args.reason,
+        account=_calling_account(),
+        executor_model=executor.model,
+        executor_source=executor.source,
+        at=at,
+    )
+    ledger.insert("human_intervention", run_id=run["id"], note=f"abandoned: {args.reason}", at=at)
+    ledger.release_claim(run["worktree_path"])
+    ledger.release_advance_claim(run["worktree_path"])
+    return Envelope(
+        result={"run_id": run["id"]},
+        next_action=NextAction(Verb.COMPLETE, f"Run {run['id']} abandoned."),
     )
 
 
@@ -1708,6 +1774,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="override the implausibility gate and record the baseline anyway",
     )
     s.set_defaults(fn=cmd_run_start)
+
+    s = run_p.add_parser("abandon", help="end a run that will not be finished; human only")
+    s.add_argument("--reason", required=True)
+    s.add_argument("--run", type=int, default=None, help="a run whose worktree is gone")
+    s.set_defaults(fn=cmd_run_abandon)
 
     s = sub.add_parser("status")
     s.set_defaults(fn=cmd_status)
