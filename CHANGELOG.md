@@ -6,6 +6,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-24
+
 ### Added
 
 - **`tdd run abandon`: end a run that will not be finished** (#150). `tdd run abandon
