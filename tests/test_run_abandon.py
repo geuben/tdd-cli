@@ -127,3 +127,33 @@ def test_a_new_run_starts_in_a_fresh_worktree_after_abandon(repo, tmp_path):
     add_worktree(repo, wt)
 
     assert run_cli(wt, "run", "start", "--plan", plan)["ok"] is True
+
+
+def test_abandon_accepts_live_and_blocked_runs_in_every_accepted_form(repo, tmp_path):
+    plan = register(repo)
+
+    # (a) a blocked run in the caller's worktree, without --run
+    start(repo, plan)
+    a_id = last_run_id(repo)
+    run_cli(repo, "blocker", "--kind", "tooling", "--detail", "d")
+    run_cli(repo, "run", "abandon", "--reason", "blocked for good")
+
+    # (b) a blocked run by --run when its worktree is gone
+    wt_b = add_worktree(repo, tmp_path / "wt-b")
+    start(wt_b, plan)
+    b_id = last_run_id(repo)
+    run_cli(wt_b, "blocker", "--kind", "tooling", "--detail", "d")
+    remove_worktree(repo, wt_b)
+    run_cli(repo, "run", "abandon", "--run", str(b_id), "--reason", "blocked and removed")
+
+    # (c) a live run by --run from its own worktree
+    wt_c = add_worktree(repo, tmp_path / "wt-c")
+    start(wt_c, plan)
+    c_id = last_run_id(repo)
+    run_cli(wt_c, "run", "abandon", "--run", str(c_id), "--reason", "own worktree")
+
+    assert [outcome(repo, a_id), outcome(repo, b_id), outcome(repo, c_id)] == [
+        "abandoned",
+        "abandoned",
+        "abandoned",
+    ]
