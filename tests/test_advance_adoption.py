@@ -127,3 +127,40 @@ def test_adopted_passing_test_demands_sensitivity_in_one_advance(repo):
 
     out = run_cli(repo, "advance")
     assert out["next_action"]["verb"] == "run_sensitivity_check", out
+
+
+PLAN_TWO_VITEST_CYCLES = """---
+cycles:
+  - n: 1
+    project: frontend
+    title: "adds"
+    test: "src/add.test.ts > math > adds"
+    commit_red: "test: adds"
+    commit_green: "feat: add"
+  - n: 2
+    project: frontend
+    title: "subtracts"
+    test: "src/sub.test.ts > math > subtracts"
+    commit_red: "test: subtracts"
+    commit_green: "feat: sub"
+---
+"""
+
+
+def test_adoption_skips_a_test_an_earlier_cycle_targets(repo_vitest):
+    """#163: advancing before cycle 2's test exists must not adopt cycle 1's test,
+    which is new since the run started but already belongs to cycle 1 — stored in
+    the declared spelling, so the exclusion must compare normalised ids."""
+    repo = repo_vitest
+    plan = write_plan(repo, PLAN_TWO_VITEST_CYCLES)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+
+    (repo / "frontend" / "src" / "add.test.ts").write_text("case: math > adds = needs src/add.ts\n")
+    run_cli(repo, "advance")
+    (repo / "frontend" / "src" / "add.ts").write_text("export {}\n")
+    run_cli(repo, "advance")
+    run_cli(repo, "advance")
+
+    out = run_cli(repo, "advance")
+    assert out["next_action"]["verb"] == "write_test", out

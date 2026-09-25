@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 import pwd
+import shlex
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -153,6 +156,36 @@ def repo(tmp_path, ledger_home):
     (root / ".gitignore").write_text(
         ".pytest_cache/\n__pycache__/\n*.pyc\n.coverage\njsonreport*.json\n"
     )
+
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    git(root, "config", "user.email", "test@example.com")
+    git(root, "config", "user.name", "Test")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "initial")
+    return root
+
+
+FAKE_VITEST = Path(__file__).parent / "fake_vitest.py"
+
+
+@pytest.fixture
+def repo_vitest(tmp_path, ledger_home):
+    """A git repo with one vitest project, `frontend`, driven by `fake_vitest.py`:
+    a named vitest project (`[core]`) whose runner is a Python script."""
+    root = tmp_path / "workspace"
+    (root / "frontend" / "src").mkdir(parents=True)
+    fake = f"{shlex.quote(sys.executable)} {shlex.quote(str(FAKE_VITEST))}"
+    (root / "tdd.toml").write_text(
+        "[project.frontend]\n"
+        'root            = "frontend"\n'
+        'adapter         = "vitest"\n'
+        'test_paths      = ["**/*.test.ts"]\n'
+        f"test_command    = {json.dumps(fake + ' run')}\n"
+        f"collect_command = {json.dumps(fake + ' list')}\n"
+        "lint            = []\n"
+        "typecheck       = []\n"
+    )
+    (root / "frontend" / "src" / "smoke.test.ts").write_text("case: smoke > works = pass\n")
 
     subprocess.run(["git", "init", "-q", str(root)], check=True)
     git(root, "config", "user.email", "test@example.com")
