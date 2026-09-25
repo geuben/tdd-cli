@@ -17,6 +17,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   check that the default config does not reach an override's files read the same text
   listing, so a `[<project>] ` prefix meant it could never match. It now reads
   `vitest list --json`, and a listing that is not JSON fails the check, naming the command.
+- **Adoption never picks another cycle's test** (#163). When a cycle's declared test was
+  missing, `tdd advance` adopted any test new since the run started, including an earlier
+  cycle's target, so a premature advance handed cycle 1's test to cycle 2. Every target in
+  the run is now excluded, compared by normalised id.
 
 ## [0.14.0] - 2026-09-24
 

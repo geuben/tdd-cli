@@ -533,8 +533,11 @@ one has no move left but to re-run doctor and read the same output again.
 - **R8.7** A blocked run is not live. H1 must permit the agent to stop, or a blocker traps it.
 - **R8.8** `human_intervention` events are the input to interventions-per-run, the primary
   autonomy metric.
-- **R8.9** In `AWAITING_TEST`, `advance` resolves the target by diffing `collect()` against cycle
-  open. When the declared target is `not_found`, the adoption flow runs:
+- **R8.9** In `AWAITING_TEST`, `advance` resolves the target by diffing `collect()` against the
+  run's start, and never offers a test that another cycle of the run targets: an earlier cycle's
+  test is new since the start too, and adopting it would hand one test to two cycles (#163). The
+  exclusion compares `normalise_id` forms (R10.8), because a target may be stored in its declared
+  spelling. When the declared target is `not_found`, the adoption flow runs:
   - **Single new test:** adopted as the target; `declared_test_mismatch` is recorded. The verdict
     from the run that already happened is evaluated immediately in the same `advance` call — no
     extra suite run. If the adopted test failed, the RED commit is made and the cycle moves to
