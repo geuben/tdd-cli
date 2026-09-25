@@ -286,19 +286,22 @@ class VitestAdapter(Adapter):
         execute against whatever the tests need live)."""
         if not self.project.overrides:
             return GateResult(ok=True)
+        command = f"{self._collect_cmd()} --json"
         code, out, err = run_command(
-            f"{self._collect_cmd()} --json",
-            self.root,
-            extra_env=self._suite_env(None),
-            label="doctor",
+            command, self.root, extra_env=self._suite_env(None), label="doctor"
         )
         listing = _json_listing(out)
-        if listing is not None:
-            listed = {self._rel(entry["file"]) for entry in listing if entry.get("file")}
-        else:
-            listed = {
-                line.strip().partition(" > ")[0] for line in out.splitlines() if " > " in line
-            }
+        if listing is None:
+            return GateResult(
+                ok=False,
+                output=(
+                    f"`{command}` did not print a JSON array (exit {code}); tdd reads"
+                    " vitest's JSON listing to check which files the default config"
+                    " reaches, so a collect command must not already carry --json: "
+                    + (err or out).strip()[:600]
+                ),
+            )
+        listed = {self._rel(entry["file"]) for entry in listing if entry.get("file")}
         reached = sorted(f for f in listed if self.project.override_for(f))
         if not reached:
             return GateResult(ok=True)
