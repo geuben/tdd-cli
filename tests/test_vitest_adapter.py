@@ -101,3 +101,50 @@ def test_lines_without_a_separator_are_ignored(tmp_path):
     path = tmp_path / "frontend" / "a.test.ts"
     noise = "RUN v4.1.0\n\nsome banner text\n" + LIST_OUTPUT
     assert len(adapter._parse_list_output(noise, path)) == 3
+
+
+def test_batch_collection_roots_each_id_at_its_listed_file(tmp_path, monkeypatch):
+    """`vitest list` prefixes `[<project>] ` to every line of a named vitest project,
+    and a project with its own `root` prints paths relative to that root. The JSON
+    listing carries each test's absolute file, so the batch roots ids there."""
+    import json
+
+    from tddcli import adapters
+
+    adapter = adapter_for(tmp_path)
+    for rel in ("src/a.test.ts", "packages/core/src/b.test.ts"):
+        (tmp_path / "frontend" / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "frontend" / rel).write_text("")
+    listing = json.dumps(
+        [
+            {
+                "name": "outer > inner > adds one",
+                "file": str(tmp_path / "frontend" / "src/a.test.ts"),
+                "projectName": "core",
+            },
+            {
+                "name": "outer > inner > adds one",
+                "file": str(tmp_path / "frontend" / "packages/core/src/b.test.ts"),
+                "projectName": "pkg",
+            },
+        ],
+        indent=2,
+    )
+
+    def fake(command, cwd, **_):
+        if "--json" in command:
+            return 0, listing, ""
+        if command == "npx vitest list":
+            return (
+                0,
+                "[core] src/a.test.ts > outer > inner > adds one\n"
+                "[pkg] src/b.test.ts > outer > inner > adds one\n",
+                "",
+            )
+        return 0, f"{command.rsplit(' ', 1)[1]} > from the loop\n", ""
+
+    monkeypatch.setattr(adapters.vitest_adapter, "run_command", fake)
+    assert adapter.collect().tests == {
+        "frontend::src/a.test.ts > outer inner adds one",
+        "frontend::packages/core/src/b.test.ts > outer inner adds one",
+    }
