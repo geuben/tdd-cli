@@ -861,7 +861,11 @@ Adapter.typecheck(project)               -> GateResult
   file it came from. `tdd doctor` reads the subprocess's **stdout**: `uv` writes
   environment warnings (e.g. `VIRTUAL_ENV=... does not match ...`) to stderr, while pytest writes
   the actual collection error (e.g. `ModuleNotFoundError`) to stdout. A check that reads stderr
-  reports the wrapper's noise and loses the real error underneath it.
+  reports the wrapper's noise and loses the real error underneath it. Collection's whole-suite
+  vitest listing is `vitest list --json`, not the text listing `collectable()` probes: the text
+  prefixes `[<project>] ` to every line of a named vitest project and prints paths relative to
+  that project's own `root`, while the JSON carries each test's absolute `file`, which the
+  adapter makes root-relative exactly as `run()` does (#163).
 
 ---
 

@@ -6,6 +6,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **vitest ids from named vitest projects** (#163). Whole-suite collection read `vitest list`
+  text, which prefixes `[<project>] ` to every line of a named vitest project and prints paths
+  relative to that project's `root`, so it collected ids no run ever reports (and, via the
+  per-file loop, a second spelling of every test). It now reads `vitest list --json` and roots
+  each id at the test's own file. tdd appends `--json` itself; a collect command must not.
+
 ## [0.14.0] - 2026-09-24
 
 ### Added
