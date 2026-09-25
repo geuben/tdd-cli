@@ -164,3 +164,33 @@ def test_adoption_skips_a_test_an_earlier_cycle_targets(repo_vitest):
 
     out = run_cli(repo, "advance")
     assert out["next_action"]["verb"] == "write_test", out
+
+
+PLAN_CONTRACT_MISSING_FIRST = """---
+cycles:
+  - n: 1
+    project: backend
+    contract_cycle: true
+    title: "add and smoke together"
+    tests:
+      - "tests/test_add.py::test_add_two_numbers"
+      - "tests/test_smoke.py::test_smoke"
+    commit_red: "test: add"
+    commit_green: "feat: add"
+---
+"""
+
+
+def test_an_adopted_target_the_run_did_not_evaluate_asks_for_another_advance(repo):
+    """A contract cycle runs one target per project, so with the missing target first
+    the smoke test is what ran, and the adopted test has no outcome in hand."""
+    plan = write_plan(repo, PLAN_CONTRACT_MISSING_FIRST)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+    (repo / "backend" / "tests" / "test_new.py").write_text("def test_new():\n    assert False\n")
+
+    out = run_cli(repo, "advance")
+    assert (out["next_action"]["verb"], out["result"]["adopted"]) == (
+        "refactor_or_advance",
+        ["backend::tests/test_new.py::test_new"],
+    )
