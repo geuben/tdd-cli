@@ -98,13 +98,14 @@ class VitestAdapter(Adapter):
         name = " ".join(part.strip() for part in remainder.split(" > "))
         return self.qualify(f"{file_part} > {name}")
 
-    def _id_for(self, suite_path: str, full_name: str) -> str:
-        abs_path = Path(suite_path)
+    def _rel(self, suite_path: str) -> str:
         try:
-            rel = os.path.relpath(abs_path, self.root)
+            return os.path.relpath(Path(suite_path), self.root)
         except ValueError:
-            rel = suite_path
-        return self.qualify(f"{rel} > {full_name}")
+            return suite_path
+
+    def _id_for(self, suite_path: str, full_name: str) -> str:
+        return self.qualify(f"{self._rel(suite_path)} > {full_name}")
 
     def _test_cmd(self) -> str:
         return self.project.test_command or "npx vitest run"
@@ -293,11 +294,7 @@ class VitestAdapter(Adapter):
         )
         listing = _json_listing(out)
         if listing is not None:
-            listed = {
-                os.path.relpath(Path(entry["file"]), self.root)
-                for entry in listing
-                if entry.get("file")
-            }
+            listed = {self._rel(entry["file"]) for entry in listing if entry.get("file")}
         else:
             listed = {
                 line.strip().partition(" > ")[0] for line in out.splitlines() if " > " in line
@@ -348,7 +345,7 @@ class VitestAdapter(Adapter):
                 continue
             full_name = " ".join(part.strip() for part in name.split(" > "))
             tests.add(self._id_for(file, full_name))
-            files.add(os.path.relpath(Path(file), self.root))
+            files.add(self._rel(file))
         # An empty result needs no special case: it accounts for no files, so every
         # file falls to the loop exactly as a failure would.
         return tests, files
