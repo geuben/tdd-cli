@@ -286,17 +286,23 @@ class VitestAdapter(Adapter):
         if not self.project.overrides:
             return GateResult(ok=True)
         code, out, err = run_command(
-            self._collect_cmd(), self.root, extra_env=self._suite_env(None), label="doctor"
+            f"{self._collect_cmd()} --json",
+            self.root,
+            extra_env=self._suite_env(None),
+            label="doctor",
         )
-        reached = sorted(
-            {
-                f
-                for f in (
-                    line.strip().partition(" > ")[0] for line in out.splitlines() if " > " in line
-                )
-                if self.project.override_for(f)
+        listing = _json_listing(out)
+        if listing is not None:
+            listed = {
+                os.path.relpath(Path(entry["file"]), self.root)
+                for entry in listing
+                if entry.get("file")
             }
-        )
+        else:
+            listed = {
+                line.strip().partition(" > ")[0] for line in out.splitlines() if " > " in line
+            }
+        reached = sorted(f for f in listed if self.project.override_for(f))
         if not reached:
             return GateResult(ok=True)
         return GateResult(
