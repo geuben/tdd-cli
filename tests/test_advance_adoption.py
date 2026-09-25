@@ -251,3 +251,28 @@ def test_an_adopted_target_the_run_cannot_find_is_refused(repo_vitest):
         ["frontend::src/add.test.ts > math > adds"],
         ["adopted_target_not_found"],
     )
+
+
+PLAN_TWO_PROJECTS = """---
+cycles:
+  - n: 1
+    projects: [backend, svc]
+    title: "add"
+    test: "tests/test_add.py::test_add_two_numbers"
+    commit_red: "test: add"
+    commit_green: "feat: add"
+---
+"""
+
+
+def test_an_adopted_target_is_not_also_an_outside_failure(repo_three):
+    """`svc` has no target, so it runs whole and reports the new failing test as a
+    failure outside the cycle; once adopted, it is the cycle's own RED."""
+    repo = repo_three
+    plan = write_plan(repo, PLAN_TWO_PROJECTS)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+    (repo / "svc" / "tests" / "test_new.py").write_text("def test_new():\n    assert False\n")
+
+    out = run_cli(repo, "advance")
+    assert out["next_action"]["verb"] == "write_implementation", out

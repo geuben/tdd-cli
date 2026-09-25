@@ -148,3 +148,22 @@ def test_batch_collection_roots_each_id_at_its_listed_file(tmp_path, monkeypatch
         "frontend::src/a.test.ts > outer inner adds one",
         "frontend::packages/core/src/b.test.ts > outer inner adds one",
     }
+
+
+def test_batch_collection_skips_a_listing_entry_without_a_name(tmp_path, monkeypatch):
+    import json
+
+    from tddcli import adapters
+
+    adapter = adapter_for(tmp_path)
+    (tmp_path / "frontend" / "a.test.ts").write_text("")
+    listing = json.dumps(
+        [
+            {"file": str(tmp_path / "frontend" / "a.test.ts")},
+            {"name": "adds", "file": str(tmp_path / "frontend" / "a.test.ts")},
+        ]
+    )
+    monkeypatch.setattr(
+        adapters.vitest_adapter, "run_command", lambda command, cwd, **_: (0, listing, "")
+    )
+    assert adapter.collect().tests == {"frontend::a.test.ts > adds"}
