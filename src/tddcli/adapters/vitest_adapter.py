@@ -280,10 +280,12 @@ class VitestAdapter(Adapter):
         return GateResult(ok=not chunks, output="\n\n".join(chunks)[:2000])
 
     def override_isolation(self) -> GateResult:
-        """Probes with the default `vitest list` — the same stand-in for the
+        """Probes with the default `vitest list --json` — the same stand-in for the
         default run config that `collectable()` already relies on (`vitest run`
         has no listing mode, and running the suite just to enumerate it would
-        execute against whatever the tests need live)."""
+        execute against whatever the tests need live). Reach is decided from each
+        entry's root-relative `file`; a listing that is not JSON fails the gate
+        rather than passing it by reaching nothing."""
         if not self.project.overrides:
             return GateResult(ok=True)
         command = f"{self._collect_cmd()} --json"

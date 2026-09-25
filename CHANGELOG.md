@@ -13,6 +13,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   relative to that project's `root`, so it collected ids no run ever reports (and, via the
   per-file loop, a second spelling of every test). It now reads `vitest list --json` and roots
   each id at the test's own file. tdd appends `--json` itself; a collect command must not.
+- **The vitest override-isolation check sees named vitest projects** (#163). `tdd doctor`'s
+  check that the default config does not reach an override's files read the same text
+  listing, so a `[<project>] ` prefix meant it could never match. It now reads
+  `vitest list --json`, and a listing that is not JSON fails the check, naming the command.
 
 ## [0.14.0] - 2026-09-24
 

@@ -145,6 +145,8 @@ nothing of the override config, and the mismatch is refused at `tdd run start`, 
 mid-cycle. For the whole-suite listing tdd appends `--json` to each vitest collect command
 (the default and every override's) and reads each test's file from vitest's JSON, so a
 collect command must not carry `--json` itself: `vitest list --json --json` prints nothing.
+The override-isolation check in `tdd doctor` reads the same JSON listing, and a listing it
+cannot read fails the check, naming the command it ran.
 
 ## Sharing cores between concurrent agents
 

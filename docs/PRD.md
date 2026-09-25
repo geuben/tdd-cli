@@ -865,7 +865,10 @@ Adapter.typecheck(project)               -> GateResult
   vitest listing is `vitest list --json`, not the text listing `collectable()` probes: the text
   prefixes `[<project>] ` to every line of a named vitest project and prints paths relative to
   that project's own `root`, while the JSON carries each test's absolute `file`, which the
-  adapter makes root-relative exactly as `run()` does (#163).
+  adapter makes root-relative exactly as `run()` does (#163). The vitest override-isolation probe
+  reads the same `vitest list --json` and decides reach from each entry's root-relative `file`; a
+  listing that is not a JSON array fails the probe and names the command, since passing it would
+  disable the check without a signal.
 
 ---
 
