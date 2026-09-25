@@ -517,15 +517,30 @@ def test_vitest_isolation_probe_flags_default_reach_into_override_files(tmp_path
     adapter = adapters.build(project, tmp_path)
     seen: list = []
 
+    listing = json.dumps(
+        [
+            {
+                "name": "adds",
+                "file": str(tmp_path / "backend" / "src/__tests__/a.test.ts"),
+                "projectName": "core",
+            },
+            {
+                "name": "pings",
+                "file": str(tmp_path / "backend" / "contract/api.test.ts"),
+                "projectName": "core",
+            },
+        ]
+    )
+
     def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         seen.append(command)
-        return 0, ("src/__tests__/a.test.ts > adds\ncontract/api.test.ts > pings\n"), ""
+        return 0, listing, ""
 
     monkeypatch.setattr(adapters.vitest_adapter, "run_command", fake)
     gate = adapter.override_isolation()
     assert gate.ok is False
     assert "contract/api.test.ts" in gate.output
-    assert seen == ["npx vitest list"]
+    assert seen == ["npx vitest list --json"]
 
 
 def test_isolation_probe_is_free_when_a_project_declares_no_overrides(tmp_path, monkeypatch):
