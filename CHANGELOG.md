@@ -6,6 +6,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-09-25
+
 ### Fixed
 
 - **vitest ids from named vitest projects** (#163). Whole-suite collection read `vitest list`
