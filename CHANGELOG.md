@@ -21,6 +21,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   missing, `tdd advance` adopted any test new since the run started, including an earlier
   cycle's target, so a premature advance handed cycle 1's test to cycle 2. Every target in
   the run is now excluded, compared by normalised id.
+- **`tdd target` accepts the plan's spelling of a test** (#163). It matched only the exact
+  collected id, so it could not name the declared vitest id (`src/a.test.ts > math > adds`
+  for a collected `frontend::src/a.test.ts > math adds`). It now qualifies and normalises
+  its argument as a plan declaration is, and stores the collected id.
 
 ## [0.14.0] - 2026-09-24
 

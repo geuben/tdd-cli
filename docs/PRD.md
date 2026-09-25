@@ -547,6 +547,9 @@ one has no move left but to re-run doctor and read the same output again.
     above; `declared_test_mismatch` is recorded with the full candidate list.
   - **Multiple new tests — ambiguous:** recorded as `multiple_new_tests`; `next_action` requires
     the agent to name the intended target with `tdd target <id>` rather than guessing.
+    `tdd target` qualifies its argument the way a plan declaration is qualified and matches it by
+    `normalise_id` (R10.8), so the plan's own spelling names the test; it stores the collected id,
+    and refuses an id that matches no collected test in any spelling (#163).
   The run that produced `not_found` already executed the new test; its verdict is retrieved from
   the in-hand `Verdict` objects without an extra suite run.
 
