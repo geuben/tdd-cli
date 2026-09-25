@@ -210,3 +210,40 @@ def test_a_resolved_adoption_the_run_did_not_evaluate_asks_for_another_advance(r
         "refactor_or_advance",
         ["backend::tests/test_add.py::test_adding"],
     )
+
+
+PLAN_ONE_VITEST_CYCLE = """---
+cycles:
+  - n: 1
+    project: frontend
+    title: "adds"
+    test: "src/add.test.ts > math > adds"
+    commit_red: "test: adds"
+    commit_green: "feat: add"
+---
+"""
+
+
+def test_an_adopted_target_the_run_cannot_find_is_refused(repo_vitest):
+    """#163: a test collection lists but no run reports would be recorded as the
+    target and come back `not_found` on every advance. It is refused instead, and
+    the declared target stands."""
+    import json
+
+    from tddcli.ledger import Ledger
+
+    repo = repo_vitest
+    plan = write_plan(repo, PLAN_ONE_VITEST_CYCLE)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+    (repo / "frontend" / "src" / "ghost.test.ts").write_text("case: ghost > only listed = listed\n")
+
+    out = run_cli(repo, "advance")
+    ledger = Ledger(repo)
+    target_tests = ledger.one("SELECT target_tests FROM cycle")["target_tests"]
+    kinds = [r["kind"] for r in ledger.all("SELECT kind FROM integrity_event ORDER BY id")]
+    assert (out["next_action"]["verb"], json.loads(target_tests), kinds) == (
+        "resolve_blocker",
+        ["frontend::src/add.test.ts > math > adds"],
+        ["adopted_target_not_found"],
+    )
