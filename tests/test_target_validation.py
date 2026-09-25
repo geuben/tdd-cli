@@ -53,3 +53,36 @@ def test_target_accepts_a_collected_test(repo):
     out = run_cli(repo, "target", "backend::tests/test_smoke.py::test_smoke")
     assert out["ok"] is True, out
     assert out["result"]["target"] == "backend::tests/test_smoke.py::test_smoke"
+
+
+VITEST_PLAN = """---
+cycles:
+  - n: 1
+    project: frontend
+    title: "adds"
+    test: "src/add.test.ts > math > adds"
+    commit_red: "test: adds"
+    commit_green: "feat: add"
+---
+"""
+
+
+def test_target_accepts_every_spelling_of_a_collected_test(repo_vitest):
+    """#163: `tdd target` refused the plan's own spelling of a test it had
+    collected; it matches the way a plan declaration does and stores the
+    collected id, so later outcome lookups compare like with like."""
+    repo = repo_vitest
+    plan = write_plan(repo, VITEST_PLAN)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+    (repo / "frontend" / "src" / "add.test.ts").write_text("case: math > adds = needs src/add.ts\n")
+
+    forms = [
+        "frontend::src/add.test.ts > math adds",
+        "frontend::src/add.test.ts > math > adds",
+        "src/add.test.ts > math > adds",
+        "src/add.test.ts > math adds",
+        "frontend/src/add.test.ts > math > adds",
+    ]
+    stored = [run_cli(repo, "target", form).get("result", {}).get("target") for form in forms]
+    assert stored == ["frontend::src/add.test.ts > math adds"] * 5

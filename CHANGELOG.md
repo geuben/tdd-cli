@@ -6,6 +6,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **vitest ids from named vitest projects** (#163). Whole-suite collection read `vitest list`
+  text, which prefixes `[<project>] ` to every line of a named vitest project and prints paths
+  relative to that project's `root`, so it collected ids no run ever reports (and, via the
+  per-file loop, a second spelling of every test). It now reads `vitest list --json` and roots
+  each id at the test's own file. tdd appends `--json` itself; a collect command must not.
+- **The vitest override-isolation check sees named vitest projects** (#163). `tdd doctor`'s
+  check that the default config does not reach an override's files read the same text
+  listing, so a `[<project>] ` prefix meant it could never match. It now reads
+  `vitest list --json`, and a listing that is not JSON fails the check, naming the command.
+- **Adoption never picks another cycle's test** (#163). When a cycle's declared test was
+  missing, `tdd advance` adopted any test new since the run started, including an earlier
+  cycle's target, so a premature advance handed cycle 1's test to cycle 2. Every target in
+  the run is now excluded, compared by normalised id.
+- **`tdd target` accepts the plan's spelling of a test** (#163). It matched only the exact
+  collected id, so it could not name the declared vitest id (`src/a.test.ts > math > adds`
+  for a collected `frontend::src/a.test.ts > math adds`). It now qualifies and normalises
+  its argument as a plan declaration is, and stores the collected id.
+- **An adopted target the run cannot find is refused** (#163). A test that collection
+  listed but no run reported was recorded as the target and came back `not_found` on every
+  advance, re-adopting a different test each time. The adoption is now evaluated first; on
+  `not_found` the declared target is kept, `adopted_target_not_found` is recorded, and
+  `tdd advance` answers `resolve_blocker`.
+
 ## [0.14.0] - 2026-09-24
 
 ### Added

@@ -74,11 +74,11 @@ skill that duplicates any of it will fight the ledger.
 | `write_implementation` | RED is confirmed and committed, or the target still fails at GREEN (only the target ran) | write the minimum code to pass the target, then `tdd advance` |
 | `fix_regression` | tests outside the cycle are failing at GREEN, or the close sweep / lint / typecheck gates failed | fix them without breaking the target, then `tdd advance` |
 | `run_sensitivity_check` | a test passed where proof it *can* fail is required | `tdd sensitivity begin`, mutate the behaviour under test, `tdd sensitivity check`, then `tdd sensitivity end` |
-| `name_target_test` | several new tests appeared; a cycle covers one behaviour | pick the intended one: `tdd target <id>` |
+| `name_target_test` | several new tests appeared; a cycle covers one behaviour | pick the intended one: `tdd target <id>`, in the collected spelling or the plan's own (`src/a.test.ts > math > adds`); the collected id is stored |
 | `refactor_or_advance` | GREEN is committed, or the tool simply wants `tdd advance` next | refactor only if the plan calls for it, then `tdd advance` |
 | `confirm_cycle_applicable` | a judgement point outside the cycle loop: config scaffolded, no active run, doctor passed | review / register / start as the `detail` names; if a cycle no longer applies, `tdd cycle skip --reason "..."` |
 | `annotate_cycle` | the plan requires judgement annotations before the cycle closes | `tdd annotate --key <k> --value "..."` for each missing key, then `tdd advance` |
-| `resolve_blocker` | wedged: three unchanged retries, or failing environment checks | fix the cause, or record it: `tdd blocker --kind <kind> --detail "..."` |
+| `resolve_blocker` | wedged: three unchanged retries, failing environment checks, or an adopted target the run cannot find | fix the cause, or record it: `tdd blocker --kind <kind> --detail "..."` |
 | `await_baseline` | baseline collection is in flight (collector pid alive) | poll `tdd progress`; **never** re-run `tdd run start` for a live claim |
 | `complete` *(terminal)* | the run (or command) is finished | render the friction log if the `detail` asks, then stop |
 | `blocked` *(terminal)* | a typed blocker was recorded | surface the blocker to the human and stop |

@@ -41,6 +41,18 @@ def _extract_json(raw: str) -> dict | None:
     return None
 
 
+def _json_listing(raw: str) -> list[dict] | None:
+    """`vitest list --json`'s array of `{name, file, projectName}`, or None when the
+    output is not one."""
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, list):
+        return None
+    return [entry for entry in payload if isinstance(entry, dict)]
+
+
 #: The characters a JavaScript regex treats as syntax. Only these are escaped: vitest
 #: may compile `-t` with the `u` flag, which rejects the identity escapes (`\ `, `\-`)
 #: that Python's `re.escape` emits.
@@ -86,13 +98,14 @@ class VitestAdapter(Adapter):
         name = " ".join(part.strip() for part in remainder.split(" > "))
         return self.qualify(f"{file_part} > {name}")
 
-    def _id_for(self, suite_path: str, full_name: str) -> str:
-        abs_path = Path(suite_path)
+    def _rel(self, suite_path: str) -> str:
         try:
-            rel = os.path.relpath(abs_path, self.root)
+            return os.path.relpath(Path(suite_path), self.root)
         except ValueError:
-            rel = suite_path
-        return self.qualify(f"{rel} > {full_name}")
+            return suite_path
+
+    def _id_for(self, suite_path: str, full_name: str) -> str:
+        return self.qualify(f"{self._rel(suite_path)} > {full_name}")
 
     def _test_cmd(self) -> str:
         return self.project.test_command or "npx vitest run"
@@ -267,24 +280,31 @@ class VitestAdapter(Adapter):
         return GateResult(ok=not chunks, output="\n\n".join(chunks)[:2000])
 
     def override_isolation(self) -> GateResult:
-        """Probes with the default `vitest list` — the same stand-in for the
+        """Probes with the default `vitest list --json` — the same stand-in for the
         default run config that `collectable()` already relies on (`vitest run`
         has no listing mode, and running the suite just to enumerate it would
-        execute against whatever the tests need live)."""
+        execute against whatever the tests need live). Reach is decided from each
+        entry's root-relative `file`; a listing that is not JSON fails the gate
+        rather than passing it by reaching nothing."""
         if not self.project.overrides:
             return GateResult(ok=True)
+        command = f"{self._collect_cmd()} --json"
         code, out, err = run_command(
-            self._collect_cmd(), self.root, extra_env=self._suite_env(None), label="doctor"
+            command, self.root, extra_env=self._suite_env(None), label="doctor"
         )
-        reached = sorted(
-            {
-                f
-                for f in (
-                    line.strip().partition(" > ")[0] for line in out.splitlines() if " > " in line
-                )
-                if self.project.override_for(f)
-            }
-        )
+        listing = _json_listing(out)
+        if listing is None:
+            return GateResult(
+                ok=False,
+                output=(
+                    f"`{command}` did not print a JSON array (exit {code}); tdd reads"
+                    " vitest's JSON listing to check which files the default config"
+                    " reaches, so a collect command must not already carry --json: "
+                    + (err or out).strip()[:600]
+                ),
+            )
+        listed = {self._rel(entry["file"]) for entry in listing if entry.get("file")}
+        reached = sorted(f for f in listed if self.project.override_for(f))
         if not reached:
             return GateResult(ok=True)
         return GateResult(
@@ -311,22 +331,26 @@ class VitestAdapter(Adapter):
         self, command: str, env: dict[str, str] | None
     ) -> tuple[set[str], set[str]] | None:
         """Unlike `_parse_list_output`, which pins every id to the one file it was
-        given, a whole-suite listing must read the file from each line — the same
-        `file > describe > name` shape, one file per line rather than one per run."""
-        code, out, err = run_command(command, self.root, extra_env=env, label="collect")
+        given, a whole-suite listing must read each test's file. The text listing
+        cannot supply it: a named vitest project prefixes `[<name>] ` to every line,
+        and a project with its own `root` prints paths relative to that root. The
+        JSON listing carries the absolute `file`, rooted here exactly as `run()`
+        roots its report. Anything that is not a JSON array is left to the loop."""
+        code, out, err = run_command(f"{command} --json", self.root, extra_env=env, label="collect")
         if code != 0:
+            return None
+        listing = _json_listing(out)
+        if listing is None:
             return None
         tests: set[str] = set()
         files: set[str] = set()
-        for line in out.splitlines():
-            line = line.strip()
-            if " > " not in line:
+        for entry in listing:
+            file, name = entry.get("file"), entry.get("name")
+            if not (file and name):
                 continue
-            rel, _, remainder = line.partition(" > ")
-            full_name = " ".join(part.strip() for part in remainder.split(" > "))
-            if rel and full_name:
-                tests.add(self.qualify(f"{rel.strip()} > {full_name}"))
-                files.add(rel.strip())
+            full_name = " ".join(part.strip() for part in name.split(" > "))
+            tests.add(self._id_for(file, full_name))
+            files.add(self._rel(file))
         # An empty result needs no special case: it accounts for no files, so every
         # file falls to the loop exactly as a failure would.
         return tests, files

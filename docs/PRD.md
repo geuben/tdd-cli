@@ -533,8 +533,11 @@ one has no move left but to re-run doctor and read the same output again.
 - **R8.7** A blocked run is not live. H1 must permit the agent to stop, or a blocker traps it.
 - **R8.8** `human_intervention` events are the input to interventions-per-run, the primary
   autonomy metric.
-- **R8.9** In `AWAITING_TEST`, `advance` resolves the target by diffing `collect()` against cycle
-  open. When the declared target is `not_found`, the adoption flow runs:
+- **R8.9** In `AWAITING_TEST`, `advance` resolves the target by diffing `collect()` against the
+  run's start, and never offers a test that another cycle of the run targets: an earlier cycle's
+  test is new since the start too, and adopting it would hand one test to two cycles (#163). The
+  exclusion compares `normalise_id` forms (R10.8), because a target may be stored in its declared
+  spelling. When the declared target is `not_found`, the adoption flow runs:
   - **Single new test:** adopted as the target; `declared_test_mismatch` is recorded. The verdict
     from the run that already happened is evaluated immediately in the same `advance` call — no
     extra suite run. If the adopted test failed, the RED commit is made and the cycle moves to
@@ -544,6 +547,14 @@ one has no move left but to re-run doctor and read the same output again.
     above; `declared_test_mismatch` is recorded with the full candidate list.
   - **Multiple new tests — ambiguous:** recorded as `multiple_new_tests`; `next_action` requires
     the agent to name the intended target with `tdd target <id>` rather than guessing.
+    `tdd target` qualifies its argument the way a plan declaration is qualified and matches it by
+    `normalise_id` (R10.8), so the plan's own spelling names the test; it stores the collected id,
+    and refuses an id that matches no collected test in any spelling (#163).
+  - **Adopted target the run cannot find:** the adoption is evaluated before it is recorded. If
+    the run reports the adopted test `not_found`, collection and execution disagree about its id,
+    and no test the agent writes can fix that: the declared target is kept, no
+    `declared_test_mismatch` is recorded, `adopted_target_not_found` is (`{declared, adopted}`),
+    and `next_action` is `resolve_blocker`, asking for a `tooling` blocker (#163).
   The run that produced `not_found` already executed the new test; its verdict is retrieved from
   the in-hand `Verdict` objects without an extra suite run.
 
@@ -861,7 +872,14 @@ Adapter.typecheck(project)               -> GateResult
   file it came from. `tdd doctor` reads the subprocess's **stdout**: `uv` writes
   environment warnings (e.g. `VIRTUAL_ENV=... does not match ...`) to stderr, while pytest writes
   the actual collection error (e.g. `ModuleNotFoundError`) to stdout. A check that reads stderr
-  reports the wrapper's noise and loses the real error underneath it.
+  reports the wrapper's noise and loses the real error underneath it. Collection's whole-suite
+  vitest listing is `vitest list --json`, not the text listing `collectable()` probes: the text
+  prefixes `[<project>] ` to every line of a named vitest project and prints paths relative to
+  that project's own `root`, while the JSON carries each test's absolute `file`, which the
+  adapter makes root-relative exactly as `run()` does (#163). The vitest override-isolation probe
+  reads the same `vitest list --json` and decides reach from each entry's root-relative `file`; a
+  listing that is not a JSON array fails the probe and names the command, since passing it would
+  disable the check without a signal.
 
 ---
 

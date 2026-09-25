@@ -517,15 +517,55 @@ def test_vitest_isolation_probe_flags_default_reach_into_override_files(tmp_path
     adapter = adapters.build(project, tmp_path)
     seen: list = []
 
+    listing = json.dumps(
+        [
+            {
+                "name": "adds",
+                "file": str(tmp_path / "backend" / "src/__tests__/a.test.ts"),
+                "projectName": "core",
+            },
+            {
+                "name": "pings",
+                "file": str(tmp_path / "backend" / "contract/api.test.ts"),
+                "projectName": "core",
+            },
+        ]
+    )
+
     def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         seen.append(command)
-        return 0, ("src/__tests__/a.test.ts > adds\ncontract/api.test.ts > pings\n"), ""
+        return 0, listing, ""
 
     monkeypatch.setattr(adapters.vitest_adapter, "run_command", fake)
     gate = adapter.override_isolation()
     assert gate.ok is False
     assert "contract/api.test.ts" in gate.output
-    assert seen == ["npx vitest list"]
+    assert seen == ["npx vitest list --json"]
+
+
+def test_vitest_isolation_probe_fails_on_a_listing_that_is_not_json(tmp_path, monkeypatch):
+    """A listing tdd cannot read would pass the probe by reaching nothing — a check
+    disabled without a signal (R10.3/R10.4), so it fails and names the command."""
+    project = project_with(
+        tmp_path,
+        "[[project.backend.override]]\n"
+        'pattern         = "contract/"\n'
+        'test_command    = "npx vitest run --config vitest.contract.config.ts"\n'
+        'collect_command = "npx vitest list --config vitest.contract.config.ts"\n',
+        adapter="vitest",
+    )
+    adapter = adapters.build(project, tmp_path)
+    monkeypatch.setattr(
+        adapters.vitest_adapter,
+        "run_command",
+        lambda command, cwd, timeout=1800, extra_env=None, label=None: (
+            0,
+            "src/__tests__/a.test.ts > adds\n",
+            "",
+        ),
+    )
+    gate = adapter.override_isolation()
+    assert (gate.ok, "npx vitest list --json" in gate.output) == (False, True)
 
 
 def test_isolation_probe_is_free_when_a_project_declares_no_overrides(tmp_path, monkeypatch):

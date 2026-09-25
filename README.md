@@ -142,7 +142,11 @@ being repeated in `test_paths`. `env` values may reference `${VAR}`, expanded fr
 environment at invocation. For pytest, `collect_command` is optional (`--collect-only`
 composes with the run command); a vitest override must declare one — `vitest list` knows
 nothing of the override config, and the mismatch is refused at `tdd run start`, not
-mid-cycle.
+mid-cycle. For the whole-suite listing tdd appends `--json` to each vitest collect command
+(the default and every override's) and reads each test's file from vitest's JSON, so a
+collect command must not carry `--json` itself: `vitest list --json --json` prints nothing.
+The override-isolation check in `tdd doctor` reads the same JSON listing, and a listing it
+cannot read fails the check, naming the command it ran.
 
 ## Sharing cores between concurrent agents
 

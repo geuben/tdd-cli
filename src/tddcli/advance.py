@@ -58,17 +58,30 @@ def _last_invocation_hash(engine: Engine, cycle) -> str | None:
 
 
 def _adopt_target(engine: Engine, cycle, missing: list[str]) -> tuple[list[str], list[str]]:
-    """R8.9 — resolve the target from newly collected tests when the declared id misses."""
+    """R8.9 — resolve the target from newly collected tests when the declared id misses.
+
+    A test another cycle of the run already targets is never a candidate: it is new
+    since the run started too. Targets may be stored in the declared spelling, so the
+    exclusion compares normalised ids (#163)."""
     projects = json.loads(cycle["projects"])
     at_start = engine.ledger.collection(engine.run["id"])
     known = {t for tests in at_start.values() for t in tests}
-    existing_targets = set(json.loads(cycle["target_tests"]))
+    run_targets = {
+        t
+        for row in engine.ledger.all(
+            "SELECT target_tests FROM cycle WHERE run_id = ?", (engine.run["id"],)
+        )
+        for t in json.loads(row["target_tests"])
+    }
 
     new_tests: list[str] = []
     for name in projects:
         adapter = adapters.build(engine.config.project(name), engine.worktree)
+        claimed = {adapter.normalise_id(t) for t in run_targets}
         current = adapter.collect()
-        new_tests.extend(sorted(current.tests - known - existing_targets))
+        new_tests.extend(
+            sorted(t for t in current.tests - known if adapter.normalise_id(t) not in claimed)
+        )
     return new_tests, missing
 
 
@@ -200,6 +213,60 @@ def _evaluate_adopted(
     return outcomes.get(adopted), failure
 
 
+def _adopt(
+    engine: Engine,
+    cycle,
+    projects: list[str],
+    targets: list[str],
+    missing: list[str],
+    adopted: str,
+    detail: dict,
+    verdicts,
+    retried: bool,
+):
+    """R8.9's one adoption path, whichever branch chose `adopted`: evaluate the new
+    target, then record the mismatch and retarget the cycle. Returns the reply when
+    the target is refused or has no outcome yet, else `(cycle, targets, outcome,
+    failure)`.
+
+    The evaluation comes first because a test that collection lists but the run
+    cannot find would otherwise become the target and come back `not_found` on every
+    advance (#163): collection and execution disagree about its id, which no test
+    the agent writes can fix."""
+    kept = [t for t in targets if t not in missing]
+    outcome, failure = _evaluate_adopted(engine, cycle, projects, kept, adopted, verdicts, retried)
+    if outcome == NOT_FOUND:
+        engine.ledger.event(
+            engine.run["id"],
+            cycle["id"],
+            "adopted_target_not_found",
+            json.dumps({"declared": missing, "adopted": [adopted]}),
+        )
+        return _reply(
+            engine,
+            cycle,
+            Verb.RESOLVE_BLOCKER,
+            f"{adopted} is collected but the run cannot find it: collection and execution"
+            " disagree about its id. The declared target is unchanged. Record it:"
+            " `tdd blocker --kind tooling --detail '...'`.",
+            adopted=[adopted],
+            declared=missing,
+        )
+    engine.ledger.event(engine.run["id"], cycle["id"], "declared_test_mismatch", json.dumps(detail))
+    engine.ledger.update("cycle", cycle["id"], target_tests=json.dumps(kept + [adopted]))
+    cycle = engine.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle["id"],))
+    if outcome is None:
+        return _reply(
+            engine,
+            cycle,
+            Verb.REFACTOR_OR_ADVANCE,
+            f"Adopted {adopted} as the target (declared {missing[0]} was not"
+            " collected). Run `tdd advance` again to evaluate it.",
+            adopted=[adopted],
+        )
+    return cycle, kept + [adopted], outcome, failure
+
+
 # -- handlers ------------------------------------------------------------
 
 
@@ -219,67 +286,23 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
     missing = [t for t, o in outcomes.items() if o == NOT_FOUND]
     if missing:
         candidates, _ = _adopt_target(engine, cycle, missing)
+        if not candidates:
+            return _reply(
+                engine,
+                cycle,
+                Verb.WRITE_TEST,
+                f"Target {missing[0]} was not collected and no new test was found."
+                " Write the failing test.",
+                missing=missing,
+            )
         if len(candidates) == 1:
-            engine.ledger.event(
-                engine.run["id"],
-                cycle["id"],
-                "declared_test_mismatch",
-                json.dumps({"declared": missing, "adopted": candidates}),
-            )
-            kept = [t for t in targets if t not in missing]
-            engine.ledger.update("cycle", cycle["id"], target_tests=json.dumps(kept + candidates))
-            cycle = engine.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle["id"],))
-            adopted_outcome, adopted_failure = _evaluate_adopted(
-                engine, cycle, projects, kept, candidates[0], verdicts, retried
-            )
-            if adopted_outcome is None:
-                return _reply(
-                    engine,
-                    cycle,
-                    Verb.REFACTOR_OR_ADVANCE,
-                    f"Adopted {candidates[0]} as the target (declared {missing[0]} was not"
-                    " collected). Run `tdd advance` again to evaluate it.",
-                    adopted=candidates,
-                )
-            targets = kept + candidates
-            outcomes = {candidates[0]: adopted_outcome}
-            failure = adopted_failure or failure
-            others = [t for t in others if t != candidates[0]]
-        elif len(candidates) > 1:
+            adopted = candidates[0]
+            detail = {"declared": missing, "adopted": candidates}
+        else:
             owner = missing[0].split("::", 1)[0]
             adapter = adapters.build(engine.config.project(owner), engine.worktree)
             resolved = _disambiguate(candidates, missing[0], adapter)
-            if resolved is not None:
-                engine.ledger.event(
-                    engine.run["id"],
-                    cycle["id"],
-                    "declared_test_mismatch",
-                    json.dumps(
-                        {"declared": missing, "adopted": [resolved], "all_candidates": candidates}
-                    ),
-                )
-                kept = [t for t in targets if t not in missing]
-                engine.ledger.update(
-                    "cycle", cycle["id"], target_tests=json.dumps(kept + [resolved])
-                )
-                cycle = engine.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle["id"],))
-                adopted_outcome, adopted_failure = _evaluate_adopted(
-                    engine, cycle, projects, kept, resolved, verdicts, retried
-                )
-                if adopted_outcome is None:
-                    return _reply(
-                        engine,
-                        cycle,
-                        Verb.REFACTOR_OR_ADVANCE,
-                        f"Adopted {resolved} as the target (declared {missing[0]} was not"
-                        " collected). Run `tdd advance` again to evaluate it.",
-                        adopted=[resolved],
-                    )
-                targets = kept + [resolved]
-                outcomes = {resolved: adopted_outcome}
-                failure = adopted_failure or failure
-                others = [t for t in others if t != resolved]
-            else:
+            if resolved is None:
                 engine.ledger.event(
                     engine.run["id"],
                     cycle["id"],
@@ -294,15 +317,17 @@ def _handle_test_phase(engine: Engine, cycle, retried: bool, expect_pass: bool) 
                     " intended target with `tdd target <id>`.",
                     candidates=candidates,
                 )
-        else:
-            return _reply(
-                engine,
-                cycle,
-                Verb.WRITE_TEST,
-                f"Target {missing[0]} was not collected and no new test was found."
-                " Write the failing test.",
-                missing=missing,
-            )
+            adopted = resolved
+            detail = {"declared": missing, "adopted": [resolved], "all_candidates": candidates}
+        adoption = _adopt(
+            engine, cycle, projects, targets, missing, adopted, detail, verdicts, retried
+        )
+        if isinstance(adoption, Envelope):
+            return adoption
+        cycle, targets, adopted_outcome, adopted_failure = adoption
+        outcomes = {adopted: adopted_outcome}
+        failure = adopted_failure or failure
+        others = [t for t in others if t != adopted]
 
     not_collected = [t for t, o in outcomes.items() if o == NOT_COLLECTED]
     if not_collected:

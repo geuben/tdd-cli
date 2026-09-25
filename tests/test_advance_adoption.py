@@ -127,3 +127,152 @@ def test_adopted_passing_test_demands_sensitivity_in_one_advance(repo):
 
     out = run_cli(repo, "advance")
     assert out["next_action"]["verb"] == "run_sensitivity_check", out
+
+
+PLAN_TWO_VITEST_CYCLES = """---
+cycles:
+  - n: 1
+    project: frontend
+    title: "adds"
+    test: "src/add.test.ts > math > adds"
+    commit_red: "test: adds"
+    commit_green: "feat: add"
+  - n: 2
+    project: frontend
+    title: "subtracts"
+    test: "src/sub.test.ts > math > subtracts"
+    commit_red: "test: subtracts"
+    commit_green: "feat: sub"
+---
+"""
+
+
+def test_adoption_skips_a_test_an_earlier_cycle_targets(repo_vitest):
+    """#163: advancing before cycle 2's test exists must not adopt cycle 1's test,
+    which is new since the run started but already belongs to cycle 1 — stored in
+    the declared spelling, so the exclusion must compare normalised ids."""
+    repo = repo_vitest
+    plan = write_plan(repo, PLAN_TWO_VITEST_CYCLES)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+
+    (repo / "frontend" / "src" / "add.test.ts").write_text("case: math > adds = needs src/add.ts\n")
+    run_cli(repo, "advance")
+    (repo / "frontend" / "src" / "add.ts").write_text("export {}\n")
+    run_cli(repo, "advance")
+    run_cli(repo, "advance")
+
+    out = run_cli(repo, "advance")
+    assert out["next_action"]["verb"] == "write_test", out
+
+
+PLAN_CONTRACT_MISSING_FIRST = """---
+cycles:
+  - n: 1
+    project: backend
+    contract_cycle: true
+    title: "add and smoke together"
+    tests:
+      - "tests/test_add.py::test_add_two_numbers"
+      - "tests/test_smoke.py::test_smoke"
+    commit_red: "test: add"
+    commit_green: "feat: add"
+---
+"""
+
+
+def test_an_adopted_target_the_run_did_not_evaluate_asks_for_another_advance(repo):
+    """A contract cycle runs one target per project, so with the missing target first
+    the smoke test is what ran, and the adopted test has no outcome in hand."""
+    plan = write_plan(repo, PLAN_CONTRACT_MISSING_FIRST)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+    (repo / "backend" / "tests" / "test_new.py").write_text("def test_new():\n    assert False\n")
+
+    out = run_cli(repo, "advance")
+    assert (out["next_action"]["verb"], out["result"]["adopted"]) == (
+        "refactor_or_advance",
+        ["backend::tests/test_new.py::test_new"],
+    )
+
+
+def test_a_resolved_adoption_the_run_did_not_evaluate_asks_for_another_advance(repo):
+    """Two new tests; the one in the declared file is resolved and adopted, and the
+    run in hand (the smoke test) did not evaluate it."""
+    plan = write_plan(repo, PLAN_CONTRACT_MISSING_FIRST)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+    (repo / "backend" / "tests" / "test_add.py").write_text(
+        "def test_adding():\n    assert False\n"
+    )
+    (repo / "backend" / "tests" / "test_other.py").write_text(
+        "def test_other():\n    assert True\n"
+    )
+
+    out = run_cli(repo, "advance")
+    assert (out["next_action"]["verb"], out["result"]["adopted"]) == (
+        "refactor_or_advance",
+        ["backend::tests/test_add.py::test_adding"],
+    )
+
+
+PLAN_ONE_VITEST_CYCLE = """---
+cycles:
+  - n: 1
+    project: frontend
+    title: "adds"
+    test: "src/add.test.ts > math > adds"
+    commit_red: "test: adds"
+    commit_green: "feat: add"
+---
+"""
+
+
+def test_an_adopted_target_the_run_cannot_find_is_refused(repo_vitest):
+    """#163: a test collection lists but no run reports would be recorded as the
+    target and come back `not_found` on every advance. It is refused instead, and
+    the declared target stands."""
+    import json
+
+    from tddcli.ledger import Ledger
+
+    repo = repo_vitest
+    plan = write_plan(repo, PLAN_ONE_VITEST_CYCLE)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+    (repo / "frontend" / "src" / "ghost.test.ts").write_text("case: ghost > only listed = listed\n")
+
+    out = run_cli(repo, "advance")
+    ledger = Ledger(repo)
+    target_tests = ledger.one("SELECT target_tests FROM cycle")["target_tests"]
+    kinds = [r["kind"] for r in ledger.all("SELECT kind FROM integrity_event ORDER BY id")]
+    assert (out["next_action"]["verb"], json.loads(target_tests), kinds) == (
+        "resolve_blocker",
+        ["frontend::src/add.test.ts > math > adds"],
+        ["adopted_target_not_found"],
+    )
+
+
+PLAN_TWO_PROJECTS = """---
+cycles:
+  - n: 1
+    projects: [backend, svc]
+    title: "add"
+    test: "tests/test_add.py::test_add_two_numbers"
+    commit_red: "test: add"
+    commit_green: "feat: add"
+---
+"""
+
+
+def test_an_adopted_target_is_not_also_an_outside_failure(repo_three):
+    """`svc` has no target, so it runs whole and reports the new failing test as a
+    failure outside the cycle; once adopted, it is the cycle's own RED."""
+    repo = repo_three
+    plan = write_plan(repo, PLAN_TWO_PROJECTS)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+    (repo / "svc" / "tests" / "test_new.py").write_text("def test_new():\n    assert False\n")
+
+    out = run_cli(repo, "advance")
+    assert out["next_action"]["verb"] == "write_implementation", out

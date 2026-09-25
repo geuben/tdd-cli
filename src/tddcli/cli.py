@@ -1493,11 +1493,23 @@ def cmd_target(args) -> Envelope:
     # grounded in observed execution (#15): recording free text deferred a typo —
     # or a speculative `tdd target env` — to the next suite run, where it
     # surfaced as `not_found` against a test that never existed.
+    #
+    # The argument is qualified and matched the way a plan declaration is (#163), so
+    # the plan's own spelling names the test it collected as; the collected id is what
+    # is stored, because outcome lookups compare against verdicts verbatim.
+    declared = _engine(worktree, cfg, ledger, run).declared_for(cycle["ordinal"])
+    wanted = Engine._qualify(declared, args.test) if declared else args.test
     known: set[str] = set()
+    target: str | None = None
     for name in json.loads(cycle["projects"]):
         adapter = adapters.build(cfg.project(name), worktree)
-        known |= adapter.collect().tests
-    if args.test not in known:
+        collected = adapter.collect().tests
+        known |= collected
+        norm = adapter.normalise_id(wanted)
+        target = target or next(
+            (t for t in sorted(collected) if adapter.normalise_id(t) == norm), None
+        )
+    if target is None:
         close = difflib.get_close_matches(args.test, sorted(known), n=3, cutoff=0.6)
         hint = f" Closest collected ids: {', '.join(close)}." if close else ""
         return failure(
@@ -1505,11 +1517,11 @@ def cmd_target(args) -> Envelope:
             f" the target was not changed.{hint}"
         )
 
-    ledger.update("cycle", cycle["id"], target_tests=json.dumps([args.test]))
-    ledger.event(run["id"], cycle["id"], "target_named_by_agent", args.test)
+    ledger.update("cycle", cycle["id"], target_tests=json.dumps([target]))
+    ledger.event(run["id"], cycle["id"], "target_named_by_agent", target)
     return Envelope(
         run={"id": run["id"], "cycle": cycle["ordinal"]},
-        result={"target": args.test},
+        result={"target": target},
         next_action=NextAction(Verb.REFACTOR_OR_ADVANCE, "Target set. `tdd advance`."),
     )
 
