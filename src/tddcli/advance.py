@@ -224,14 +224,37 @@ def _adopt(
     verdicts,
     retried: bool,
 ):
-    """R8.9's one adoption path, whichever branch chose `adopted`: record the
-    mismatch, retarget the cycle and evaluate the new target. Returns the reply when
-    the target has no outcome yet, else `(cycle, targets, outcome, failure)`."""
-    engine.ledger.event(engine.run["id"], cycle["id"], "declared_test_mismatch", json.dumps(detail))
+    """R8.9's one adoption path, whichever branch chose `adopted`: evaluate the new
+    target, then record the mismatch and retarget the cycle. Returns the reply when
+    the target is refused or has no outcome yet, else `(cycle, targets, outcome,
+    failure)`.
+
+    The evaluation comes first because a test that collection lists but the run
+    cannot find would otherwise become the target and come back `not_found` on every
+    advance (#163): collection and execution disagree about its id, which no test
+    the agent writes can fix."""
     kept = [t for t in targets if t not in missing]
+    outcome, failure = _evaluate_adopted(engine, cycle, projects, kept, adopted, verdicts, retried)
+    if outcome == NOT_FOUND:
+        engine.ledger.event(
+            engine.run["id"],
+            cycle["id"],
+            "adopted_target_not_found",
+            json.dumps({"declared": missing, "adopted": [adopted]}),
+        )
+        return _reply(
+            engine,
+            cycle,
+            Verb.RESOLVE_BLOCKER,
+            f"{adopted} is collected but the run cannot find it: collection and execution"
+            " disagree about its id. The declared target is unchanged. Record it:"
+            " `tdd blocker --kind tooling --detail '...'`.",
+            adopted=[adopted],
+            declared=missing,
+        )
+    engine.ledger.event(engine.run["id"], cycle["id"], "declared_test_mismatch", json.dumps(detail))
     engine.ledger.update("cycle", cycle["id"], target_tests=json.dumps(kept + [adopted]))
     cycle = engine.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle["id"],))
-    outcome, failure = _evaluate_adopted(engine, cycle, projects, kept, adopted, verdicts, retried)
     if outcome is None:
         return _reply(
             engine,
