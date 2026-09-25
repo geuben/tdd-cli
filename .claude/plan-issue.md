@@ -59,3 +59,12 @@
   misread (#150).
 - A small change whose planning probe is the change itself gets implemented directly, with no
   plan (#149). Check this before writing the plan file, not after.
+- `vitest list` text prefixes each line with `[<vitest project name>] ` whenever the config names
+  a project, and prints paths relative to *that vitest project's* root (probed 4.1.11).
+  Only `vitest list --json` gives absolute `file` paths. Never derive a file from a text
+  listing line; the per-file loop is safe only because it pins ids to the path it passed (#163).
+- End-to-end vitest behaviour is tested through `tests/fake_vitest.py` and the `repo_vitest`
+  fixture (from #163), not a real vitest. Its `case: … = listed` line is a collect/run
+  mismatch on purpose.
+- `Engine.run_projects` runs only the first target per project. A contract-cycle probe
+  that needs the missing target evaluated must declare the missing target first.
