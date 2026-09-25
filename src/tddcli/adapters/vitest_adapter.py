@@ -323,32 +323,26 @@ class VitestAdapter(Adapter):
         self, command: str, env: dict[str, str] | None
     ) -> tuple[set[str], set[str]] | None:
         """Unlike `_parse_list_output`, which pins every id to the one file it was
-        given, a whole-suite listing must read the file from each line — the same
-        `file > describe > name` shape, one file per line rather than one per run."""
+        given, a whole-suite listing must read each test's file. The text listing
+        cannot supply it: a named vitest project prefixes `[<name>] ` to every line,
+        and a project with its own `root` prints paths relative to that root. The
+        JSON listing carries the absolute `file`, rooted here exactly as `run()`
+        roots its report. Anything that is not a JSON array is left to the loop."""
         code, out, err = run_command(f"{command} --json", self.root, extra_env=env, label="collect")
         if code != 0:
             return None
+        listing = _json_listing(out)
+        if listing is None:
+            return None
         tests: set[str] = set()
         files: set[str] = set()
-        listing = _json_listing(out)
-        if listing is not None:
-            for entry in listing:
-                file, name = entry.get("file"), entry.get("name")
-                if not (file and name):
-                    continue
-                full_name = " ".join(part.strip() for part in name.split(" > "))
-                tests.add(self._id_for(file, full_name))
-                files.add(os.path.relpath(Path(file), self.root))
-            return tests, files
-        for line in out.splitlines():
-            line = line.strip()
-            if " > " not in line:
+        for entry in listing:
+            file, name = entry.get("file"), entry.get("name")
+            if not (file and name):
                 continue
-            rel, _, remainder = line.partition(" > ")
-            full_name = " ".join(part.strip() for part in remainder.split(" > "))
-            if rel and full_name:
-                tests.add(self.qualify(f"{rel.strip()} > {full_name}"))
-                files.add(rel.strip())
+            full_name = " ".join(part.strip() for part in name.split(" > "))
+            tests.add(self._id_for(file, full_name))
+            files.add(os.path.relpath(Path(file), self.root))
         # An empty result needs no special case: it accounts for no files, so every
         # file falls to the loop exactly as a failure would.
         return tests, files
