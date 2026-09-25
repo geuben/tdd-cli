@@ -202,8 +202,12 @@ def test_a_resolved_adoption_the_run_did_not_evaluate_asks_for_another_advance(r
     plan = write_plan(repo, PLAN_CONTRACT_MISSING_FIRST)
     run_cli(repo, "plan", "register", plan)
     run_cli(repo, "run", "start", "--plan", plan)
-    (repo / "backend" / "tests" / "test_add.py").write_text("def test_adding():\n    assert False\n")
-    (repo / "backend" / "tests" / "test_other.py").write_text("def test_other():\n    assert True\n")
+    (repo / "backend" / "tests" / "test_add.py").write_text(
+        "def test_adding():\n    assert False\n"
+    )
+    (repo / "backend" / "tests" / "test_other.py").write_text(
+        "def test_other():\n    assert True\n"
+    )
 
     out = run_cli(repo, "advance")
     assert (out["next_action"]["verb"], out["result"]["adopted"]) == (

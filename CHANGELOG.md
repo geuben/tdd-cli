@@ -25,6 +25,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   collected id, so it could not name the declared vitest id (`src/a.test.ts > math > adds`
   for a collected `frontend::src/a.test.ts > math adds`). It now qualifies and normalises
   its argument as a plan declaration is, and stores the collected id.
+- **An adopted target the run cannot find is refused** (#163). A test that collection
+  listed but no run reported was recorded as the target and came back `not_found` on every
+  advance, re-adopting a different test each time. The adoption is now evaluated first; on
+  `not_found` the declared target is kept, `adopted_target_not_found` is recorded, and
+  `tdd advance` answers `resolve_blocker`.
 
 ## [0.14.0] - 2026-09-24
 

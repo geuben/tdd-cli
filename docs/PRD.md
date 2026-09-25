@@ -550,6 +550,11 @@ one has no move left but to re-run doctor and read the same output again.
     `tdd target` qualifies its argument the way a plan declaration is qualified and matches it by
     `normalise_id` (R10.8), so the plan's own spelling names the test; it stores the collected id,
     and refuses an id that matches no collected test in any spelling (#163).
+  - **Adopted target the run cannot find:** the adoption is evaluated before it is recorded. If
+    the run reports the adopted test `not_found`, collection and execution disagree about its id,
+    and no test the agent writes can fix that: the declared target is kept, no
+    `declared_test_mismatch` is recorded, `adopted_target_not_found` is (`{declared, adopted}`),
+    and `next_action` is `resolve_blocker`, asking for a `tooling` blocker (#163).
   The run that produced `not_found` already executed the new test; its verdict is retrieved from
   the in-hand `Verdict` objects without an extra suite run.
 

@@ -78,7 +78,7 @@ skill that duplicates any of it will fight the ledger.
 | `refactor_or_advance` | GREEN is committed, or the tool simply wants `tdd advance` next | refactor only if the plan calls for it, then `tdd advance` |
 | `confirm_cycle_applicable` | a judgement point outside the cycle loop: config scaffolded, no active run, doctor passed | review / register / start as the `detail` names; if a cycle no longer applies, `tdd cycle skip --reason "..."` |
 | `annotate_cycle` | the plan requires judgement annotations before the cycle closes | `tdd annotate --key <k> --value "..."` for each missing key, then `tdd advance` |
-| `resolve_blocker` | wedged: three unchanged retries, or failing environment checks | fix the cause, or record it: `tdd blocker --kind <kind> --detail "..."` |
+| `resolve_blocker` | wedged: three unchanged retries, failing environment checks, or an adopted target the run cannot find | fix the cause, or record it: `tdd blocker --kind <kind> --detail "..."` |
 | `await_baseline` | baseline collection is in flight (collector pid alive) | poll `tdd progress`; **never** re-run `tdd run start` for a live claim |
 | `complete` *(terminal)* | the run (or command) is finished | render the friction log if the `detail` asks, then stop |
 | `blocked` *(terminal)* | a typed blocker was recorded | surface the blocker to the human and stop |
