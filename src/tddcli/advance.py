@@ -58,17 +58,30 @@ def _last_invocation_hash(engine: Engine, cycle) -> str | None:
 
 
 def _adopt_target(engine: Engine, cycle, missing: list[str]) -> tuple[list[str], list[str]]:
-    """R8.9 — resolve the target from newly collected tests when the declared id misses."""
+    """R8.9 — resolve the target from newly collected tests when the declared id misses.
+
+    A test another cycle of the run already targets is never a candidate: it is new
+    since the run started too. Targets may be stored in the declared spelling, so the
+    exclusion compares normalised ids (#163)."""
     projects = json.loads(cycle["projects"])
     at_start = engine.ledger.collection(engine.run["id"])
     known = {t for tests in at_start.values() for t in tests}
-    existing_targets = set(json.loads(cycle["target_tests"]))
+    run_targets = {
+        t
+        for row in engine.ledger.all(
+            "SELECT target_tests FROM cycle WHERE run_id = ?", (engine.run["id"],)
+        )
+        for t in json.loads(row["target_tests"])
+    }
 
     new_tests: list[str] = []
     for name in projects:
         adapter = adapters.build(engine.config.project(name), engine.worktree)
+        claimed = {adapter.normalise_id(t) for t in run_targets}
         current = adapter.collect()
-        new_tests.extend(sorted(current.tests - known - existing_targets))
+        new_tests.extend(
+            sorted(t for t in current.tests - known if adapter.normalise_id(t) not in claimed)
+        )
     return new_tests, missing
 
 
