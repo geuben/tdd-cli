@@ -178,7 +178,7 @@ def test_vitest_partial_output_from_a_failed_batch_is_not_trusted(repo_multi, mo
 
     def failing_batch(command, cwd, timeout=1800, extra_env=None, label=None):
         seen.append(command)
-        if command.endswith("list"):  # whole-suite invocation
+        if command.endswith("list --json"):  # whole-suite invocation
             return 1, "a.test.ts > alpha\n", "crashed"
         return 0, f"{command.rsplit(' ', 1)[1]} > rescued", ""
 

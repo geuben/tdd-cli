@@ -41,6 +41,18 @@ def _extract_json(raw: str) -> dict | None:
     return None
 
 
+def _json_listing(raw: str) -> list[dict] | None:
+    """`vitest list --json`'s array of `{name, file, projectName}`, or None when the
+    output is not one."""
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, list):
+        return None
+    return [entry for entry in payload if isinstance(entry, dict)]
+
+
 #: The characters a JavaScript regex treats as syntax. Only these are escaped: vitest
 #: may compile `-t` with the `u` flag, which rejects the identity escapes (`\ `, `\-`)
 #: that Python's `re.escape` emits.
@@ -313,11 +325,21 @@ class VitestAdapter(Adapter):
         """Unlike `_parse_list_output`, which pins every id to the one file it was
         given, a whole-suite listing must read the file from each line — the same
         `file > describe > name` shape, one file per line rather than one per run."""
-        code, out, err = run_command(command, self.root, extra_env=env, label="collect")
+        code, out, err = run_command(f"{command} --json", self.root, extra_env=env, label="collect")
         if code != 0:
             return None
         tests: set[str] = set()
         files: set[str] = set()
+        listing = _json_listing(out)
+        if listing is not None:
+            for entry in listing:
+                file, name = entry.get("file"), entry.get("name")
+                if not (file and name):
+                    continue
+                full_name = " ".join(part.strip() for part in name.split(" > "))
+                tests.add(self._id_for(file, full_name))
+                files.add(os.path.relpath(Path(file), self.root))
+            return tests, files
         for line in out.splitlines():
             line = line.strip()
             if " > " not in line:
