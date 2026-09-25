@@ -215,6 +215,25 @@ def test_vitest_batch_attributes_each_id_to_its_own_file(repo_multi, monkeypatch
     assert collected.tests == {"frontend::a.test.ts > alpha", "frontend::b.test.ts > beta"}
 
 
+def test_vitest_batch_leaves_a_text_listing_to_the_per_file_loop(repo_multi, monkeypatch):
+    """A runner that ignored `--json` prints text whose first field may be a
+    `[<project>] ` prefix rather than a file, so the batch trusts none of it."""
+    (repo_multi / "frontend" / "a.test.ts").write_text("")
+    (repo_multi / "frontend" / "b.test.ts").write_text("")
+
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
+        if command.endswith("list --json"):
+            return 0, "[core] a.test.ts > alpha\n[core] b.test.ts > beta\n", ""
+        return 0, f"{command.rsplit(' ', 1)[1]} > rescued\n", ""
+
+    monkeypatch.setattr(adapters.vitest_adapter, "run_command", fake)
+
+    assert _adapter(repo_multi, "frontend").collect().tests == {
+        "frontend::a.test.ts > rescued",
+        "frontend::b.test.ts > rescued",
+    }
+
+
 def test_run_start_still_reports_the_same_baseline(repo, monkeypatch):
     """End to end, through the command that pays for this."""
     _write_tests(repo, 3)
