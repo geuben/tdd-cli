@@ -77,3 +77,8 @@
   abandon` writes its rows after ending the run, the final close completes the run and then
   flips it to `blocked`, and `tdd note` on a completed run is documented behaviour (#169's
   probe: 16 tests).
+- Only pytest, vitest and cargo go through `Adapter.collect`'s batch-then-loop path; exec, gradle
+  and xctest override `collect()` itself. A change to that path needs one cycle per adapter that
+  feeds it (each `_collect_invocations`), not one for the base: "comes for free" is not a test.
+  Real vitest 4.1.11 `list` exits 1 on a syntax error or a missing import, so an exit-0 listing
+  can be trusted not to have skipped a broken file (#168).
