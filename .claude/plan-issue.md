@@ -68,3 +68,12 @@
   mismatch on purpose.
 - `Engine.run_projects` runs only the first target per project. A contract-cycle probe
   that needs the missing target evaluated must declare the missing target first.
+- AF_UNIX socket paths are capped at 104 bytes on macOS and pytest's `tmp_path` is ~110, so
+  `bind` fails with `AF_UNIX path too long`. Put test sockets in
+  `tempfile.mkdtemp(dir="/tmp", prefix="tdd-")`. A `ThreadingUnixStreamServer` needs
+  `daemon_threads = True` and `block_on_close = False`, or `shutdown()` hangs while a client
+  is connected; a bound socket's mode follows the umask until you `chmod` it (#169).
+- Before refusing writes to finished runs, know which writes happen after a run ends: `run
+  abandon` writes its rows after ending the run, the final close completes the run and then
+  flips it to `blocked`, and `tdd note` on a completed run is documented behaviour (#169's
+  probe: 16 tests).
