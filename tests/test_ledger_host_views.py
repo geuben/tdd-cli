@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import guest_config, run_cli, write_plan
+from conftest import guest_config, run_cli, run_cli_text, write_plan
 from tddcli import gitutil
 from tddcli import ledger as ledger_mod
 
@@ -55,3 +55,11 @@ def test_ledger_fleet_lists_active_runs_of_every_source(repo, two_sources):
 
     runs = out["result"].get("runs") or []
     assert sorted((r["source"], r["run_id"]) for r in runs) == sorted(two_sources.items())
+
+
+def test_ledger_log_renders_any_sources_run(repo, two_sources):
+    run_id = two_sources["vm-2"]
+
+    text = run_cli_text(repo, "ledger", "log", "--repo", slug(repo), "--run", str(run_id))
+    # `render.friction_log` heads a run's log with its plan, then `- Run: <id>`.
+    assert ("tasks/plan.md" in text, f"- Run: {run_id}\n" in text) == (True, True)
