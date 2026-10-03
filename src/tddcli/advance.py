@@ -575,14 +575,17 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
             commit=sha,
         )
 
-    nxt = engine.close_cycle(cycle)
+    # The last cycle settles the run's outcome before ending it: a run is never ended
+    # complete and then reopened as blocked.
+    last = not any(c.ordinal > cycle["ordinal"] for c in engine.declared)
+    blocking = engine.close_undeclared_gate(cycle) if last else []
+    if blocking:
+        engine.ledger.add_blocker(
+            engine.run["id"], cycle["id"], "undeclared_file_uncommitted", json.dumps(blocking)
+        )
+    nxt = engine.close_cycle(cycle, outcome="blocked" if blocking else "complete")
     if nxt is None:
-        blocking = engine.close_undeclared_gate(cycle)
         if blocking:
-            engine.ledger.add_blocker(
-                engine.run["id"], cycle["id"], "undeclared_file_uncommitted", json.dumps(blocking)
-            )
-            engine.ledger.set_run_outcome(engine.run["id"], "blocked")
             return Envelope(
                 run={
                     "id": engine.run["id"],
