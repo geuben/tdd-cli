@@ -139,3 +139,26 @@ def test_a_guest_cannot_call_a_host_only_method(repo, split_guest):
         split_guest.socket, str(gitutil.repo_identity(repo)), "insert", "meta", key="k", value="v"
     )
     assert refusal == "method_not_allowed"
+
+
+def open_refusal(socket_path, repo_path: str) -> str:
+    """What the service says to `open`: its refusal, or accepted."""
+    try:
+        conn = wire.Connection(socket_path)
+    except wire.LedgerUnreachable:
+        return "unreachable"
+    try:
+        conn.request("open", repo_path)
+    except wire.LedgerRefused as exc:
+        return exc.refusal
+    except wire.LedgerUnreachable:
+        return "unreachable"
+    finally:
+        conn.close()
+    return "accepted"
+
+
+def test_a_malformed_repo_path_is_refused(split_guest):
+    malformed = ["relative/repo", "", "/a\x00b", "/a\nb"]
+
+    assert [open_refusal(split_guest.socket, p) for p in malformed] == ["bad_repo"] * 4
