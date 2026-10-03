@@ -13,6 +13,7 @@ the protocol has no source field at all.
 from __future__ import annotations
 
 import contextlib
+import inspect
 import os
 import socketserver
 import threading
@@ -90,10 +91,29 @@ class _Session:
             return _ok(None)
         if self.ledger is None:
             return {"ok": False, "error": "no ledger is open on this connection: send `open`"}
+        fn = getattr(self.ledger, method)
         try:
-            return _ok(getattr(self.ledger, method)(*args, **kwargs))
+            bound = inspect.signature(fn).bind(*args, **kwargs)
+        except TypeError as exc:
+            return {"ok": False, "error": f"{method}: {exc}"}
+        refused = self._foreign(bound.arguments)
+        if refused is not None:
+            return refused
+        try:
+            return _ok(fn(*args, **kwargs))
         except Exception as exc:  # the client gets the reason, the service keeps serving
             return {"ok": False, "error": f"{method}: {exc}"}
+
+    def _foreign(self, arguments: dict) -> dict | None:
+        """A refusal when the call names a run of another source.
+
+        A run that does not exist is refused the same way, so that a guest cannot learn
+        which ids exist in other sources by probing for them.
+        """
+        run_id = arguments.get("run_id")
+        if run_id is not None and self.ledger.run_source(run_id) != self.source:
+            return _refusal("foreign_run", f"run {run_id} is not one of this source's runs")
+        return None
 
     def close(self) -> None:
         if self.ledger is not None:
@@ -102,6 +122,10 @@ class _Session:
 
 def _ok(result) -> dict:
     return {"ok": True, "result": wire.encode(result)}
+
+
+def _refusal(code: str, error: str) -> dict:
+    return {"ok": False, "refusal": code, "error": error}
 
 
 class _Handler(socketserver.StreamRequestHandler):

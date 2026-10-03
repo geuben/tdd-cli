@@ -23,6 +23,15 @@ class LedgerUnreachable(RuntimeError):
     """
 
 
+class LedgerRefused(RuntimeError):
+    """The ledger service answered, and said no. `refusal` is its code for why."""
+
+    def __init__(self, refusal: str, error: str):
+        super().__init__(error)
+        self.refusal = refusal
+        self.error = error
+
+
 class Row:
     """A ledger row received over the wire: `row["col"]`, `row[i]`, `keys()`, `dict(row)`."""
 
@@ -118,6 +127,8 @@ class Connection:
             raise LedgerUnreachable(
                 f"the ledger service at {self.socket_path} closed the connection"
             )
+        if not reply.get("ok") and reply.get("refusal"):
+            raise LedgerRefused(reply["refusal"], reply.get("error") or reply["refusal"])
         if not reply.get("ok"):
             raise RuntimeError(reply.get("error") or f"the ledger service refused {method}")
         return decode(reply.get("result"))
