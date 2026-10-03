@@ -119,3 +119,23 @@ def test_a_guest_naming_another_sources_cycle_is_refused(repo, split_guest, ledg
     finally:
         conn.close()
     assert refused.value.refusal == "foreign_run"
+
+
+def refusal_of(socket_path, repo_path: str, method: str, *args, **kwargs) -> str:
+    """What the service says to `method` on a fresh connection: its refusal, or accepted."""
+    conn = wire.Connection(socket_path)
+    try:
+        conn.request("open", repo_path)
+        conn.request(method, *args, **kwargs)
+    except wire.LedgerRefused as exc:
+        return exc.refusal
+    finally:
+        conn.close()
+    return "accepted"
+
+
+def test_a_guest_cannot_call_a_host_only_method(repo, split_guest):
+    refusal = refusal_of(
+        split_guest.socket, str(gitutil.repo_identity(repo)), "insert", "meta", key="k", value="v"
+    )
+    assert refusal == "method_not_allowed"
