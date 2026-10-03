@@ -17,6 +17,7 @@ import inspect
 import json
 import os
 import signal
+import socket
 import socketserver
 import threading
 import tomllib
@@ -109,9 +110,10 @@ class _Session:
     connection must not cross threads.
     """
 
-    def __init__(self, service: Service, source: str | None):
+    def __init__(self, service: Service, source: str | None, conn: socket.socket | None = None):
         self.service = service
         self.source = source
+        self.conn = conn
         self.ledger: ledger_mod.Ledger | None = None
 
     def answer(self, request: dict) -> dict:
@@ -124,7 +126,7 @@ class _Session:
             # The admin socket: the operator's verbs, never a ledger method.
             return self.service.admin(method, args, kwargs)
         if method == "lease":
-            return _ok({"workers": self.service.take_lease()})
+            return _ok({"workers": self.service.take_lease(self, self.conn)})
         if method == "open":
             repo = args[0] if args else None
             if not _well_formed_repo(repo):
@@ -215,8 +217,21 @@ class _Session:
         return None if contract is None else contract["source"]
 
     def close(self) -> None:
+        self.service.drop_lease(self)
         if self.ledger is not None:
             self.ledger.close()
+
+
+def _hung_up(conn: socket.socket | None) -> bool:
+    """Whether the other end of a connection has closed it. Reads nothing."""
+    if conn is None:
+        return False
+    try:
+        return conn.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT) == b""
+    except BlockingIOError:
+        return False
+    except OSError:
+        return True
 
 
 def _well_formed_repo(repo) -> bool:
@@ -242,7 +257,7 @@ class _Handler(socketserver.StreamRequestHandler):
 
     def handle(self) -> None:
         listener: _Listener = self.server  # type: ignore[assignment]
-        session = _Session(listener.service, listener.source)
+        session = _Session(listener.service, listener.source, self.request)
         try:
             while (request := wire.receive(self.rfile)) is not None:
                 wire.send(self.wfile, session.answer(request))
@@ -280,9 +295,10 @@ class Service:
         self.config = config
         self.listeners: dict[str | None, _Listener] = {}
         self.executors: dict[str, str | None] = {}
-        # Worker leases held by guests, across every source: one budget per host.
+        # Worker leases held by guests, across every source: one budget per host. A
+        # lease is its connection, held open for as long as the suite runs.
         self.lock = threading.Lock()
-        self.leases = 0
+        self.leases: dict[_Session, socket.socket | None] = {}
 
     def start(self) -> None:
         self.config.home.mkdir(parents=True, exist_ok=True)
@@ -319,11 +335,24 @@ class Service:
         self.executors[name] = executor
         self._save()
 
-    def take_lease(self) -> int:
-        """Count one more suite running on this host; the worker count it should use."""
+    def take_lease(self, holder: _Session, conn: socket.socket | None) -> int:
+        """Count one more suite running on this host; the worker count it should use.
+
+        A lease whose connection has already hung up is forgotten first, so a guest
+        that just finished never counts against the next, however its handler thread
+        is scheduled.
+        """
         with self.lock:
-            self.leases += 1
-            return max(1, leases._total_cores() // self.leases)
+            for other, other_conn in list(self.leases.items()):
+                if _hung_up(other_conn):
+                    del self.leases[other]
+            self.leases[holder] = conn
+            return max(1, leases._total_cores() // len(self.leases))
+
+    def drop_lease(self, holder: _Session) -> None:
+        """Forget a lease: its connection reached EOF. There is no release message."""
+        with self.lock:
+            self.leases.pop(holder, None)
 
     def remove_source(self, name: str) -> None:
         """Close the source's socket. Its runs stay in the host's ledgers."""
