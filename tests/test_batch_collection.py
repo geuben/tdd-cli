@@ -248,6 +248,27 @@ def test_vitest_batch_leaves_a_text_listing_to_the_per_file_loop(repo_multi, mon
     }
 
 
+def test_vitest_a_file_the_listing_did_not_name_costs_no_runner_start(repo_multi, monkeypatch):
+    """Issue #168 as measured: on a shared root, another project's test file sits in
+    this project's `test_paths` and is never in its listing. A successful listing
+    settles it instead of starting the runner for it."""
+    (repo_multi / "frontend" / "a.test.ts").write_text("")
+    (repo_multi / "frontend" / "b.test.ts").write_text("")  # another project's file
+    listing = json.dumps([{"name": "alpha", "file": str(repo_multi / "frontend" / "a.test.ts")}])
+    per_file: list[str] = []
+
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
+        if "--json" in command:
+            return 0, listing, ""
+        per_file.append(command)
+        return 0, "", ""
+
+    monkeypatch.setattr(adapters.vitest_adapter, "run_command", fake)
+    collected = _adapter(repo_multi, "frontend").collect()
+
+    assert (per_file, collected.failed_files) == ([], {})
+
+
 def test_run_start_still_reports_the_same_baseline(repo, monkeypatch):
     """End to end, through the command that pays for this."""
     _write_tests(repo, 3)
