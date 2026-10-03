@@ -128,6 +128,8 @@ class _Session:
             return self.service.admin(method, args, kwargs)
         if method == "lease":
             return _ok({"workers": self.service.take_lease(self, self.conn)})
+        if method == "lease_snapshot":
+            return _ok(self.service.lease_snapshot())
         if method == "open":
             repo = args[0] if args else None
             if not _well_formed_repo(repo):
@@ -346,14 +348,23 @@ class Service:
         """
         now = time.monotonic()
         with self.lock:
-            for other, (other_conn, _) in list(self.leases.items()):
-                if _hung_up(other_conn):
-                    del self.leases[other]
-            live = sum(
-                1 for _, taken in self.leases.values() if now - taken <= leases.STALE_AFTER_S
-            )
+            live = self._live_leases(now)
             self.leases[holder] = (conn, now)
             return max(1, leases._total_cores() // (live + 1))
+
+    def _live_leases(self, now: float) -> int:
+        """Leases still held and not past the stale limit. Call with the lock held."""
+        for other, (other_conn, _) in list(self.leases.items()):
+            if _hung_up(other_conn):
+                del self.leases[other]
+        return sum(1 for _, taken in self.leases.values() if now - taken <= leases.STALE_AFTER_S)
+
+    def lease_snapshot(self) -> dict:
+        """The host's budget, observed without taking a lease: `leases.snapshot`'s shape."""
+        total = leases._total_cores()
+        with self.lock:
+            live = self._live_leases(time.monotonic())
+        return {"active": live, "total_cores": total, "workers_each": max(1, total // max(1, live))}
 
     def drop_lease(self, holder: _Session) -> None:
         """Forget a lease: its connection reached EOF. There is no release message."""

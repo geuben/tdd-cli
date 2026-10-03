@@ -30,6 +30,11 @@ def worker_lease(socket_path: Path) -> Iterator[int]:
         conn.close()
 
 
+def lease_snapshot(socket_path: Path) -> dict:
+    """The host's worker budget, as the ledger service counts it across every guest."""
+    return wire.call(socket_path, "lease_snapshot")
+
+
 class RemoteLedger:
     def __init__(self, socket_path: Path, repo_path: Path):
         self.repo_path = repo_path
