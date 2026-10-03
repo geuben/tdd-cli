@@ -261,6 +261,11 @@ class Service:
         self.executors[name] = executor
         self.listeners[name] = _Listener(Path(socket_path), self, name)
 
+    def remove_source(self, name: str) -> None:
+        """Close the source's socket. Its runs stay in the host's ledgers."""
+        self.listeners.pop(name).close()
+        del self.executors[name]
+
     def sources(self) -> list[dict]:
         """Every source, by name: the socket it listens on and the executor bound to it."""
         return [
@@ -278,6 +283,12 @@ class Service:
                 return _refusal("unknown_source", f"no source named {name!r}")
             self.executors[name] = executor
             return _ok({"name": name, "executor": executor})
+        if method == "remove_source":
+            (name,) = args
+            if name not in self.executors:
+                return _refusal("unknown_source", f"no source named {name!r}")
+            self.remove_source(name)
+            return _ok({"name": name})
         if method == "add_source":
             name, socket_path = args
             self.add_source(name, Path(socket_path), executor=kwargs.get("executor"))
