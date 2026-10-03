@@ -684,10 +684,12 @@ class Ledger:
         tests: list[str],
         failed_files: dict,
     ) -> None:
+        # Per source: a guest that could write a cache row another guest reads could
+        # hand that guest a forged baseline and hide a regression.
         self.db.execute(
             """
-            INSERT INTO baseline_cache (project, tree_hash, config_sha, failing, tests, failed_files, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO baseline_cache (source, project, tree_hash, config_sha, failing, tests, failed_files, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(source, project, tree_hash, config_sha) DO UPDATE SET
                 failing = excluded.failing,
                 tests = excluded.tests,
@@ -695,6 +697,7 @@ class Ledger:
                 created_at = excluded.created_at
             """,
             (
+                LOCAL_SOURCE if self.source is None else self.source,
                 project,
                 tree_hash,
                 config_sha,
@@ -713,15 +716,17 @@ class Ledger:
         config_sha: str,
         max_age_s: float | None = None,
     ) -> sqlite3.Row | None:
+        scope, extra = self._scoped()
         if max_age_s is not None:
             cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max_age_s)).isoformat()
             return self.one(
-                "SELECT * FROM baseline_cache WHERE project=? AND tree_hash=? AND config_sha=? AND created_at >= ?",
-                (project, tree_hash, config_sha, cutoff),
+                "SELECT * FROM baseline_cache WHERE project=? AND tree_hash=? AND config_sha=?"
+                f" AND created_at >= ?{scope}",
+                (project, tree_hash, config_sha, cutoff, *extra),
             )
         return self.one(
-            "SELECT * FROM baseline_cache WHERE project=? AND tree_hash=? AND config_sha=?",
-            (project, tree_hash, config_sha),
+            f"SELECT * FROM baseline_cache WHERE project=? AND tree_hash=? AND config_sha=?{scope}",
+            (project, tree_hash, config_sha, *extra),
         )
 
     # -- baseline claim ----------------------------------------------------
@@ -729,8 +734,9 @@ class Ledger:
     def claim(self, worktree: str, hostname: str, pid: int, projects_total: int) -> int | None:
         """Insert the claim row, or return None when the worktree is already claimed.
 
-        The insert is the lock: `worktree_path` carries `UNIQUE`, so a second claim
-        fails at the insert rather than racing a read-then-write check. The conflict
+        The insert is the lock: `(source, worktree_path)` carries `UNIQUE`, so a second
+        claim fails at the insert rather than racing a read-then-write check. Two
+        guests commonly check out at the same path, so the lock is per source. The conflict
         is answered as None, not as `sqlite3.IntegrityError`, because no sqlite
         exception can cross a socket to a remote caller."""
         try:
@@ -743,23 +749,26 @@ class Ledger:
                 projects_done=0,
                 current_project=None,
                 started_at=now(),
+                **self._stamp(),
             )
         except sqlite3.IntegrityError:
             return None
 
     def release_claim(self, worktree: str) -> None:
-        self.db.execute("DELETE FROM baseline_claim WHERE worktree_path = ?", (worktree,))
-        self.db.commit()
+        scope, extra = self._scoped()
+        self._write(
+            f"DELETE FROM baseline_claim WHERE worktree_path = ?{scope}", (worktree, *extra)
+        )
 
     def update_claim(self, worktree: str, projects_done: int, current_project: str) -> None:
         """Counters and progress only — no per-project timing history, that lives in
         the stderr heartbeat lines."""
-        self.db.execute(
+        scope, extra = self._scoped()
+        self._write(
             "UPDATE baseline_claim SET projects_done = ?, current_project = ?"
-            " WHERE worktree_path = ?",
-            (projects_done, current_project, worktree),
+            f" WHERE worktree_path = ?{scope}",
+            (projects_done, current_project, worktree, *extra),
         )
-        self.db.commit()
 
     def claim_advance(self, worktree: str, hostname: str, pid: int) -> int | None:
         """Insert the advance claim row, or return None when the worktree is already
@@ -771,13 +780,14 @@ class Ledger:
                 hostname=hostname,
                 pid=pid,
                 started_at=now(),
+                **self._stamp(),
             )
         except sqlite3.IntegrityError:
             return None
 
     def release_advance_claim(self, worktree: str) -> None:
-        self.db.execute("DELETE FROM advance_claim WHERE worktree_path = ?", (worktree,))
-        self.db.commit()
+        scope, extra = self._scoped()
+        self._write(f"DELETE FROM advance_claim WHERE worktree_path = ?{scope}", (worktree, *extra))
 
     def active_advance_claim(self, worktree: str) -> dict | None:
         """Read-only observer — staleness computed but no row deleted."""
@@ -804,11 +814,17 @@ class Ledger:
 
     def claim_row(self, worktree: str) -> sqlite3.Row | None:
         """The raw baseline claim, with no judgement of whether its owner lives."""
-        return self.one("SELECT * FROM baseline_claim WHERE worktree_path = ?", (worktree,))
+        scope, extra = self._scoped()
+        return self.one(
+            f"SELECT * FROM baseline_claim WHERE worktree_path = ?{scope}", (worktree, *extra)
+        )
 
     def advance_claim_row(self, worktree: str) -> sqlite3.Row | None:
         """The raw advance claim, with no judgement of whether its owner lives."""
-        return self.one("SELECT * FROM advance_claim WHERE worktree_path = ?", (worktree,))
+        scope, extra = self._scoped()
+        return self.one(
+            f"SELECT * FROM advance_claim WHERE worktree_path = ?{scope}", (worktree, *extra)
+        )
 
     # -- plan contracts ----------------------------------------------------
 
@@ -1283,10 +1299,12 @@ class Ledger:
         return row["at"] if row else None
 
     def baseline_claims(self) -> list[sqlite3.Row]:
-        return self.all("SELECT * FROM baseline_claim ORDER BY id")
+        scope, extra = self._scoped()
+        return self.all(f"SELECT * FROM baseline_claim WHERE 1 = 1{scope} ORDER BY id", extra)
 
     def advance_claims(self) -> list[sqlite3.Row]:
-        return self.all("SELECT * FROM advance_claim ORDER BY id")
+        scope, extra = self._scoped()
+        return self.all(f"SELECT * FROM advance_claim WHERE 1 = 1{scope} ORDER BY id", extra)
 
     # -- projections: the friction log, progress and metrics -------------------
 
