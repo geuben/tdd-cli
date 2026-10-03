@@ -403,6 +403,10 @@ def ledger_path(repo_path: Path) -> Path:
 #: while the agent's uid could still open the ledger.
 PRE_SPLIT_IMPORT = "pre_split_import"
 
+#: The source of every run recorded on this machine's own ledger: single-user mode and
+#: single-machine split mode alike. A ledger service names one source per guest socket.
+LOCAL_SOURCE = "local"
+
 
 def import_legacy(source: Path) -> tuple[Path, dict]:
     """Bring a single-user ledger under the runner, marked as pre-split history.
@@ -453,8 +457,13 @@ def claim_is_stale(hostname: str, pid: int, started_at: str) -> bool:
 class Ledger:
     _claim_is_stale = staticmethod(claim_is_stale)
 
-    def __init__(self, repo_path: Path, *, path: Path | None = None):
+    def __init__(
+        self, repo_path: Path, *, path: Path | None = None, source: str | None = LOCAL_SOURCE
+    ):
         self.repo_path = repo_path
+        # The source this ledger reads and writes as. None is the host's unscoped view
+        # of every source, built only by the ledger service and by tests.
+        self.source = source
         # `path` is for a ledger that is not found by its repository: an imported one.
         self.path = path or ledger_path(repo_path)
         # A generous busy timeout: two `run start` calls against one worktree open
@@ -558,13 +567,26 @@ class Ledger:
         sets = ", ".join(f"{k} = ?" for k in cols)
         self._write(f"UPDATE {table} SET {sets} WHERE id = ?", (*cols.values(), row_id))
 
+    # -- sources -----------------------------------------------------------
+
+    def _scoped(self, column: str = "source") -> tuple[str, tuple]:
+        """An `AND <column> = ?` clause and its parameter, empty for the unscoped view."""
+        if self.source is None:
+            return "", ()
+        return f" AND {column} = ?", (self.source,)
+
+    def _stamp(self) -> dict:
+        """The source column for a new row; the unscoped view leaves the default."""
+        return {} if self.source is None else {"source": self.source}
+
     # -- domain queries --------------------------------------------------
 
     def active_run(self, worktree: str) -> sqlite3.Row | None:
+        scope, extra = self._scoped()
         return self.one(
-            "SELECT * FROM run WHERE worktree_path = ? AND ended_at IS NULL"
+            f"SELECT * FROM run WHERE worktree_path = ? AND ended_at IS NULL{scope}"
             " ORDER BY id DESC LIMIT 1",
-            (worktree,),
+            (worktree, *extra),
         )
 
     def open_cycle(self, run_id: int) -> sqlite3.Row | None:
@@ -581,11 +603,12 @@ class Ledger:
         return {r["project"]: set(json.loads(r["failing"])) for r in rows}
 
     def previous_baseline(self, worktree: str, project: str, before_run_id: int) -> set[str] | None:
+        scope, extra = self._scoped("r.source")
         row = self.one(
             "SELECT b.failing FROM baseline b JOIN run r ON b.run_id = r.id"
-            " WHERE r.worktree_path = ? AND b.project = ? AND r.id < ?"
+            f" WHERE r.worktree_path = ? AND b.project = ? AND r.id < ?{scope}"
             " ORDER BY r.id DESC LIMIT 1",
-            (worktree, project, before_run_id),
+            (worktree, project, before_run_id, *extra),
         )
         if row is None:
             return None
@@ -612,10 +635,16 @@ class Ledger:
         skip the timeout doctor check rather than emitting a false alarm.
         Full-suite runs have `target_test IS NULL`.
         """
+        # Excludes other sources' runs rather than joining on this one's, so that an
+        # invocation is never dropped for want of a run row it can be joined to.
+        scope, extra = ("", ())
+        if self.source is not None:
+            scope = " AND run_id NOT IN (SELECT id FROM run WHERE source != ?)"
+            extra = (self.source,)
         row = self.one(
             "SELECT MAX(duration_ms) AS m FROM invocation"
-            " WHERE project = ? AND target_test IS NULL",
-            (project,),
+            f" WHERE project = ? AND target_test IS NULL{scope}",
+            (project, *extra),
         )
         return None if row is None or row["m"] is None else int(row["m"])
 
@@ -784,15 +813,17 @@ class Ledger:
     # -- plan contracts ----------------------------------------------------
 
     def contract_by_blob(self, plan_path: str, blob_sha: str | None) -> sqlite3.Row | None:
+        scope, extra = self._scoped()
         return self.one(
-            "SELECT * FROM plan_contract WHERE plan_path = ? AND git_blob_sha IS ?",
-            (plan_path, blob_sha),
+            f"SELECT * FROM plan_contract WHERE plan_path = ? AND git_blob_sha IS ?{scope}",
+            (plan_path, blob_sha, *extra),
         )
 
     def latest_contract(self, plan_path: str) -> sqlite3.Row | None:
+        scope, extra = self._scoped()
         return self.one(
-            "SELECT * FROM plan_contract WHERE plan_path = ? ORDER BY id DESC LIMIT 1",
-            (plan_path,),
+            f"SELECT * FROM plan_contract WHERE plan_path = ?{scope} ORDER BY id DESC LIMIT 1",
+            (plan_path, *extra),
         )
 
     def register_contract(
@@ -816,6 +847,7 @@ class Ledger:
             annotation_keys=annotation_keys,
             ancillary_files=ancillary_files,
             registered_at=now(),
+            **self._stamp(),
         )
 
     # -- runs ----------------------------------------------------------------
@@ -824,15 +856,18 @@ class Ledger:
         return self.one("SELECT * FROM run WHERE id = ?", (run_id,))
 
     def latest_run(self, worktree: str) -> sqlite3.Row | None:
+        scope, extra = self._scoped()
         return self.one(
-            "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1", (worktree,)
+            f"SELECT * FROM run WHERE worktree_path = ?{scope} ORDER BY id DESC LIMIT 1",
+            (worktree, *extra),
         )
 
     def latest_blocked_run(self, worktree: str) -> sqlite3.Row | None:
+        scope, extra = self._scoped()
         return self.one(
-            "SELECT * FROM run WHERE worktree_path = ? AND outcome = 'blocked'"
+            f"SELECT * FROM run WHERE worktree_path = ? AND outcome = 'blocked'{scope}"
             " ORDER BY id DESC LIMIT 1",
-            (worktree,),
+            (worktree, *extra),
         )
 
     def start_run(
@@ -860,6 +895,7 @@ class Ledger:
             preexisting_dirty=json.dumps(preexisting_dirty),
             config_sha=config_sha,
             start_sha=start_sha,
+            **self._stamp(),
         )
 
     def end_run(self, run_id: int, outcome: str) -> None:
@@ -1233,11 +1269,13 @@ class Ledger:
 
     def active_runs(self) -> list[sqlite3.Row]:
         """Every run not yet ended, in any worktree, with its plan."""
+        scope, extra = self._scoped("r.source")
         return self.all(
-            "SELECT r.id, r.worktree_path, r.executor_model, r.started_at,"
+            "SELECT r.id, r.worktree_path, r.executor_model, r.started_at, r.source,"
             "       p.plan_path, p.declared_cycles"
             " FROM run r JOIN plan_contract p ON p.id = r.plan_contract_id"
-            " WHERE r.ended_at IS NULL ORDER BY r.id"
+            f" WHERE r.ended_at IS NULL{scope} ORDER BY r.id",
+            extra,
         )
 
     def last_invocation_at(self, run_id: int) -> str | None:
@@ -1253,7 +1291,10 @@ class Ledger:
     # -- projections: the friction log, progress and metrics -------------------
 
     def runs_in(self, worktree: str) -> list[sqlite3.Row]:
-        return self.all("SELECT * FROM run WHERE worktree_path = ? ORDER BY id", (worktree,))
+        scope, extra = self._scoped()
+        return self.all(
+            f"SELECT * FROM run WHERE worktree_path = ?{scope} ORDER BY id", (worktree, *extra)
+        )
 
     def run_events(self, run_id: int) -> list[sqlite3.Row]:
         return self.all("SELECT * FROM integrity_event WHERE run_id = ? ORDER BY id", (run_id,))
@@ -1324,7 +1365,7 @@ class Ledger:
         )
 
 
-def open_readonly(path: Path) -> Ledger | None:
+def open_readonly(path: Path, *, source: str | None = LOCAL_SOURCE) -> Ledger | None:
     """A reader on an existing ledger, or None when there is none yet.
 
     Read-only is structural: the file is opened with SQLite's `mode=ro` URI, which also
@@ -1336,6 +1377,7 @@ def open_readonly(path: Path) -> Ledger | None:
         return None
     reader = Ledger.__new__(Ledger)
     reader.repo_path = None
+    reader.source = source
     reader.path = path
     reader.db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     reader.db.row_factory = sqlite3.Row
