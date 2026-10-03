@@ -8,10 +8,26 @@ SQL: only the named methods the service is willing to answer.
 
 from __future__ import annotations
 
+import contextlib
+from collections.abc import Iterator
 from pathlib import Path
 
 from . import wire
 from .ledger import claim_is_stale, judged_claim
+
+
+@contextlib.contextmanager
+def worker_lease(socket_path: Path) -> Iterator[int]:
+    """A worker lease from the ledger service, held for as long as its connection is.
+
+    There is no release message: the lease ends when the connection closes, which is
+    also what happens when the guest holding it dies.
+    """
+    conn = wire.Connection(socket_path)
+    try:
+        yield conn.request("lease")["workers"]
+    finally:
+        conn.close()
 
 
 class RemoteLedger:

@@ -152,9 +152,30 @@ def named_lease(name: str) -> Iterator[None]:
             lock_path.unlink()
 
 
+def _ledger_socket() -> Path | None:
+    """The ledger service's socket, when this process is a runner in a guest.
+
+    Such a runner shares the host's cores with every other guest's, so the budget is
+    the service's to split, not a lease directory's on this guest.
+    """
+    from . import runner
+
+    split = runner.load()
+    if split is None or split.role != "runner":
+        return None
+    return split.ledger_socket
+
+
 @contextlib.contextmanager
 def worker_lease(total_cores: int | None = None) -> Iterator[int]:
     """Hold a lease for one suite invocation; yields the worker count to use."""
+    socket_path = _ledger_socket()
+    if socket_path is not None:
+        from . import remote
+
+        with remote.worker_lease(socket_path) as workers:
+            yield workers
+        return
     directory = lease_dir()
     directory.mkdir(parents=True, exist_ok=True)
     total = total_cores or _total_cores()
