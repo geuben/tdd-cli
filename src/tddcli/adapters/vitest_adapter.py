@@ -317,12 +317,13 @@ class VitestAdapter(Adapter):
             ),
         )
 
-    def _collect_invocations(self) -> list[tuple[str, dict[str, str] | None]]:
+    def _collect_invocations(self) -> list[tuple[str, dict[str, str] | None, object]]:
         """An override with no `collect_command` gets no batch — `vitest list` knows
         nothing of its config, and its files fall to the loop, which records the
-        missing `collect_command` against each of them as before."""
-        return [(self._collect_cmd(), self._suite_env(None))] + [
-            (ov.collect_command, self._suite_env(ov))
+        missing `collect_command` against each of them as before. Each names its
+        suite (None for the default) so a successful listing settles its files."""
+        return [(self._collect_cmd(), self._suite_env(None), None)] + [
+            (ov.collect_command, self._suite_env(ov), ov)
             for ov in self.project.overrides
             if ov.collect_command
         ]
