@@ -28,6 +28,10 @@ CONFIG_PATH = Path("/etc/tdd-cli/ledger.toml")
 
 #: A run with one of these outcomes takes no more writes from a guest.
 CLOSED_OUTCOMES = ("complete", "abandoned")
+
+#: The one write a closed run still takes: `tdd note` after the run is documented use,
+#: and is how an executor leaves its closing narrative.
+CLOSED_RUN_EXEMPT = frozenset({"add_note"})
 CONFIG_ENV = "TDD_LEDGER_SERVICE_CONFIG"
 
 
@@ -104,7 +108,7 @@ class _Session:
         except TypeError as exc:
             return {"ok": False, "error": f"{method}: {exc}"}
         refused = self._foreign(bound.arguments)
-        if refused is None and method in ledger_mod.GUEST_WRITES:
+        if refused is None and method in ledger_mod.GUEST_WRITES - CLOSED_RUN_EXEMPT:
             refused = self._closed(bound.arguments)
         if refused is not None:
             return refused
