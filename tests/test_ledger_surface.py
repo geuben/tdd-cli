@@ -8,10 +8,12 @@ be a query the service cannot see, scope or refuse.
 from __future__ import annotations
 
 import ast
+import inspect
 import re
 from pathlib import Path
 
 import tddcli
+from tddcli import ledger as ledger_mod
 
 SRC = Path(tddcli.__file__).resolve().parent
 
@@ -39,9 +41,7 @@ def _offences(path: Path) -> list[str]:
         elif isinstance(node, ast.ImportFrom) and node.module == "sqlite3":
             found.append(f"{node.lineno}: from sqlite3")
         elif (
-            isinstance(node, ast.Constant)
-            and isinstance(node.value, str)
-            and SQL.match(node.value)
+            isinstance(node, ast.Constant) and isinstance(node.value, str) and SQL.match(node.value)
         ):
             found.append(f"{node.lineno}: SQL {node.value.strip()[:40]!r}")
         elif (
@@ -61,3 +61,29 @@ def test_no_module_but_the_ledger_speaks_sql():
         if (found := _offences(path))
     }
     assert offenders == {}
+
+
+#: A method that touches one run's rows names that run by one of these parameters.
+OWNERSHIP = {"run_id", "cycle_id", "contract_id"}
+
+
+def test_every_ledger_method_is_classified_and_scoped():
+    reads = getattr(ledger_mod, "GUEST_READS", frozenset())
+    writes = getattr(ledger_mod, "GUEST_WRITES", frozenset())
+    host_only = getattr(ledger_mod, "HOST_ONLY", frozenset())
+    rooted = getattr(ledger_mod, "SOURCE_ROOTED", frozenset())
+    public = sorted(
+        name
+        for name, value in vars(ledger_mod.Ledger).items()
+        if not name.startswith("_") and callable(value)
+    )
+    problems = []
+    for name in public:
+        classes = [s for s in (reads, writes, host_only) if name in s]
+        if len(classes) != 1:
+            problems.append(f"{name}: in {len(classes)} of GUEST_READS/GUEST_WRITES/HOST_ONLY")
+        elif (name in reads or name in writes) and name not in rooted:
+            params = set(inspect.signature(getattr(ledger_mod.Ledger, name)).parameters)
+            if not params & OWNERSHIP:
+                problems.append(f"{name}: a guest method with no run, cycle or contract id")
+    assert problems == []
