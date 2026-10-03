@@ -32,6 +32,10 @@ class RemoteLedger:
 
         return call
 
+    def ping(self) -> dict:
+        """The source this guest is recorded under, and the executor bound to it."""
+        return self._conn.request("ping")
+
     # Claim liveness is judged here, where the claiming pid lives. On the host the
     # guest's hostname is foreign, so the host could only fall back to the claim's age.
 
