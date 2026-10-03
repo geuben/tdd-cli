@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import guest_config, run_cli, run_cli_text, write_plan
+from conftest import current_user, guest_config, run_cli, run_cli_text, write_plan
 from tddcli import gitutil, service, wire
 from tddcli import ledger as ledger_mod
 
@@ -199,3 +199,14 @@ def test_a_bound_source_records_the_operator_assigned_executor(repo, split_guest
 
     run = host_run(ledger_service, repo, start_run(repo)["run"]["id"])
     assert (run["executor_model"], run["executor_source"]) == ("model-x", "operator")
+
+
+def test_an_unbound_source_downgrades_a_guest_operator_claim(repo, split_guest, ledger_service):
+    guest_config(
+        split_guest.runner,
+        split_guest.socket,
+        extra=f'[executor]\n"{current_user()}" = "guest-says"\n',
+    )
+
+    run = host_run(ledger_service, repo, start_run(repo)["run"]["id"])
+    assert (run["executor_model"], run["executor_source"]) == ("guest-says", "claimed")
