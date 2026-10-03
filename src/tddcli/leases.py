@@ -92,7 +92,13 @@ def _live_count(directory: Path) -> int:
 
 def snapshot() -> dict:
     """Observe the budget without participating in it — counts live leases but
-    sweeps nothing and takes nothing, so a fleet view never perturbs the split."""
+    sweeps nothing and takes nothing, so a fleet view never perturbs the split.
+    In a guest, the budget is the host's: the ledger service counts it."""
+    socket_path = _ledger_socket()
+    if socket_path is not None:
+        from . import remote
+
+        return remote.lease_snapshot(socket_path)
     directory = lease_dir()
     total = _total_cores()
     live = 0
