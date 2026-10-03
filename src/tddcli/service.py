@@ -82,7 +82,9 @@ class _Session:
         if method == "ping":
             return _ok({"source": self.source, "executor": self.service.executors.get(self.source)})
         if method == "open":
-            repo = str(args[0])
+            repo = args[0] if args else None
+            if not _well_formed_repo(repo):
+                return _refusal("bad_repo", f"{repo!r} is not an absolute repository path")
             self.ledger = ledger_mod.Ledger(
                 Path(repo),
                 source=self.source,
@@ -134,6 +136,16 @@ class _Session:
     def close(self) -> None:
         if self.ledger is not None:
             self.ledger.close()
+
+
+def _well_formed_repo(repo) -> bool:
+    """An absolute path with no NUL or newline: it names the host's ledger file."""
+    return (
+        isinstance(repo, str)
+        and Path(repo).is_absolute()
+        and "\x00" not in repo
+        and "\n" not in repo
+    )
 
 
 def _ok(result) -> dict:
