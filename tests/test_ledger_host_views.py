@@ -48,3 +48,10 @@ def test_ledger_metrics_covers_every_source(repo, two_sources):
 
     runs = (out["result"].get("repos") or {}).get(slug(repo), {}).get("runs", [])
     assert sorted(r["source"] for r in runs) == ["vm-1", "vm-2"]
+
+
+def test_ledger_fleet_lists_active_runs_of_every_source(repo, two_sources):
+    out = run_cli(repo, "ledger", "fleet")
+
+    runs = out["result"].get("runs") or []
+    assert sorted((r["source"], r["run_id"]) for r in runs) == sorted(two_sources.items())
