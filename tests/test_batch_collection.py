@@ -261,3 +261,18 @@ cycles:
     out = run_cli(repo, "run", "start", "--plan", plan)
     assert out["ok"], out
     assert out["result"]["baselines"] == {"backend": 0}, out["result"]
+
+
+def test_an_empty_successful_batch_leaves_its_files_to_the_loop(repo, monkeypatch):
+    """A batch that exits 0 having listed nothing settles nothing: its files still
+    get the per-file loop, so an empty listing cannot erase a suite."""
+    real = adapters.base.run_command
+
+    def empty_batch(command, cwd, timeout=1800, extra_env=None, label=None):
+        if command.endswith("--collect-only -q"):
+            return 0, "", ""
+        return real(command, cwd, timeout=timeout, extra_env=extra_env, label=label)
+
+    monkeypatch.setattr(adapters.pytest_adapter, "run_command", empty_batch)
+
+    assert "backend::tests/test_smoke.py::test_smoke" in _adapter(repo).collect().tests
