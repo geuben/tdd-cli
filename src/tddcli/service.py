@@ -29,6 +29,9 @@ CONFIG_PATH = Path("/etc/tdd-cli/ledger.toml")
 #: A run with one of these outcomes takes no more writes from a guest.
 CLOSED_OUTCOMES = ("complete", "abandoned")
 
+#: Writes that record who executed a run: the service sets the executor on them.
+STAMPED = frozenset({"start_run"})
+
 #: The one write a closed run still takes: `tdd note` after the run is documented use,
 #: and is how an executor leaves its closing narrative.
 CLOSED_RUN_EXEMPT = frozenset({"add_note"})
@@ -112,6 +115,9 @@ class _Session:
             refused = self._closed(bound.arguments)
         if refused is not None:
             return refused
+        if method in STAMPED:
+            kwargs = self._stamp_executor(bound.arguments)
+            args = []
         try:
             return _ok(fn(*args, **kwargs))
         except Exception as exc:  # the client gets the reason, the service keeps serving
@@ -133,6 +139,20 @@ class _Session:
             if value is not None and source_of(value) != self.source:
                 return _refusal("foreign_run", f"{noun} {value} is not this source's")
         return None
+
+    def _stamp_executor(self, arguments: dict) -> dict:
+        """The call's arguments, with the executor the operator bound to this source.
+
+        A guest's own identity is guest root's to edit, so when the operator has said
+        which model a source runs, that is what the run records.
+        """
+        stamped = dict(arguments)
+        binding = self.service.executors.get(self.source)
+        if binding is not None:
+            stamped.update(
+                executor_model=binding, executor_session=None, executor_source="operator"
+            )
+        return stamped
 
     def _closed(self, arguments: dict) -> dict | None:
         """A refusal when the call writes to a run that is complete or abandoned.
