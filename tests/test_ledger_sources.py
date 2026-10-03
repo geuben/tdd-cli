@@ -172,6 +172,14 @@ def test_metrics_names_each_runs_source(repo):
     assert [r.get("source") for r in run_cli(repo, "metrics")["result"]["runs"]] == ["local"]
 
 
+def test_a_source_reads_back_its_own_cached_baseline(tmp_path, ledger_home):
+    a = Ledger(tmp_path / "somerepo", source="a")
+    a.cache_baseline("app", "tree", "cfg", failing=["t::x"], tests=["t::x"], failed_files={})
+
+    cached = a.cached_baseline("app", "tree", "cfg")
+    assert (cached is not None, cached and cached["source"]) == (True, "a")
+
+
 def test_two_sources_claim_and_cache_the_same_worktree_independently(tmp_path, ledger_home):
     repo = tmp_path / "somerepo"
     a = Ledger(repo, source="a")

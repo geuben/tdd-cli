@@ -111,7 +111,7 @@ class _Session:
     connection must not cross threads.
     """
 
-    def __init__(self, service: Service, source: str | None, conn: socket.socket | None = None):
+    def __init__(self, service: Service, source: str | None, conn: socket.socket):
         self.service = service
         self.source = source
         self.conn = conn
@@ -225,16 +225,16 @@ class _Session:
             self.ledger.close()
 
 
-def _hung_up(conn: socket.socket | None) -> bool:
-    """Whether the other end of a connection has closed it. Reads nothing."""
-    if conn is None:
-        return False
+def _hung_up(conn: socket.socket) -> bool:
+    """Whether the other end of a connection has closed it. Reads nothing.
+
+    A lease is dropped before its own end of the connection is closed, so `conn` is
+    always open here: only the guest's end can have gone.
+    """
     try:
         return conn.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT) == b""
     except BlockingIOError:
         return False
-    except OSError:
-        return True
 
 
 def _well_formed_repo(repo) -> bool:
@@ -301,7 +301,7 @@ class Service:
         # Worker leases held by guests, across every source: one budget per host. A
         # lease is its connection, held open for as long as the suite runs.
         self.lock = threading.Lock()
-        self.leases: dict[_Session, tuple[socket.socket | None, float]] = {}
+        self.leases: dict[_Session, tuple[socket.socket, float]] = {}
 
     def start(self) -> None:
         self.config.home.mkdir(parents=True, exist_ok=True)
@@ -338,7 +338,7 @@ class Service:
         self.executors[name] = executor
         self._save()
 
-    def take_lease(self, holder: _Session, conn: socket.socket | None) -> int:
+    def take_lease(self, holder: _Session, conn: socket.socket) -> int:
         """Count one more suite running on this host; the worker count it should use.
 
         A lease whose connection has already hung up is forgotten first, so a guest
