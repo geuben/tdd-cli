@@ -144,7 +144,8 @@ class _Session:
         """The call's arguments, with the executor the operator bound to this source.
 
         A guest's own identity is guest root's to edit, so when the operator has said
-        which model a source runs, that is what the run records.
+        which model a source runs, that is what the run records. With no binding, the
+        guest's word passes through, except that it cannot speak for the operator.
         """
         stamped = dict(arguments)
         binding = self.service.executors.get(self.source)
@@ -152,6 +153,8 @@ class _Session:
             stamped.update(
                 executor_model=binding, executor_session=None, executor_source="operator"
             )
+        elif stamped.get("executor_source") == "operator":
+            stamped["executor_source"] = "claimed"
         return stamped
 
     def _closed(self, arguments: dict) -> dict | None:
