@@ -263,10 +263,12 @@ class Adapter:
                 }
         return self._collect_per_file(unaccounted, result)
 
-    def _collect_invocations(self) -> list[tuple[str, dict[str, str] | None]]:
+    def _collect_invocations(self) -> list[tuple]:
         """One collection command per declared suite: the default plus each
         override's (R7.13), so an override's files are enumerated with its own
-        command and env."""
+        command and env. Each is `(command, env, owner)`, owner being the suite's
+        override or None for the default; a `(command, env)` pair is still
+        accepted, and its batch settles only the files it lists."""
         raise NotImplementedError
 
     def _collect_batch(
