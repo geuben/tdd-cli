@@ -34,6 +34,9 @@ CLOSED_OUTCOMES = ("complete", "abandoned")
 #: Writes that record who executed a run: the service sets the executor on them.
 STAMPED = frozenset({"start_run", "abandon_run"})
 
+ADMIN_MODE = 0o600
+GUEST_MODE = 0o660
+
 #: Where the service keeps its sources, under its home, so a restart listens on them again.
 SOURCES_FILE = "sources.json"
 
@@ -236,6 +239,9 @@ class _Listener(socketserver.ThreadingUnixStreamServer):
         with contextlib.suppress(FileNotFoundError):
             path.unlink()
         super().__init__(str(path), _Handler)
+        # A socket's mode follows the umask unless set. The admin socket is the service
+        # account's alone; a guest's is shared with the group the operator forwards it to.
+        path.chmod(ADMIN_MODE if source is None else GUEST_MODE)
         self.thread = threading.Thread(target=self.serve_forever, daemon=True)
         self.thread.start()
 
