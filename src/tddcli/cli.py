@@ -1535,7 +1535,9 @@ def cmd_fleet(args) -> Envelope:
     `_context`: no tdd.toml, active run, or existing ledger is required, and the
     ledger is opened read-only so live agents cannot be perturbed."""
     worktree = _worktree()
-    summary = fleet.summarise(ledger_path(gitutil.repo_identity(worktree)))
+    summary = fleet.summarise(
+        ledger_mod.open_readonly(ledger_path(gitutil.repo_identity(worktree)))
+    )
     if args.json:
         return Envelope(result=summary, next_action=NextAction(Verb.COMPLETE, "Fleet reported."))
     sys.stdout.write(fleet.render(summary))

@@ -427,6 +427,9 @@ class Ledger:
         )
         self.db.commit()
 
+    def close(self) -> None:
+        self.db.close()
+
     def _stored_version(self) -> int | None:
         """The schema version already on disk, or None for a fresh database."""
         try:
@@ -1156,6 +1159,45 @@ class Ledger:
     def annotation_keys_of(self, cycle_id: int) -> set[str]:
         rows = self.all("SELECT key FROM annotation WHERE cycle_id = ?", (cycle_id,))
         return {r["key"] for r in rows}
+
+    # -- the fleet's view ------------------------------------------------------
+
+    def active_runs(self) -> list[sqlite3.Row]:
+        """Every run not yet ended, in any worktree, with its plan."""
+        return self.all(
+            "SELECT r.id, r.worktree_path, r.executor_model, r.started_at,"
+            "       p.plan_path, p.declared_cycles"
+            " FROM run r JOIN plan_contract p ON p.id = r.plan_contract_id"
+            " WHERE r.ended_at IS NULL ORDER BY r.id"
+        )
+
+    def last_invocation_at(self, run_id: int) -> str | None:
+        row = self.one("SELECT MAX(started_at) AS at FROM invocation WHERE run_id = ?", (run_id,))
+        return row["at"] if row else None
+
+    def baseline_claims(self) -> list[sqlite3.Row]:
+        return self.all("SELECT * FROM baseline_claim ORDER BY id")
+
+    def advance_claims(self) -> list[sqlite3.Row]:
+        return self.all("SELECT * FROM advance_claim ORDER BY id")
+
+
+def open_readonly(path: Path) -> Ledger | None:
+    """A reader on an existing ledger, or None when there is none yet.
+
+    Read-only is structural: the file is opened with SQLite's `mode=ro` URI, which also
+    refuses to create it, and no schema script or migration runs. A reader therefore
+    cannot perturb a ledger that live agents are writing, even if this code's schema
+    constant were ever to drift from the one on disk.
+    """
+    if not path.is_file():
+        return None
+    reader = Ledger.__new__(Ledger)
+    reader.repo_path = None
+    reader.path = path
+    reader.db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    reader.db.row_factory = sqlite3.Row
+    return reader
 
 
 def open_ledger(repo_path: Path) -> Ledger:

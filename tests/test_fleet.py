@@ -17,6 +17,7 @@ import time
 
 from conftest import run_cli, write_plan
 from tddcli import fleet, leases
+from tddcli import ledger as ledger_mod
 from tddcli.ledger import Ledger, ledger_path
 
 PLAN = """---
@@ -127,18 +128,18 @@ def test_fleet_human_output_renders_one_line_per_run(repo):
 
 def test_open_readonly_cannot_write(repo, ledger_home):
     Ledger(repo)  # create the db
-    conn = fleet.open_readonly(ledger_path(repo))
+    reader = ledger_mod.open_readonly(ledger_path(repo))
     try:
-        conn.execute("INSERT INTO meta(key, value) VALUES ('x', 'y')")
+        reader.db.execute("INSERT INTO meta(key, value) VALUES ('x', 'y')")
         raise AssertionError("write succeeded on a read-only connection")
     except sqlite3.OperationalError:
         pass
     finally:
-        conn.close()
+        reader.close()
 
 
 def test_open_readonly_returns_none_for_missing_db(tmp_path):
-    assert fleet.open_readonly(tmp_path / "absent.sqlite3") is None
+    assert ledger_mod.open_readonly(tmp_path / "absent.sqlite3") is None
 
 
 # -- lease snapshot ------------------------------------------------------
