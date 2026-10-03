@@ -423,6 +423,8 @@ LOCAL_SOURCE = "local"
 GUEST_READS = frozenset(
     {
         "abandonment",
+        "active_advance_claim",
+        "active_claim",
         "active_run",
         "active_runs",
         "advance_claim_row",
@@ -515,12 +517,9 @@ GUEST_WRITES = frozenset(
 )
 
 #: Never answered for a guest. The generic helpers would let it name any row of any
-#: source; `active_claim` and `active_advance_claim` judge a pid's liveness, which only
-#: the guest that owns the pid can do, so a guest composes them from the raw rows.
+#: source.
 HOST_ONLY = frozenset(
     {
-        "active_advance_claim",
-        "active_claim",
         "all",
         "close",
         "insert",
@@ -534,6 +533,8 @@ HOST_ONLY = frozenset(
 #: Guest methods with no run, cycle or contract id: each filters by the ledger's source.
 SOURCE_ROOTED = frozenset(
     {
+        "active_advance_claim",
+        "active_claim",
         "active_run",
         "active_runs",
         "advance_claim_row",

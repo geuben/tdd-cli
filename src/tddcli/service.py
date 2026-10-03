@@ -91,6 +91,8 @@ class _Session:
             return _ok(None)
         if self.ledger is None:
             return {"ok": False, "error": "no ledger is open on this connection: send `open`"}
+        if method not in ledger_mod.GUEST_READS | ledger_mod.GUEST_WRITES:
+            return _refusal("method_not_allowed", f"{method} is not answered for a guest")
         fn = getattr(self.ledger, method)
         try:
             bound = inspect.signature(fn).bind(*args, **kwargs)
