@@ -335,7 +335,8 @@ def _impl_attempts(rows) -> int:
     return len(target_only) if target_only else len(rows)
 
 
-def metrics(ledger: Ledger, worktree: str) -> dict:
+def metrics(ledger: Ledger, worktree: str | None) -> dict:
+    """Per-run metrics for one worktree's runs, or every worktree's when it is None."""
     runs = ledger.runs_in(worktree)
     out = {
         "runs": [],

@@ -1466,8 +1466,11 @@ class Ledger:
 
     # -- projections: the friction log, progress and metrics -------------------
 
-    def runs_in(self, worktree: str) -> list[sqlite3.Row]:
+    def runs_in(self, worktree: str | None) -> list[sqlite3.Row]:
+        """The runs recorded in one worktree, or in every worktree when it is None."""
         scope, extra = self._scoped()
+        if worktree is None:
+            return self.all(f"SELECT * FROM run WHERE 1 = 1{scope} ORDER BY id", extra)
         return self.all(
             f"SELECT * FROM run WHERE worktree_path = ?{scope} ORDER BY id", (worktree, *extra)
         )
