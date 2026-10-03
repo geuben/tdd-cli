@@ -37,3 +37,14 @@ def test_the_service_counts_leases_across_sources(
             second = workers
 
     assert second == 6
+
+
+def test_a_lease_ends_when_its_connection_closes(
+    split_guest, ledger_service, monkeypatch, tmp_path
+):
+    with leases.worker_lease():
+        pass
+    as_second_guest(split_guest, ledger_service, monkeypatch, tmp_path)
+
+    with leases.worker_lease() as workers:
+        assert workers == 12
