@@ -6,6 +6,7 @@ are both the source `local`; a ledger service names one source per guest socket.
 
 from __future__ import annotations
 
+from conftest import run_cli, write_plan
 from tddcli.ledger import Ledger, now
 
 #: The v12 shape of the tables v13 rebuilds, copied from `SCHEMA` before v13.
@@ -151,6 +152,24 @@ def test_a_source_reads_only_its_own_runs_and_contracts(tmp_path, ledger_home):
         "latest_run": b.latest_run(worktree),
     }
     assert seen_by_b == dict.fromkeys(seen_by_b)
+
+
+PLAN = """---
+cycles:
+  - n: 1
+    project: backend
+    title: "adding two numbers"
+    test: "tests/test_add.py::test_add"
+---
+"""
+
+
+def test_metrics_names_each_runs_source(repo):
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+
+    assert [r.get("source") for r in run_cli(repo, "metrics")["result"]["runs"]] == ["local"]
 
 
 def test_two_sources_claim_and_cache_the_same_worktree_independently(tmp_path, ledger_home):
