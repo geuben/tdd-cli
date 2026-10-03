@@ -43,6 +43,8 @@ class Collection:
 
     tests: set[str] = field(default_factory=set)
     failed_files: dict[str, str] = field(default_factory=dict)
+    # Files handed to the per-file loop: one runner start each (issue #168).
+    per_file_collects: int = 0
 
 
 def _suite_overlap(suite_ids: list[set[str]]) -> list[str]:
@@ -261,6 +263,7 @@ class Adapter:
                 unaccounted = {
                     rel for rel in unaccounted if self.project.override_for(rel) is not owner[0]
                 }
+        result.per_file_collects = len(unaccounted)
         return self._collect_per_file(unaccounted, result)
 
     def _collect_invocations(self) -> list[tuple]:

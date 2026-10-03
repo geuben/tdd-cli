@@ -684,6 +684,7 @@ def _probe_projects(
                 elapsed_s=round(elapsed, 2),
                 run_s=round(ran - started, 2),
                 collect_s=round(elapsed - (ran - started), 2),
+                per_file_collects=collection.per_file_collects,
             )
             if reuse_baselines and cfg is not None and config_sha is not None:
                 ledger.cache_baseline(
