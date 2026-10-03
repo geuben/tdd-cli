@@ -20,6 +20,7 @@ import signal
 import socket
 import socketserver
 import threading
+import time
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -298,7 +299,7 @@ class Service:
         # Worker leases held by guests, across every source: one budget per host. A
         # lease is its connection, held open for as long as the suite runs.
         self.lock = threading.Lock()
-        self.leases: dict[_Session, socket.socket | None] = {}
+        self.leases: dict[_Session, tuple[socket.socket | None, float]] = {}
 
     def start(self) -> None:
         self.config.home.mkdir(parents=True, exist_ok=True)
@@ -340,14 +341,19 @@ class Service:
 
         A lease whose connection has already hung up is forgotten first, so a guest
         that just finished never counts against the next, however its handler thread
-        is scheduled.
+        is scheduled. One older than `leases.STALE_AFTER_S` is not counted: no suite
+        runs that long, and a guest whose VM froze must not throttle the host forever.
         """
+        now = time.monotonic()
         with self.lock:
-            for other, other_conn in list(self.leases.items()):
+            for other, (other_conn, _) in list(self.leases.items()):
                 if _hung_up(other_conn):
                     del self.leases[other]
-            self.leases[holder] = conn
-            return max(1, leases._total_cores() // len(self.leases))
+            live = sum(
+                1 for _, taken in self.leases.values() if now - taken <= leases.STALE_AFTER_S
+            )
+            self.leases[holder] = (conn, now)
+            return max(1, leases._total_cores() // (live + 1))
 
     def drop_lease(self, holder: _Session) -> None:
         """Forget a lease: its connection reached EOF. There is no release message."""
