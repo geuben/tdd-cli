@@ -103,6 +103,13 @@ def load() -> RunnerConfig | None:
         ) from exc
     ledger_home = section.get("ledger_home")
     ledger_socket = section.get("ledger_socket")
+    if ledger_home and ledger_socket:
+        # Two places for the ledger is one too many: a runner that kept a local one as
+        # well would be falling back to it, which socket mode must never do.
+        raise RunnerConfigError(
+            f"{path}: [runner] names both `ledger_socket` and `ledger_home`; a runner keeps"
+            " its ledger in one place"
+        )
     return RunnerConfig(
         user=section["user"],
         command=section["command"],
