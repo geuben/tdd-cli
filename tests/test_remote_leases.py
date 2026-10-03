@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import guest_config
+from conftest import guest_config, run_cli
 from tddcli import leases
 
 
@@ -58,3 +58,15 @@ def test_a_stale_lease_is_not_counted(split_guest, ledger_service, monkeypatch, 
             second = workers
 
     assert second == 12
+
+
+def test_guest_fleet_reports_the_hosts_lease_count(
+    repo, split_guest, ledger_service, monkeypatch, tmp_path
+):
+    as_second_guest(split_guest, ledger_service, monkeypatch, tmp_path)
+    with leases.worker_lease():
+        guest_config(split_guest.runner, split_guest.socket)
+        monkeypatch.setenv("TDD_LEASE_DIR", str(tmp_path / "vm-1-leases"))
+        out = run_cli(repo, "fleet", "--json")
+
+    assert out["result"]["suites"]["active"] == 1
