@@ -92,3 +92,62 @@ def test_a_v12_ledger_migrates_with_its_rows_tagged_local(tmp_path, ledger_home)
         for table in ("run", "plan_contract", "baseline_claim")
     }
     assert sources == {"run": "local", "plan_contract": "local", "baseline_claim": "local"}
+
+
+def _contract(ledger: Ledger) -> int:
+    return ledger.register_contract(
+        plan_path="tasks/p.md",
+        blob_sha="abc",
+        commit_sha="def",
+        status="declared",
+        declared_cycles="[]",
+        annotation_keys="[]",
+        ancillary_files="[]",
+    )
+
+
+def _start(ledger: Ledger, contract: int, worktree: str) -> int:
+    return ledger.start_run(
+        contract,
+        executor_model="m",
+        executor_session=None,
+        executor_source="human",
+        worktree=worktree,
+        allow_dirty=False,
+        preexisting_dirty=[],
+        config_sha=None,
+        start_sha=None,
+    )
+
+
+def test_a_source_reads_only_its_own_runs_and_contracts(tmp_path, ledger_home):
+    repo = tmp_path / "somerepo"
+    a = Ledger(repo, source="a")
+    b = Ledger(repo, source="b")
+    worktree = str(tmp_path / "wt")
+    run_id = _start(a, _contract(a), worktree)
+    a.record_baseline(run_id, "app", ["t::x"], source="probed")
+    a.record_invocation(
+        run_id,
+        None,
+        phase_at="CLOSE_SWEEP",
+        project="app",
+        adapter="pytest",
+        target_test=None,
+        target_outcome=None,
+        target_failure="",
+        total_passed=1,
+        total_failed=0,
+        other_failures=[],
+        duration_ms=500,
+        tree_hash=None,
+    )
+
+    seen_by_b = {
+        "active_run": b.active_run(worktree),
+        "latest_contract": b.latest_contract("tasks/p.md"),
+        "previous_baseline": b.previous_baseline(worktree, "app", 10**9),
+        "max_suite_duration_ms": b.max_suite_duration_ms("app"),
+        "latest_run": b.latest_run(worktree),
+    }
+    assert seen_by_b == dict.fromkeys(seen_by_b)
