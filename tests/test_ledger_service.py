@@ -11,7 +11,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from conftest import run_cli, run_cli_text, write_plan
+from conftest import guest_config, run_cli, run_cli_text, write_plan
 from tddcli import gitutil, service, wire
 from tddcli import ledger as ledger_mod
 
@@ -78,3 +78,14 @@ def test_a_blocked_guest_run_can_be_unblocked(repo, split_guest):
 
     out = run_cli(repo, "resume", "--unblock", "--note", "fixed")
     assert out["result"].get("resumed") is True
+
+
+def test_an_unreachable_socket_refuses_the_verb(repo, split_guest, ledger_service):
+    guest_config(split_guest.runner, ledger_service.dir / "absent.sock")
+
+    out = start_run(repo)
+    local = sorted(str(p) for p in split_guest.guest_home.rglob("*.sqlite3"))
+    assert {"reason": out["result"].get("reason"), "local_ledgers": local} == {
+        "reason": "ledger_unreachable",
+        "local_ledgers": [],
+    }
