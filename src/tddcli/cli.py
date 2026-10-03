@@ -1572,6 +1572,13 @@ def cmd_runner_import(args) -> Envelope:
             "this machine is not split, or this is not its runner: `tdd docs split` sets one up",
             reason="not_split",
         )
+    if split.ledger_socket is not None:
+        # This runner keeps no ledger: it is the host's, behind the socket.
+        return failure(
+            "this runner keeps its ledger on the host's ledger service: import there, with"
+            " `tdd ledger import <file> --source <name>`",
+            reason="ledger_remote",
+        )
     # sudo sets SUDO_UID itself. Unset means someone logged in as the runner; "0" means
     # root. Anything else reached us the way an agent does, and an agent that could
     # import could hand the runner a history it wrote itself.
