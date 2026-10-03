@@ -20,9 +20,9 @@ import json
 from pathlib import Path
 
 from conftest import run_cli, write_plan
-from test_suite_overrides import OVERRIDE_BLOCK, project_with
 from tddcli import adapters
 from tddcli import config as config_mod
+from test_suite_overrides import OVERRIDE_BLOCK, project_with
 
 
 def _adapter(repo: Path, project: str = "backend"):
