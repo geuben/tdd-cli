@@ -407,6 +407,153 @@ PRE_SPLIT_IMPORT = "pre_split_import"
 #: single-machine split mode alike. A ledger service names one source per guest socket.
 LOCAL_SOURCE = "local"
 
+# -- the guest registry ----------------------------------------------------------
+#
+# A ledger service exposes `Ledger` methods to guests by name, so every public method
+# is classified here, exactly once. A guest method that touches one run's rows names
+# that run by a parameter called exactly `run_id`, `cycle_id` or `contract_id`, which
+# the service checks belongs to the guest's source; one that finds rows by worktree,
+# project or cache key is SOURCE_ROOTED, and filters by the ledger's own source.
+
+#: Reads a guest may make.
+GUEST_READS = frozenset(
+    {
+        "abandonment",
+        "active_run",
+        "active_runs",
+        "advance_claim_row",
+        "advance_claims",
+        "annotation_keys_of",
+        "annotations",
+        "baseline_claims",
+        "baseline_rows",
+        "baselines",
+        "blocker_counts",
+        "blockers",
+        "cached_baseline",
+        "claim_row",
+        "collection",
+        "commits",
+        "completed_sensitivity",
+        "contract",
+        "contract_by_blob",
+        "cycle",
+        "cycle_event_kinds",
+        "cycle_events",
+        "cycle_has_event",
+        "cycle_has_note",
+        "cycle_notes",
+        "cycle_times",
+        "cycles",
+        "event_counts",
+        "event_details",
+        "get_meta",
+        "interventions",
+        "invocations",
+        "last_cycle_event_detail",
+        "last_gate",
+        "last_invocation_at",
+        "latest_blocked_run",
+        "latest_close_sweeps",
+        "latest_contract",
+        "latest_run",
+        "max_suite_duration_ms",
+        "open_cycle",
+        "open_sensitivity",
+        "previous_baseline",
+        "regenerated_artifacts",
+        "run",
+        "run_events",
+        "run_has_event",
+        "run_notes",
+        "run_target_tests",
+        "runs_in",
+        "suite_time_by_phase",
+        "unclosed_cycle",
+    }
+)
+
+#: Writes a guest may make.
+GUEST_WRITES = frozenset(
+    {
+        "abandon_run",
+        "add_annotation",
+        "add_blocker",
+        "add_cycle",
+        "add_note",
+        "amend_baseline",
+        "cache_baseline",
+        "claim",
+        "claim_advance",
+        "close_sensitivity_check",
+        "end_run",
+        "event",
+        "mark_artifact_check",
+        "mark_cycle_closed",
+        "move_cycle",
+        "open_sensitivity_check",
+        "record_artifact_check",
+        "record_baseline",
+        "record_collection",
+        "record_commit",
+        "record_gate",
+        "record_invocation",
+        "record_sensitivity_mutation",
+        "register_contract",
+        "release_advance_claim",
+        "release_claim",
+        "reopen_run",
+        "set_targets",
+        "skip_cycle",
+        "start_run",
+        "update_claim",
+    }
+)
+
+#: Never answered for a guest. The generic helpers would let it name any row of any
+#: source; `active_claim` and `active_advance_claim` judge a pid's liveness, which only
+#: the guest that owns the pid can do, so a guest composes them from the raw rows.
+HOST_ONLY = frozenset(
+    {
+        "active_advance_claim",
+        "active_claim",
+        "all",
+        "close",
+        "insert",
+        "one",
+        "set_meta",
+        "update",
+    }
+)
+
+#: Guest methods with no run, cycle or contract id: each filters by the ledger's source.
+SOURCE_ROOTED = frozenset(
+    {
+        "active_run",
+        "active_runs",
+        "advance_claim_row",
+        "advance_claims",
+        "baseline_claims",
+        "cache_baseline",
+        "cached_baseline",
+        "claim",
+        "claim_advance",
+        "claim_row",
+        "contract_by_blob",
+        "get_meta",
+        "latest_blocked_run",
+        "latest_contract",
+        "latest_run",
+        "max_suite_duration_ms",
+        "previous_baseline",
+        "register_contract",
+        "release_advance_claim",
+        "release_claim",
+        "runs_in",
+        "update_claim",
+    }
+)
+
 
 def import_legacy(source: Path) -> tuple[Path, dict]:
     """Bring a single-user ledger under the runner, marked as pre-split history.
