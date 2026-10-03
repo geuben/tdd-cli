@@ -513,7 +513,8 @@ class Engine:
     def transition(self, cycle_row, to_phase: str) -> None:
         self.ledger.move_cycle(cycle_row["id"], from_phase=cycle_row["phase"], to_phase=to_phase)
 
-    def close_cycle(self, cycle_row):
+    def close_cycle(self, cycle_row, outcome: str = "complete"):
+        """Close the cycle and open the next; after the last, end the run with `outcome`."""
         row = self.ledger.cycle(cycle_row["id"])
         if row and row["closed_at"] is not None:
             return self.ledger.open_cycle(self.run["id"])
@@ -521,7 +522,7 @@ class Engine:
         self.ledger.mark_cycle_closed(cycle_row["id"])
         nxt = next((c for c in self.declared if c.ordinal > cycle_row["ordinal"]), None)
         if nxt is None:
-            self.ledger.end_run(self.run["id"], "complete")
+            self.ledger.end_run(self.run["id"], outcome)
             return None
         return self.open_cycle(nxt.ordinal)
 

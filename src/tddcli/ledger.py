@@ -974,9 +974,6 @@ class Ledger:
     def mark_cycle_closed(self, cycle_id: int) -> None:
         self.update("cycle", cycle_id, closed_at=now())
 
-    def set_run_outcome(self, run_id: int, outcome: str) -> None:
-        self.update("run", run_id, outcome=outcome)
-
     def run_target_tests(self, run_id: int) -> list[list[str]]:
         """Every cycle's targets in the run, one list per cycle."""
         rows = self.all("SELECT target_tests FROM cycle WHERE run_id = ?", (run_id,))
