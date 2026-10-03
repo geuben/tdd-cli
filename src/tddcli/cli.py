@@ -46,6 +46,7 @@ from .advance import advance as do_advance
 from .envelope import Envelope, NextAction, Verb, failure, heartbeat
 from .ledger import Ledger, LedgerVersionError, ledger_path, now, open_ledger
 from .machine import CLOSED, SKIPPED, Engine
+from .remote import RemoteLedger
 
 BASELINE_MAX_FAILURE_RATIO_DEFAULT = 0.5
 BASELINE_MIN_COLLECTED = 10
@@ -311,12 +312,15 @@ def _cleanliness_detail(blocking: list[str], unrelated: list[str]) -> str:
     return ""
 
 
-def _split_checks(check: Callable, split: runner_mod.RunnerConfig, ledger_file: Path) -> None:
+def _split_checks(
+    check: Callable, split: runner_mod.RunnerConfig, ledger_file: Path | None
+) -> None:
     """What split mode rests on, probed live and as the agent.
 
     Each probe goes through the installed actor, so on a real machine it is answered
     by the real sudo and the real accounts: that is the one place the uid change
-    itself is ever verified.
+    itself is ever verified. `ledger_file` is None when the ledger is on the host's
+    ledger service: there is then no file here for the agent to reach.
     """
     agent = os.environ.get("SUDO_USER", "")
     asked = actor.current().run_argv(["id", "-u"])
@@ -333,15 +337,16 @@ def _split_checks(check: Callable, split: runner_mod.RunnerConfig, ledger_file: 
         f" `{split.user} ALL=({agent}) NOPASSWD:SETENV: ALL`",
     )
 
-    readable = actor.current().run_argv(["test", "-r", str(ledger_file)]).returncode == 0
-    check(
-        "ledger out of the agent's reach",
-        not readable,
-        f"{agent!r} can read {ledger_file}. Its directory must belong to {split.user}"
-        " alone, at mode 700, somewhere the agent's account cannot otherwise reach"
-        if readable
-        else "",
-    )
+    if ledger_file is not None:
+        readable = actor.current().run_argv(["test", "-r", str(ledger_file)]).returncode == 0
+        check(
+            "ledger out of the agent's reach",
+            not readable,
+            f"{agent!r} can read {ledger_file}. Its directory must belong to {split.user}"
+            " alone, at mode 700, somewhere the agent's account cannot otherwise reach"
+            if readable
+            else "",
+        )
 
     # A runner whose code the agent can edit is the agent.
     install = Path(__file__).resolve().parent
@@ -370,7 +375,12 @@ def cmd_doctor(args) -> Envelope:
 
     repo = gitutil.repo_identity(worktree)
     ledger = open_ledger(repo)
-    check("ledger reachable", True, str(ledger.path))
+    remote = isinstance(ledger, RemoteLedger)
+    if remote:
+        # Reaching the service is not enough: say which source it records this guest as.
+        check("ledger reachable", True, f"socket {ledger.path} (source {ledger.ping()['source']})")
+    else:
+        check("ledger reachable", True, str(ledger.path))
     check(
         "ledger outside worktree", not str(ledger.path).startswith(str(worktree)), str(ledger.path)
     )
@@ -387,7 +397,7 @@ def cmd_doctor(args) -> Envelope:
             " cannot reach.",
         )
     else:
-        _split_checks(check, split, ledger.path)
+        _split_checks(check, split, None if remote else ledger.path)
 
     ex = identity.resolve(worktree)
     ex_detail = f"{ex.source}: {ex.model}"
