@@ -157,3 +157,48 @@ def test_timing_does_not_disturb_the_command_result(repo, monkeypatch):
     code, out, err = base.run_command("echo hello", repo)
     assert code == 0
     assert out.strip() == "hello"
+
+
+def _fail_the_batch(monkeypatch):
+    """Fail the whole-suite collect so every test file falls to the per-file loop."""
+    real = base.run_command
+
+    def failing_batch(command, cwd, timeout=1800, extra_env=None, label=None):
+        if command.endswith("--collect-only -q"):
+            return 2, "", "boom"
+        return real(command, cwd, timeout=timeout, extra_env=extra_env, label=label)
+
+    monkeypatch.setattr(adapters.pytest_adapter, "run_command", failing_batch)
+
+
+def test_baseline_reports_how_many_files_fell_to_the_per_file_loop(repo, capsys, monkeypatch):
+    """Issue #168: each loop iteration is a runner start, so the count belongs next
+    to `collect_s` — a slow collect otherwise had to be measured by hand."""
+    for i in range(2):
+        (repo / "backend" / "tests" / f"test_gen{i}.py").write_text(f"def test_gen{i}(): pass\n")
+    _fail_the_batch(monkeypatch)
+    assert _start(repo)["ok"]
+
+    backend = next(
+        line
+        for line in _lines(capsys.readouterr().err, "baseline_captured")
+        if line["project"] == "backend"
+    )
+    assert backend.get("per_file_collects") == 3, backend
+
+
+def test_parallel_baselines_report_how_many_files_fell_to_the_loop(repo, capsys, monkeypatch):
+    """`--baseline-jobs > 1` emits its own heartbeat; the count must not be lost there."""
+    for i in range(2):
+        (repo / "backend" / "tests" / f"test_gen{i}.py").write_text(f"def test_gen{i}(): pass\n")
+    _fail_the_batch(monkeypatch)
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    assert run_cli(repo, "run", "start", "--plan", plan, "--baseline-jobs", "2")["ok"]
+
+    backend = next(
+        line
+        for line in _lines(capsys.readouterr().err, "baseline_captured")
+        if line["project"] == "backend"
+    )
+    assert backend.get("per_file_collects") == 3, backend
