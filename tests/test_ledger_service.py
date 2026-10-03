@@ -8,6 +8,8 @@ runs are recorded under is the socket they arrived on, never anything it says.
 from __future__ import annotations
 
 import shutil
+import socket
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -221,3 +223,16 @@ def test_a_bound_source_stamps_the_abandoning_executor(repo, split_guest, ledger
     host = ledger_mod.open_readonly(host_file(ledger_service, repo), source=None)
     row = host.abandonment(run_id)
     assert (row["executor_model"], row["executor_source"]) == ("model-x", "operator")
+
+
+def test_claim_staleness_is_judged_in_the_guest(repo, split_guest, ledger_service, monkeypatch):
+    # The host cannot tell whether a guest's pid lives: stand that in for its judgement.
+    monkeypatch.setattr(ledger_mod.Ledger, "_claim_is_stale", staticmethod(lambda *a: False))
+    proc = subprocess.Popen(["true"])
+    proc.wait()
+    host = ledger_mod.Ledger(repo, source="vm-1", path=host_file(ledger_service, repo))
+    host.claim(str(repo), socket.gethostname(), proc.pid, projects_total=2)
+    host.close()
+
+    out = run_cli(repo, "progress", "--json")
+    assert out["result"].get("stale") is True
