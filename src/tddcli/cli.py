@@ -1639,7 +1639,11 @@ def _ledger_verb(answer: Callable) -> Callable:
                 " `tdd docs split` describes one",
                 reason="no_service",
             )
-        return answer(args, service_mod.load_config(path))
+        try:
+            return answer(args, service_mod.load_config(path))
+        except wire.LedgerRefused as exc:
+            # The operator's own service said no: its code is the reason.
+            return failure(exc.error, reason=exc.refusal)
 
     return handler
 
