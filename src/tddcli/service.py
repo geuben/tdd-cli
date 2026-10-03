@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import inspect
+import json
 import os
 import socketserver
 import threading
@@ -32,6 +33,9 @@ CLOSED_OUTCOMES = ("complete", "abandoned")
 
 #: Writes that record who executed a run: the service sets the executor on them.
 STAMPED = frozenset({"start_run", "abandon_run"})
+
+#: Where the service keeps its sources, under its home, so a restart listens on them again.
+SOURCES_FILE = "sources.json"
 
 #: The one write a closed run still takes: `tdd note` after the run is documented use,
 #: and is how an executor leaves its closing narrative.
@@ -251,6 +255,23 @@ class Service:
     def start(self) -> None:
         self.config.home.mkdir(parents=True, exist_ok=True)
         self.listeners[None] = _Listener(self.config.admin_socket, self, None)
+        for name, entry in sorted(self._saved().items()):
+            self.add_source(name, Path(entry["socket"]), entry.get("executor"))
+
+    def _saved(self) -> dict:
+        path = self.config.home / SOURCES_FILE
+        return json.loads(path.read_text()) if path.is_file() else {}
+
+    def _save(self) -> None:
+        """Persist every source, replacing the file whole so a crash never halves it."""
+        path = self.config.home / SOURCES_FILE
+        sources = {
+            name: {"socket": str(self.listeners[name].path), "executor": executor}
+            for name, executor in sorted(self.executors.items())
+        }
+        partial = path.with_name(path.name + ".partial")
+        partial.write_text(json.dumps(sources, indent=2) + "\n")
+        partial.replace(path)
 
     def stop(self) -> None:
         for listener in list(self.listeners.values()):
@@ -260,11 +281,17 @@ class Service:
     def add_source(self, name: str, socket_path: Path, executor: str | None = None) -> None:
         self.executors[name] = executor
         self.listeners[name] = _Listener(Path(socket_path), self, name)
+        self._save()
+
+    def bind(self, name: str, executor: str) -> None:
+        self.executors[name] = executor
+        self._save()
 
     def remove_source(self, name: str) -> None:
         """Close the source's socket. Its runs stay in the host's ledgers."""
         self.listeners.pop(name).close()
         del self.executors[name]
+        self._save()
 
     def sources(self) -> list[dict]:
         """Every source, by name: the socket it listens on and the executor bound to it."""
@@ -281,7 +308,7 @@ class Service:
             name, executor = args
             if name not in self.executors:
                 return _refusal("unknown_source", f"no source named {name!r}")
-            self.executors[name] = executor
+            self.bind(name, executor)
             return _ok({"name": name, "executor": executor})
         if method == "remove_source":
             (name,) = args
