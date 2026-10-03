@@ -6,7 +6,15 @@ source's history in one place. None of these verbs is ever forwarded to a runner
 
 from __future__ import annotations
 
+import os
+import shutil
+import signal
 import stat
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
 
 from conftest import run_cli
 from tddcli import service, wire
@@ -92,3 +100,32 @@ def test_socket_modes(ledger_service):
         "vm-1": stat.S_IMODE(guest.stat().st_mode),
     }
     assert modes == {"admin": 0o600, "vm-1": 0o660}
+
+
+def test_ledger_serve_runs_until_terminated(tmp_path):
+    sockets = Path(tempfile.mkdtemp(dir="/tmp", prefix="tdd-"))
+    cfg = tmp_path / "ledger.toml"
+    cfg.write_text(
+        f'[service]\nadmin_socket = "{sockets / "admin.sock"}"\nhome = "{tmp_path / "host"}"\n'
+    )
+    # No `python -m tddcli` entry point: call `main` as the installed script does.
+    entry = "import sys; from tddcli.cli import main; sys.exit(main(sys.argv[1:]))"
+    proc = subprocess.Popen(
+        [sys.executable, "-c", entry, "ledger", "serve"],
+        env={**os.environ, "TDD_LEDGER_SERVICE_CONFIG": str(cfg)},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    answered = False
+    try:
+        deadline = time.monotonic() + 10
+        while not answered and proc.poll() is None and time.monotonic() < deadline:
+            answered = ping_or_unreachable(sockets / "admin.sock") != "unreachable"
+            time.sleep(0.1)
+        proc.send_signal(signal.SIGTERM)
+        code = proc.wait(timeout=10)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        shutil.rmtree(sockets, ignore_errors=True)
+    assert (answered, code) == (True, 0)
