@@ -1648,6 +1648,15 @@ def _not_implemented(args, cfg) -> Envelope:
     return failure("not implemented", reason="not_implemented")
 
 
+def _ledger_serve(args, cfg) -> Envelope:
+    heartbeat(event="ledger_service_listening", admin_socket=str(cfg.admin_socket))
+    service_mod.serve(cfg)
+    return Envelope(
+        result={"stopped": True},
+        next_action=NextAction(Verb.COMPLETE, "The ledger service stopped."),
+    )
+
+
 def _ledger_sources(args, cfg) -> Envelope:
     sources = wire.call(cfg.admin_socket, "sources")
     return Envelope(
@@ -1885,7 +1894,7 @@ def build_parser() -> argparse.ArgumentParser:
         "ledger", help="the host's ledger service: its sources and every source's history"
     ).add_subparsers(dest="ledger_command", required=True)
     s = ledger_p.add_parser("serve", help="run the ledger service until SIGTERM")
-    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s.set_defaults(fn=_ledger_verb(_ledger_serve))
     s = ledger_p.add_parser("sources", help="every source, its socket and its executor")
     s.set_defaults(fn=_ledger_verb(_ledger_sources))
     s = ledger_p.add_parser("add-source", help="open a socket for a new guest")
