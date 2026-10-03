@@ -70,3 +70,11 @@ def test_a_guest_renders_its_own_friction_log(repo, split_guest):
     start_run(repo)
 
     assert "tasks/plan.md" in run_cli_text(repo, "log", "render")
+
+
+def test_a_blocked_guest_run_can_be_unblocked(repo, split_guest):
+    start_run(repo)
+    run_cli(repo, "blocker", "--kind", "plan_defect", "--detail", "x")
+
+    out = run_cli(repo, "resume", "--unblock", "--note", "fixed")
+    assert out["result"].get("resumed") is True
