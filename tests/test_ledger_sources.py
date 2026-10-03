@@ -151,3 +151,17 @@ def test_a_source_reads_only_its_own_runs_and_contracts(tmp_path, ledger_home):
         "latest_run": b.latest_run(worktree),
     }
     assert seen_by_b == dict.fromkeys(seen_by_b)
+
+
+def test_two_sources_claim_and_cache_the_same_worktree_independently(tmp_path, ledger_home):
+    repo = tmp_path / "somerepo"
+    a = Ledger(repo, source="a")
+    b = Ledger(repo, source="b")
+    worktree = "/work/repo"
+    a.claim(worktree, "h", 1, 1)
+    a.cache_baseline("app", "tree", "cfg", failing=["t::x"], tests=["t::x"], failed_files={})
+
+    assert (b.claim(worktree, "h", 2, 1) is not None, b.cached_baseline("app", "tree", "cfg")) == (
+        True,
+        None,
+    )
