@@ -275,7 +275,7 @@ class CargoAdapter(Adapter):
     # ------------------------------------------------------------------
 
     def _collect_invocations(self):
-        return [(f"{self._test_cmd()} -- --list", self._suite_env(None))]
+        return [(f"{self._test_cmd()} -- --list", self._suite_env(None), None)]
 
     def _collect_batch(self, command, env):
         code, out, _err = self._run_suite(f"{command} 2>&1", env)
