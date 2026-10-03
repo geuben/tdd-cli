@@ -11,7 +11,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from conftest import run_cli, write_plan
+from conftest import run_cli, run_cli_text, write_plan
 from tddcli import gitutil, service, wire
 from tddcli import ledger as ledger_mod
 
@@ -64,3 +64,9 @@ def test_a_guest_run_lands_in_the_host_ledger_under_its_source(repo, split_guest
 
     reader = ledger_mod.open_readonly(host_file(ledger_service, repo), source=None)
     assert reader is not None and [r["source"] for r in reader.active_runs()] == ["vm-1"]
+
+
+def test_a_guest_renders_its_own_friction_log(repo, split_guest):
+    start_run(repo)
+
+    assert "tasks/plan.md" in run_cli_text(repo, "log", "render")
