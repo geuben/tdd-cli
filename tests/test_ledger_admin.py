@@ -22,3 +22,15 @@ def test_add_source_opens_a_guest_socket(repo, ledger_service):
     run_cli(repo, "ledger", "add-source", "vm-2", "--socket", str(socket_path))
 
     assert wire.call(socket_path, "ping") == {"source": "vm-2", "executor": None}
+
+
+def test_sources_lists_each_source_and_its_binding(repo, ledger_service):
+    svc, sockets = ledger_service.service, ledger_service.dir
+    svc.add_source("vm-2", sockets / "vm-2.sock", executor="m")
+    svc.add_source("vm-1", sockets / "vm-1.sock", executor=None)
+
+    out = run_cli(repo, "ledger", "sources")
+    assert out["result"].get("sources") == [
+        {"name": "vm-1", "socket": str(sockets / "vm-1.sock"), "executor": None},
+        {"name": "vm-2", "socket": str(sockets / "vm-2.sock"), "executor": "m"},
+    ]
