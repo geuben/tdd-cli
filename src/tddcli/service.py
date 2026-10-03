@@ -261,8 +261,17 @@ class Service:
         self.executors[name] = executor
         self.listeners[name] = _Listener(Path(socket_path), self, name)
 
+    def sources(self) -> list[dict]:
+        """Every source, by name: the socket it listens on and the executor bound to it."""
+        return [
+            {"name": name, "socket": str(self.listeners[name].path), "executor": executor}
+            for name, executor in sorted(self.executors.items())
+        ]
+
     def admin(self, method: str, args: list, kwargs: dict) -> dict:
         """An operator's request, from the admin socket."""
+        if method == "sources":
+            return _ok(self.sources())
         if method == "add_source":
             name, socket_path = args
             self.add_source(name, Path(socket_path), executor=kwargs.get("executor"))

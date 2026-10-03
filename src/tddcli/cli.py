@@ -1648,6 +1648,14 @@ def _not_implemented(args, cfg) -> Envelope:
     return failure("not implemented", reason="not_implemented")
 
 
+def _ledger_sources(args, cfg) -> Envelope:
+    sources = wire.call(cfg.admin_socket, "sources")
+    return Envelope(
+        result={"sources": sources},
+        next_action=NextAction(Verb.COMPLETE, f"{len(sources)} source(s)."),
+    )
+
+
 def _ledger_add_source(args, cfg) -> Envelope:
     added = wire.call(
         cfg.admin_socket, "add_source", args.name, args.socket, executor=args.executor
@@ -1858,7 +1866,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = ledger_p.add_parser("serve", help="run the ledger service until SIGTERM")
     s.set_defaults(fn=_ledger_verb(_not_implemented))
     s = ledger_p.add_parser("sources", help="every source, its socket and its executor")
-    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s.set_defaults(fn=_ledger_verb(_ledger_sources))
     s = ledger_p.add_parser("add-source", help="open a socket for a new guest")
     s.add_argument("name")
     s.add_argument("--socket", required=True)
