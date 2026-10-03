@@ -1664,6 +1664,23 @@ def _ledger_fleet(args, cfg) -> Envelope:
     )
 
 
+def _ledger_log(args, cfg) -> Envelope:
+    rendered = wire.call(cfg.admin_socket, "log", args.repo, args.run)
+    if args.out:
+        out = Path(args.out)
+        actor.current().write_file(out, rendered["text"].encode())
+        return Envelope(
+            result={"written": str(out), "source": rendered["source"]},
+            next_action=NextAction(Verb.COMPLETE, f"Friction log written to {out}."),
+        )
+    sys.stdout.write(rendered["text"])
+    return Envelope(
+        result={"rendered": True, "source": rendered["source"]},
+        next_action=NextAction(Verb.COMPLETE, "Rendered."),
+        silent=True,
+    )
+
+
 def _ledger_metrics(args, cfg) -> Envelope:
     return Envelope(
         result=wire.call(cfg.admin_socket, "metrics", args.repo),
@@ -1932,7 +1949,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--repo", required=True, help="the repository's slug")
     s.add_argument("--run", type=int, required=True)
     s.add_argument("--out")
-    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s.set_defaults(fn=_ledger_verb(_ledger_log))
     s = ledger_p.add_parser("import", help="bring an existing ledger in as one source")
     s.add_argument("file")
     s.add_argument("--source", required=True)
