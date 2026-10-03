@@ -1667,6 +1667,16 @@ def _ledger_bind(args, cfg) -> Envelope:
     )
 
 
+def _ledger_remove_source(args, cfg) -> Envelope:
+    removed = wire.call(cfg.admin_socket, "remove_source", args.name)
+    return Envelope(
+        result=removed,
+        next_action=NextAction(
+            Verb.COMPLETE, f"Source {args.name}'s socket is closed; its runs stay recorded."
+        ),
+    )
+
+
 def _ledger_add_source(args, cfg) -> Envelope:
     added = wire.call(
         cfg.admin_socket, "add_source", args.name, args.socket, executor=args.executor
@@ -1885,7 +1895,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=_ledger_verb(_ledger_add_source))
     s = ledger_p.add_parser("remove-source", help="close a guest's socket")
     s.add_argument("name")
-    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s.set_defaults(fn=_ledger_verb(_ledger_remove_source))
     s = ledger_p.add_parser("bind", help="set the executor a source's next runs record")
     s.add_argument("name")
     s.add_argument("--executor", required=True)
