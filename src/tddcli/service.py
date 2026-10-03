@@ -404,6 +404,20 @@ class Service:
         out["suites"] = self.lease_snapshot()
         return out
 
+    def log(self, repo: str, run_id: int) -> dict:
+        """Any source's run, rendered as the friction log its guest would render."""
+        path = self.host_files(repo).get(repo)
+        if path is None:
+            return _refusal("unknown_repo", f"no ledger for {repo!r} on this host")
+        view = ledger_mod.Ledger(Path(repo), path=path, source=None)
+        try:
+            run = view.run(run_id)
+            if run is None:
+                return _refusal("unknown_run", f"no run {run_id} in {repo}'s ledger")
+            return _ok({"text": render.friction_log(view, run), "source": run["source"]})
+        finally:
+            view.close()
+
     def metrics(self, repo: str | None = None) -> dict:
         """`tdd metrics`, over every source's runs, for each repository on the host."""
         out = {}
@@ -421,6 +435,8 @@ class Service:
             return _ok(self.metrics(*args))
         if method == "fleet":
             return _ok(self.fleet())
+        if method == "log":
+            return self.log(*args)
         if method == "sources":
             return _ok(self.sources())
         if method == "bind":
