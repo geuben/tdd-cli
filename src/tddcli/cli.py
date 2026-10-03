@@ -40,6 +40,7 @@ from . import (
 )
 from . import ledger as ledger_mod
 from . import runner as runner_mod
+from . import service as service_mod
 from . import target_lint as target_lint_mod
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
@@ -1620,6 +1621,33 @@ def cmd_runner_import(args) -> Envelope:
     )
 
 
+# -- the ledger service: the operator's verbs ----------------------------------------
+
+
+def _ledger_verb(answer: Callable) -> Callable:
+    """A `tdd ledger` handler: it needs this machine's ledger service config first.
+
+    These verbs are the host operator's. They are answered here, never by a runner,
+    and only on a machine that runs a ledger service.
+    """
+
+    def handler(args) -> Envelope:
+        path = service_mod.config_path()
+        if not path.is_file():
+            return failure(
+                f"no ledger service is configured on this machine ({path} is absent):"
+                " `tdd docs split` describes one",
+                reason="no_service",
+            )
+        return answer(args, service_mod.load_config(path))
+
+    return handler
+
+
+def _not_implemented(args, cfg) -> Envelope:
+    return failure("not implemented", reason="not_implemented")
+
+
 def cmd_docs(args) -> Envelope:
     """The shipped documentation, printed. No network, and versioned with the binary.
 
@@ -1809,13 +1837,48 @@ def build_parser() -> argparse.ArgumentParser:
     s = runner_p.add_parser("import")
     s.add_argument("ledger")
     s.set_defaults(fn=cmd_runner_import)
+
+    ledger_p = sub.add_parser(
+        "ledger", help="the host's ledger service: its sources and every source's history"
+    ).add_subparsers(dest="ledger_command", required=True)
+    s = ledger_p.add_parser("serve", help="run the ledger service until SIGTERM")
+    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s = ledger_p.add_parser("sources", help="every source, its socket and its executor")
+    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s = ledger_p.add_parser("add-source", help="open a socket for a new guest")
+    s.add_argument("name")
+    s.add_argument("--socket", required=True)
+    s.add_argument("--executor", help="the model this source runs, recorded on its runs")
+    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s = ledger_p.add_parser("remove-source", help="close a guest's socket")
+    s.add_argument("name")
+    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s = ledger_p.add_parser("bind", help="set the executor a source's next runs record")
+    s.add_argument("name")
+    s.add_argument("--executor", required=True)
+    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s = ledger_p.add_parser("fleet", help="active runs of every source")
+    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s = ledger_p.add_parser("metrics", help="metrics over every source's runs")
+    s.add_argument("--repo", help="one repository's ledger, by its slug")
+    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s = ledger_p.add_parser("log", help="render any source's run as a friction log")
+    s.add_argument("--repo", required=True, help="the repository's slug")
+    s.add_argument("--run", type=int, required=True)
+    s.add_argument("--out")
+    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s = ledger_p.add_parser("import", help="bring an existing ledger in as one source")
+    s.add_argument("file")
+    s.add_argument("--source", required=True)
+    s.set_defaults(fn=_ledger_verb(_not_implemented))
     return p
 
 
-#: Verbs an agent's own `tdd` answers on a split machine. Neither reads or writes the
-#: ledger: `docs` prints what shipped with the binary, and `init` writes `tdd.toml`
-#: into the agent's own worktree. Everything else is the runner's to do.
-LOCAL_VERBS = {"docs", "init"}
+#: Verbs an agent's own `tdd` answers on a split machine. `docs` prints what shipped
+#: with the binary, and `init` writes `tdd.toml` into the agent's own worktree; neither
+#: touches the ledger. `ledger` is the host operator's, and talks to the ledger service
+#: on this machine. Everything else is the runner's to do.
+LOCAL_VERBS = {"docs", "init", "ledger"}
 
 
 def _actor_for(
@@ -1842,11 +1905,12 @@ def _refusal(split: runner_mod.RunnerConfig | None, args) -> Envelope | None:
 
     It must not fall back to acting as itself: that would run the agent's suites, and
     the agent's git hooks, as the uid that owns the ledger. `runner` verbs are the
-    exception: they are the operator's, touch no worktree and spawn nothing.
+    exception, and so are `ledger` verbs: they are the operator's, touch no worktree
+    and spawn nothing.
     """
     if split is None or split.role != "runner" or os.environ.get("SUDO_USER"):
         return None
-    if args.command == "runner":
+    if args.command in ("runner", "ledger"):
         return None
     return failure(
         f"this is the split-mode runner ({split.user}) and no agent called it: run `tdd`"
@@ -1904,6 +1968,7 @@ def main(argv: list[str] | None = None) -> int:
         gitutil.GitError,
         LedgerVersionError,
         runner_mod.RunnerConfigError,
+        service_mod.ServiceConfigError,
     ) as exc:
         envelope = failure(str(exc))
     except SystemExit as exc:
