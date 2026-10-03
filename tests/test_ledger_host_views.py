@@ -80,3 +80,11 @@ def test_ledger_import_retags_a_ledger_as_one_source(repo, ledger_home, ledger_s
     run_cli(repo, "ledger", "import", str(legacy), "--source", "legacy")
     host = ledger_mod.open_readonly(ledger_service.home / legacy.name, source=None)
     assert host is not None and [r["source"] for r in host.runs_in(None)] == ["legacy"]
+
+
+def test_ledger_import_refuses_an_existing_host_ledger(repo, ledger_home, ledger_service):
+    legacy = single_user_ledger(repo, ledger_home)
+    run_cli(repo, "ledger", "import", str(legacy), "--source", "legacy")
+
+    again = run_cli(repo, "ledger", "import", str(legacy), "--source", "legacy")
+    assert again["result"].get("reason") == "ledger_exists"
