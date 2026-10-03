@@ -25,6 +25,9 @@ from . import ledger as ledger_mod
 from . import runner, wire
 
 CONFIG_PATH = Path("/etc/tdd-cli/ledger.toml")
+
+#: A run with one of these outcomes takes no more writes from a guest.
+CLOSED_OUTCOMES = ("complete", "abandoned")
 CONFIG_ENV = "TDD_LEDGER_SERVICE_CONFIG"
 
 
@@ -101,6 +104,8 @@ class _Session:
         except TypeError as exc:
             return {"ok": False, "error": f"{method}: {exc}"}
         refused = self._foreign(bound.arguments)
+        if refused is None and method in ledger_mod.GUEST_WRITES:
+            refused = self._closed(bound.arguments)
         if refused is not None:
             return refused
         try:
@@ -123,6 +128,21 @@ class _Session:
             value = arguments.get(param)
             if value is not None and source_of(value) != self.source:
                 return _refusal("foreign_run", f"{noun} {value} is not this source's")
+        return None
+
+    def _closed(self, arguments: dict) -> dict | None:
+        """A refusal when the call writes to a run that is complete or abandoned.
+
+        Judged before the method runs. `blocked` is not closed: `resume --unblock` and
+        `--accept-failures` write to a blocked run by design.
+        """
+        run_id = arguments.get("run_id")
+        if run_id is None and arguments.get("cycle_id") is not None:
+            cycle = self.ledger.cycle(arguments["cycle_id"])
+            run_id = cycle["run_id"] if cycle else None
+        run = self.ledger.run(run_id) if run_id is not None else None
+        if run is not None and run["outcome"] in CLOSED_OUTCOMES:
+            return _refusal("run_closed", f"run {run_id} is {run['outcome']}: it takes no writes")
         return None
 
     def _cycle_source(self, cycle_id: int) -> str | None:
