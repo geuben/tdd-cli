@@ -1657,6 +1657,13 @@ def _ledger_serve(args, cfg) -> Envelope:
     )
 
 
+def _ledger_fleet(args, cfg) -> Envelope:
+    return Envelope(
+        result=wire.call(cfg.admin_socket, "fleet"),
+        next_action=NextAction(Verb.COMPLETE, "Fleet reported across every source."),
+    )
+
+
 def _ledger_metrics(args, cfg) -> Envelope:
     return Envelope(
         result=wire.call(cfg.admin_socket, "metrics", args.repo),
@@ -1917,7 +1924,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--executor", required=True)
     s.set_defaults(fn=_ledger_verb(_ledger_bind))
     s = ledger_p.add_parser("fleet", help="active runs of every source")
-    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s.set_defaults(fn=_ledger_verb(_ledger_fleet))
     s = ledger_p.add_parser("metrics", help="metrics over every source's runs")
     s.add_argument("--repo", help="one repository's ledger, by its slug")
     s.set_defaults(fn=_ledger_verb(_ledger_metrics))
