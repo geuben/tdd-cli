@@ -20,6 +20,7 @@ import json
 from pathlib import Path
 
 from conftest import run_cli, write_plan
+from test_suite_overrides import OVERRIDE_BLOCK, project_with
 from tddcli import adapters
 from tddcli import config as config_mod
 
@@ -276,3 +277,23 @@ def test_an_empty_successful_batch_leaves_its_files_to_the_loop(repo, monkeypatc
     monkeypatch.setattr(adapters.pytest_adapter, "run_command", empty_batch)
 
     assert "backend::tests/test_smoke.py::test_smoke" in _adapter(repo).collect().tests
+
+
+def test_a_failed_override_batch_still_attributes_its_own_files(tmp_path, monkeypatch):
+    """A batch settles only the files its own suite owns: the default suite
+    succeeding says nothing about an override whose batch failed."""
+    project = project_with(tmp_path, OVERRIDE_BLOCK)
+    (tmp_path / "backend" / "tests").mkdir(parents=True)
+    (tmp_path / "backend" / "contract").mkdir()
+    (tmp_path / "backend" / "tests" / "test_a.py").write_text("def test_a(): pass\n")
+    (tmp_path / "backend" / "contract" / "test_api.py").write_text("def test_ping(): pass\n")
+
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
+        if command.startswith("pytest contract"):
+            return 2, "", "ERROR collecting"
+        return 0, "tests/test_a.py::test_a", ""
+
+    monkeypatch.setattr(adapters.pytest_adapter, "run_command", fake)
+    collection = adapters.build(project, tmp_path).collect()
+
+    assert set(collection.failed_files) == {"contract/test_api.py"}
