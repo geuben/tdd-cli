@@ -30,7 +30,7 @@ CONFIG_PATH = Path("/etc/tdd-cli/ledger.toml")
 CLOSED_OUTCOMES = ("complete", "abandoned")
 
 #: Writes that record who executed a run: the service sets the executor on them.
-STAMPED = frozenset({"start_run"})
+STAMPED = frozenset({"start_run", "abandon_run"})
 
 #: The one write a closed run still takes: `tdd note` after the run is documented use,
 #: and is how an executor leaves its closing narrative.
@@ -116,7 +116,7 @@ class _Session:
         if refused is not None:
             return refused
         if method in STAMPED:
-            kwargs = self._stamp_executor(bound.arguments)
+            kwargs = self._stamp_executor(bound.arguments, set(bound.signature.parameters))
             args = []
         try:
             return _ok(fn(*args, **kwargs))
@@ -140,7 +140,7 @@ class _Session:
                 return _refusal("foreign_run", f"{noun} {value} is not this source's")
         return None
 
-    def _stamp_executor(self, arguments: dict) -> dict:
+    def _stamp_executor(self, arguments: dict, params: set[str]) -> dict:
         """The call's arguments, with the executor the operator bound to this source.
 
         A guest's own identity is guest root's to edit, so when the operator has said
@@ -150,9 +150,9 @@ class _Session:
         stamped = dict(arguments)
         binding = self.service.executors.get(self.source)
         if binding is not None:
-            stamped.update(
-                executor_model=binding, executor_session=None, executor_source="operator"
-            )
+            stamped.update(executor_model=binding, executor_source="operator")
+            if "executor_session" in params:
+                stamped["executor_session"] = None
         elif stamped.get("executor_source") == "operator":
             stamped["executor_source"] = "claimed"
         return stamped
