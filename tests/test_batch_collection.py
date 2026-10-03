@@ -297,3 +297,30 @@ def test_a_failed_override_batch_still_attributes_its_own_files(tmp_path, monkey
     collection = adapters.build(project, tmp_path).collect()
 
     assert set(collection.failed_files) == {"contract/test_api.py"}
+
+
+def test_an_adapter_whose_invocations_name_no_suite_keeps_the_loop(repo, monkeypatch):
+    """A plugin adapter's `_collect_invocations` returns `(command, env)` pairs with
+    no owning suite. Nothing can be settled for an unknown owner, so a file its
+    batch did not list still gets one per-file rescue."""
+
+    class OwnerlessAdapter(adapters.pytest_adapter.PytestAdapter):
+        def _collect_invocations(self):
+            return [(c, e) for c, e, *_ in super()._collect_invocations()]
+
+    _write_tests(repo, 3)
+    adapter = OwnerlessAdapter(config_mod.load(repo).project("backend"), repo)
+    real = adapters.base.run_command
+    seen: list[str] = []
+
+    def hide_one(command, cwd, timeout=1800, extra_env=None, label=None):
+        seen.append(command)
+        code, out, err = real(command, cwd, timeout=timeout, extra_env=extra_env, label=label)
+        if "test_gen1.py" not in command:  # the batch "forgets" this file
+            out = "\n".join(line for line in out.splitlines() if "test_gen1.py" not in line)
+        return code, out, err
+
+    monkeypatch.setattr(adapters.pytest_adapter, "run_command", hide_one)
+    adapter.collect()
+
+    assert len([c for c in seen if "test_gen1.py" in c]) == 1, seen
