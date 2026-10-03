@@ -1876,6 +1876,8 @@ def main(argv: list[str] | None = None) -> int:
             " worktree readable by that user (`chmod -R go+rX` it, or share a group)",
             reason="worktree_unreadable",
         )
+    except wire.LedgerRefused as exc:
+        envelope = failure(exc.error, reason="ledger_refused", refusal=exc.refusal)
     except wire.LedgerUnreachable as exc:
         # Fail closed: a guest whose ledger service is gone refuses the verb, and never
         # falls back to a ledger of its own.

@@ -525,6 +525,7 @@ HOST_ONLY = frozenset(
         "close",
         "insert",
         "one",
+        "run_source",
         "set_meta",
         "update",
     }
@@ -1018,6 +1019,11 @@ class Ledger:
         )
 
     # -- runs ----------------------------------------------------------------
+
+    def run_source(self, run_id: int) -> str | None:
+        """The source a run belongs to, whatever this ledger's own; None if no such run."""
+        row = self.one("SELECT source FROM run WHERE id = ?", (run_id,))
+        return row["source"] if row else None
 
     def run(self, run_id: int) -> sqlite3.Row | None:
         return self.one("SELECT * FROM run WHERE id = ?", (run_id,))
