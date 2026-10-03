@@ -422,6 +422,13 @@ class Service:
         """An existing ledger, brought onto this host as the source `name`."""
         source = Path(file)
         target = self.config.home / source.name
+        if target.exists():
+            # No merge: the host's copy may hold runs no guest could reach, and an import
+            # over it would trade them for ones recorded where an agent could.
+            return _refusal(
+                "ledger_exists",
+                f"the host already holds {target}; importing again would overwrite it",
+            )
         marker = ledger_mod.import_as_source(source, target, name)
         return _ok({"imported": str(target), "pre_split_import": marker})
 
