@@ -8,10 +8,15 @@ again per file. A single file's tests enumerate in milliseconds.
 Both adapters already had a whole-suite probe (`collectable()`); collection now
 uses that shape and keeps the per-file loop for the case it exists to serve.
 
-The rule that makes this safe: **a file the batch does not account for gets
-exactly the old per-file treatment.** Batch fails, batch is empty, batch skips a
-file the registry declares — each falls through to the loop, so the collected set
-can only match or improve on the old one, never silently shrink (R10.3/R10.4).
+The rule (issue #168): **a successful batch is authoritative for its own suite's
+files.** A batch that lists at least one test settles every file its suite owns,
+listed or not: a file the runner's own discovery skips is one no run observes, so
+rescuing it one runner start at a time bought only unreachable targets. A batch
+settles nothing outside its suite — a failed override batch still loops its own
+files — and a batch that fails, or succeeds with nothing listed, settles nothing,
+so R10.3's guarantee holds where it matters: one uncollectable file is attributed
+to itself and cannot destroy the set. An adapter whose invocations do not name
+their suite keeps the old loop for every unlisted file.
 """
 
 from __future__ import annotations
@@ -76,9 +81,9 @@ def test_the_batch_finds_the_same_tests_the_per_file_loop_would(repo, monkeypatc
     assert batched == per_file, batched ^ per_file
 
 
-def test_a_file_the_batch_never_reported_is_collected_individually(repo, monkeypatch):
-    """A file matching `test_paths` that the runner's config excludes must not
-    vanish from the set — a quietly smaller baseline is worse than a slow one."""
+def test_a_file_a_successful_batch_did_not_list_costs_no_runner_start(repo, monkeypatch):
+    """Issue #168: a file the runner's own discovery skips is one no run observes,
+    so starting the runner again to rescue it buys a target nothing can reach."""
     _write_tests(repo, 3)
     adapter = _adapter(repo)
     real = adapters.base.run_command
@@ -94,10 +99,12 @@ def test_a_file_the_batch_never_reported_is_collected_individually(repo, monkeyp
     monkeypatch.setattr(adapters.pytest_adapter, "run_command", hide_one)
     collected = adapter.collect()
 
-    assert any("test_gen1.py" in t for t in collected.tests), collected.tests
-    # Exactly one rescue invocation, naming that file — not a whole re-sweep.
-    per_file = [c for c in seen if "test_gen1.py" in c]
-    assert len(per_file) == 1, seen
+    rescues = [c for c in seen if "test_gen1.py" in c]
+    assert (rescues, any("test_gen1" in t for t in collected.tests), collected.failed_files) == (
+        [],
+        False,
+        {},
+    )
 
 
 def test_a_failing_batch_falls_back_to_per_file_attribution(repo_broken):
