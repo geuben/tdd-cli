@@ -4,8 +4,10 @@ import json
 import os
 import pwd
 import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -120,6 +122,59 @@ def split_client(tmp_path, monkeypatch, sudo_shim):
         argv=tmp_path / "stub.argv",
         stdin=tmp_path / "stub.stdin",
         shim=sudo_shim,
+    )
+
+
+@pytest.fixture
+def ledger_service(tmp_path, monkeypatch):
+    """A ledger service on the host, running in a thread of this process.
+
+    Its sockets live under /tmp, never under `tmp_path`: a socket path there is longer
+    than AF_UNIX allows (108 bytes on Linux, 104 on macOS).
+    """
+    from tddcli import service
+
+    sockets = Path(tempfile.mkdtemp(dir="/tmp", prefix="tdd-"))
+    home = tmp_path / "host-ledgers"
+    cfg = tmp_path / "ledger.toml"
+    cfg.write_text(f'[service]\nadmin_socket = "{sockets / "admin.sock"}"\nhome = "{home}"\n')
+    monkeypatch.setenv("TDD_LEDGER_SERVICE_CONFIG", str(cfg))
+    svc = service.Service(service.load_config(cfg))
+    svc.start()
+    try:
+        yield SimpleNamespace(service=svc, home=home, dir=sockets, config=cfg)
+    finally:
+        svc.stop()
+        shutil.rmtree(sockets, ignore_errors=True)
+
+
+def guest_config(split_runner, socket_path: Path, extra: str = "") -> None:
+    """Point the guest's runner at a ledger service socket, with no ledger home."""
+    split_runner.config.write_text(
+        f'[runner]\nuser = "{current_user()}"\ncommand = "tdd"\n'
+        f'sudo = "{split_runner.shim.path}"\nledger_socket = "{socket_path}"\n' + extra
+    )
+
+
+@pytest.fixture
+def split_guest(tmp_path, monkeypatch, split_runner, ledger_service):
+    """This process is a runner inside a guest, keeping its ledger on the host's service.
+
+    The guest is source `vm-1`. To switch it to another source, rewrite its config's
+    `ledger_socket` (`guest_config`): `runner.load()` reads the file on every call.
+    """
+    socket_path = ledger_service.dir / "vm-1.sock"
+    ledger_service.service.add_source("vm-1", socket_path, executor=None)
+    guest_config(split_runner, socket_path)
+    # Whatever the runner falls back to must never be the developer's real home.
+    guest_home = tmp_path / "guest-home"
+    guest_home.mkdir()
+    monkeypatch.setenv("HOME", str(guest_home))
+    return SimpleNamespace(
+        socket=socket_path,
+        config=split_runner.config,
+        guest_home=guest_home,
+        runner=split_runner,
     )
 
 
