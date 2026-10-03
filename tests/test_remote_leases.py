@@ -48,3 +48,13 @@ def test_a_lease_ends_when_its_connection_closes(
 
     with leases.worker_lease() as workers:
         assert workers == 12
+
+
+def test_a_stale_lease_is_not_counted(split_guest, ledger_service, monkeypatch, tmp_path):
+    with leases.worker_lease():
+        monkeypatch.setattr(leases, "STALE_AFTER_S", 0)
+        as_second_guest(split_guest, ledger_service, monkeypatch, tmp_path)
+        with leases.worker_lease() as workers:
+            second = workers
+
+    assert second == 12
