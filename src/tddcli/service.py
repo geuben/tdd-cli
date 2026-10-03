@@ -25,7 +25,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import leases, render, runner, wire
+from . import fleet, leases, render, runner, wire
 from . import ledger as ledger_mod
 
 CONFIG_PATH = Path("/etc/tdd-cli/ledger.toml")
@@ -389,6 +389,21 @@ class Service:
         files = {p.stem: p for p in sorted(self.config.home.glob("*.sqlite3"))}
         return files if repo is None else {k: v for k, v in files.items() if k == repo}
 
+    def fleet(self) -> dict:
+        """`tdd fleet` across the host: every repository, every source, one lease budget."""
+        out: dict = {"runs": [], "collecting": [], "advancing": []}
+        for slug, path in self.host_files().items():
+            reader = ledger_mod.open_readonly(path, source=None)
+            if reader is None:
+                continue
+            try:
+                for key, rows in fleet.entries(reader).items():
+                    out[key].extend({**row, "repo": slug} for row in rows)
+            finally:
+                reader.close()
+        out["suites"] = self.lease_snapshot()
+        return out
+
     def metrics(self, repo: str | None = None) -> dict:
         """`tdd metrics`, over every source's runs, for each repository on the host."""
         out = {}
@@ -404,6 +419,8 @@ class Service:
         """An operator's request, from the admin socket."""
         if method == "metrics":
             return _ok(self.metrics(*args))
+        if method == "fleet":
+            return _ok(self.fleet())
         if method == "sources":
             return _ok(self.sources())
         if method == "bind":

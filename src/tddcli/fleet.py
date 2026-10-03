@@ -34,6 +34,7 @@ def _runs(reader: Ledger) -> list[dict]:
         out.append(
             {
                 "run_id": row["id"],
+                "source": row["source"],
                 "worktree": row["worktree_path"],
                 "plan": row["plan_path"],
                 "executor": row["executor_model"],
@@ -81,17 +82,21 @@ def _advance_claims(reader: Ledger) -> list[dict]:
     ]
 
 
+def entries(reader: Ledger) -> dict:
+    """One ledger's active runs, baselines being collected and advances in flight."""
+    return {
+        "runs": _runs(reader),
+        "collecting": _claims(reader),
+        "advancing": _advance_claims(reader),
+    }
+
+
 def summarise(reader: Ledger | None) -> dict:
     """`reader` is from `ledger.open_readonly`: None when no ledger exists yet."""
     if reader is None:
         return {"runs": [], "collecting": [], "advancing": [], "suites": leases.snapshot()}
     try:
-        return {
-            "runs": _runs(reader),
-            "collecting": _claims(reader),
-            "advancing": _advance_claims(reader),
-            "suites": leases.snapshot(),
-        }
+        return {**entries(reader), "suites": leases.snapshot()}
     finally:
         reader.close()
 
