@@ -63,3 +63,20 @@ def test_ledger_log_renders_any_sources_run(repo, two_sources):
     text = run_cli_text(repo, "ledger", "log", "--repo", slug(repo), "--run", str(run_id))
     # `render.friction_log` heads a run's log with its plan, then `- Run: <id>`.
     assert ("tasks/plan.md" in text, f"- Run: {run_id}\n" in text) == (True, True)
+
+
+def single_user_ledger(repo, ledger_home):
+    """A ledger with one run, from a machine with no ledger service: all of it `local`."""
+    plan = write_plan(repo, MINIMAL_PLAN)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+    (path,) = ledger_home.glob("*.sqlite3")
+    return path
+
+
+def test_ledger_import_retags_a_ledger_as_one_source(repo, ledger_home, ledger_service):
+    legacy = single_user_ledger(repo, ledger_home)
+
+    run_cli(repo, "ledger", "import", str(legacy), "--source", "legacy")
+    host = ledger_mod.open_readonly(ledger_service.home / legacy.name, source=None)
+    assert host is not None and [r["source"] for r in host.runs_in(None)] == ["legacy"]
