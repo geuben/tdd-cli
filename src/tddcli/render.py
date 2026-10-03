@@ -366,6 +366,7 @@ def metrics(ledger: Ledger, worktree: str) -> dict:
             {
                 "run": run["id"],
                 "plan_contract": run["plan_contract_id"],
+                "source": run["source"],
                 "executor": run["executor_model"],
                 "executor_source": run["executor_source"],
                 "outcome": run["outcome"],
