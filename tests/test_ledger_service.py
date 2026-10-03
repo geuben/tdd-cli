@@ -180,3 +180,10 @@ def test_a_guest_cannot_write_to_a_completed_run(repo, split_guest, ledger_servi
         split_guest.socket, str(gitutil.repo_identity(repo)), "event", run_id, None, "x", ""
     )
     assert refusal == "run_closed"
+
+
+def test_a_guest_may_still_note_a_completed_run(repo, split_guest, ledger_service):
+    complete_on_host(ledger_service, repo)
+
+    out = run_cli(repo, "note", "after the fact")
+    assert out["result"].get("noted") is True
