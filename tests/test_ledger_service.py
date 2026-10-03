@@ -11,6 +11,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -236,3 +237,47 @@ def test_claim_staleness_is_judged_in_the_guest(repo, split_guest, ledger_servic
 
     out = run_cli(repo, "progress", "--json")
     assert out["result"].get("stale") is True
+
+
+def test_a_guest_cannot_write_through_a_cycle_of_a_completed_run(repo, split_guest, ledger_service):
+    run_id = complete_on_host(ledger_service, repo)
+    host = ledger_mod.open_readonly(host_file(ledger_service, repo), source=None)
+    cycle_id = host.cycles(run_id)[0]["id"]
+
+    refusal = refusal_of(
+        split_guest.socket, str(gitutil.repo_identity(repo)), "set_targets", cycle_id, ["t"]
+    )
+    assert refusal == "run_closed"
+
+
+def error_of(socket_path, repo_path, method: str, *args, **kwargs) -> str:
+    """How a request the service cannot answer comes back: its error, never a hang-up."""
+    conn = wire.Connection(socket_path)
+    try:
+        if repo_path is not None:
+            conn.request("open", repo_path)
+        conn.request(method, *args, **kwargs)
+    except RuntimeError as exc:
+        return type(exc).__name__
+    finally:
+        conn.close()
+    return "answered"
+
+
+def test_a_request_the_service_cannot_answer_is_an_error_not_a_hang_up(repo, split_guest):
+    repo_path = str(gitutil.repo_identity(repo))
+    errors = [
+        error_of(split_guest.socket, None, "cycle", 1),  # nothing opened yet
+        error_of(split_guest.socket, repo_path, "cycle", 1, 2, 3),  # arguments do not bind
+        error_of(split_guest.socket, repo_path, "get_meta", ["k"]),  # the method raises
+    ]
+    assert errors == ["RuntimeError"] * 3
+
+
+def test_a_connection_that_never_opened_a_ledger_closes_cleanly(split_guest, capsys):
+    wire.call(split_guest.socket, "ping")
+    # The next round trip gives the first connection's handler time to finish.
+    wire.call(split_guest.socket, "ping")
+    time.sleep(0.3)
+
+    assert "Traceback" not in capsys.readouterr().err

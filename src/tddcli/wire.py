@@ -10,6 +10,7 @@ way an `sqlite3.Row` does; a set is sent as `{"$set": [...]}` and comes back a s
 
 from __future__ import annotations
 
+import contextlib
 import json
 import socket
 from pathlib import Path
@@ -55,9 +56,6 @@ class Row:
 
     def __len__(self) -> int:
         return len(self._vals)
-
-    def __eq__(self, other) -> bool:
-        return isinstance(other, Row) and (self._cols, self._vals) == (other._cols, other._vals)
 
     def __repr__(self) -> str:
         return f"Row({dict(zip(self._cols, self._vals, strict=True))!r})"
@@ -134,7 +132,10 @@ class Connection:
         return decode(reply.get("result"))
 
     def close(self) -> None:
-        self.stream.close()
+        # Closing flushes the stream: after a dropped connection, a request still in its
+        # buffer would raise here, masking the LedgerUnreachable already reported.
+        with contextlib.suppress(OSError):
+            self.stream.close()
         self.sock.close()
 
 
