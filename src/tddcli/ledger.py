@@ -394,9 +394,13 @@ def _ensured_home() -> Path:
     return root
 
 
+def slug(repo_path: Path | str) -> str:
+    """A repository's ledger file name, without its suffix."""
+    return str(repo_path).replace(os.sep, "-").strip("-")
+
+
 def ledger_path(repo_path: Path) -> Path:
-    slug = str(repo_path).replace(os.sep, "-").strip("-")
-    return _ensured_home() / f"{slug}.sqlite3"
+    return _ensured_home() / f"{slug(repo_path)}.sqlite3"
 
 
 #: `meta` key written by `import_legacy`: everything up to `last_run_id` was recorded
@@ -1549,6 +1553,15 @@ def open_readonly(path: Path, *, source: str | None = LOCAL_SOURCE) -> Ledger | 
     return reader
 
 
-def open_ledger(repo_path: Path) -> Ledger:
-    """The ledger of a repository. Every command opens its ledger through here."""
+def open_ledger(repo_path: Path):
+    """The ledger of a repository. Every command opens its ledger through here.
+
+    A runner configured with a ledger service's socket keeps no ledger of its own: it
+    gets a `RemoteLedger` that reads and writes the host's.
+    """
+    split = _as_runner()
+    if split is not None and split.ledger_socket is not None:
+        from .remote import RemoteLedger
+
+        return RemoteLedger(split.ledger_socket, repo_path)
     return Ledger(repo_path)
