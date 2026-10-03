@@ -732,6 +732,7 @@ def _probe_projects(
                 elapsed_s=elapsed_s,
                 run_s=run_s,
                 collect_s=collect_s,
+                per_file_collects=collection.per_file_collects,
             )
             on_progress(done, name)
     return probes, reused
