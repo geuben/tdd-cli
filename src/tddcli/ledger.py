@@ -568,6 +568,18 @@ def import_legacy(source: Path) -> tuple[Path, dict]:
     Returns where it landed and the marker written into it.
     """
     target = _ensured_home() / source.name
+    _copy(source, target)
+    imported = Ledger(target.parent, path=target)  # opening it migrates it forward
+    # MAX over no rows is one row holding NULL: an empty ledger imports with `None`.
+    last = imported.db.execute("SELECT MAX(id) FROM run").fetchone()[0]
+    marker = {"source": str(source), "imported_at": now(), "last_run_id": last}
+    imported.set_meta(PRE_SPLIT_IMPORT, json.dumps(marker))
+    return target, marker
+
+
+def _copy(source: Path, target: Path) -> None:
+    """Copy a ledger with SQLite's backup API: a plain copy of a WAL-mode ledger's main
+    file would drop the newest rows, which are still in its sidecar."""
     src = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
     dst = sqlite3.connect(target)
     try:
@@ -575,12 +587,37 @@ def import_legacy(source: Path) -> tuple[Path, dict]:
     finally:
         src.close()
         dst.close()
-    imported = Ledger(target.parent, path=target)  # opening it migrates it forward
-    # MAX over no rows is one row holding NULL: an empty ledger imports with `None`.
-    last = imported.db.execute("SELECT MAX(id) FROM run").fetchone()[0]
-    marker = {"source": str(source), "imported_at": now(), "last_run_id": last}
-    imported.set_meta(PRE_SPLIT_IMPORT, json.dumps(marker))
-    return target, marker
+
+
+def import_as_source(source: Path, target: Path, name: str) -> dict:
+    """Bring an existing ledger onto a ledger service's host as one named source.
+
+    Every run and contract it recorded as `local` becomes `name`'s. Its claims are
+    dropped: they belonged to processes on another machine. It is marked as history
+    recorded where the agent could reach it, as `import_legacy` marks one. There is
+    no merge: the target is a new file.
+    """
+    _copy(source, target)
+    imported = Ledger(target.parent, path=target, source=None)  # opening it migrates it
+    try:
+        with imported.db:
+            for table in ("run", "plan_contract"):
+                imported.db.execute(
+                    f"UPDATE {table} SET source = ? WHERE source = ?", (name, LOCAL_SOURCE)
+                )
+            imported.db.execute("DELETE FROM baseline_claim")
+            imported.db.execute("DELETE FROM advance_claim")
+        last = imported.db.execute("SELECT MAX(id) FROM run").fetchone()[0]
+        marker = {
+            "source": str(source),
+            "as_source": name,
+            "imported_at": now(),
+            "last_run_id": last,
+        }
+        imported.set_meta(PRE_SPLIT_IMPORT, json.dumps(marker))
+    finally:
+        imported.close()
+    return marker
 
 
 def claim_is_stale(hostname: str, pid: int, started_at: str) -> bool:
