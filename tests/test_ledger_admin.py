@@ -42,3 +42,19 @@ def test_bind_changes_the_executor_for_the_next_run(repo, ledger_service):
 
     run_cli(repo, "ledger", "bind", "vm-1", "--executor", "m2")
     assert wire.call(socket_path, "ping")["executor"] == "m2"
+
+
+def unreachable(socket_path) -> bool:
+    try:
+        wire.call(socket_path, "ping")
+    except wire.LedgerUnreachable:
+        return True
+    return False
+
+
+def test_remove_source_closes_its_socket(repo, ledger_service):
+    socket_path = ledger_service.dir / "vm-1.sock"
+    ledger_service.service.add_source("vm-1", socket_path, executor=None)
+
+    run_cli(repo, "ledger", "remove-source", "vm-1")
+    assert (socket_path.exists(), unreachable(socket_path)) == (False, True)
