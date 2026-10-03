@@ -15,6 +15,14 @@ import socket
 from pathlib import Path
 
 
+class LedgerUnreachable(RuntimeError):
+    """The ledger service could not be reached, or dropped the connection.
+
+    Nothing on the guest side ever falls back to a local ledger when this is raised:
+    the verb is refused instead.
+    """
+
+
 class Row:
     """A ledger row received over the wire: `row["col"]`, `row[i]`, `keys()`, `dict(row)`."""
 
@@ -89,12 +97,27 @@ class Connection:
     def __init__(self, socket_path: Path):
         self.socket_path = Path(socket_path)
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.connect(str(self.socket_path))
+        try:
+            self.sock.connect(str(self.socket_path))
+        except OSError as exc:
+            self.sock.close()
+            raise LedgerUnreachable(
+                f"the ledger service at {self.socket_path} is unreachable: {exc.strerror or exc}"
+            ) from exc
         self.stream = self.sock.makefile("rwb")
 
     def request(self, method: str, *args, **kwargs):
-        send(self.stream, {"method": method, "args": list(args), "kwargs": kwargs})
-        reply = receive(self.stream)
+        try:
+            send(self.stream, {"method": method, "args": list(args), "kwargs": kwargs})
+            reply = receive(self.stream)
+        except OSError as exc:
+            raise LedgerUnreachable(
+                f"the ledger service at {self.socket_path} dropped the connection: {exc}"
+            ) from exc
+        if reply is None:
+            raise LedgerUnreachable(
+                f"the ledger service at {self.socket_path} closed the connection"
+            )
         if not reply.get("ok"):
             raise RuntimeError(reply.get("error") or f"the ledger service refused {method}")
         return decode(reply.get("result"))
