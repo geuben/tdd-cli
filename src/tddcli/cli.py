@@ -1681,6 +1681,22 @@ def _ledger_log(args, cfg) -> Envelope:
     )
 
 
+def _ledger_import(args, cfg) -> Envelope:
+    source = Path(args.file).resolve()
+    if not source.is_file():
+        return failure(f"{source} is not a file")
+    imported = wire.call(cfg.admin_socket, "import", str(source), args.source)
+    return Envelope(
+        result=imported,
+        next_action=NextAction(
+            Verb.COMPLETE,
+            f"Imported to {imported['imported']} as source {args.source}. Runs up to"
+            f" {imported['pre_split_import']['last_run_id']} were recorded where the agent"
+            " could reach the ledger, and are marked as such.",
+        ),
+    )
+
+
 def _ledger_metrics(args, cfg) -> Envelope:
     return Envelope(
         result=wire.call(cfg.admin_socket, "metrics", args.repo),
@@ -1953,7 +1969,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = ledger_p.add_parser("import", help="bring an existing ledger in as one source")
     s.add_argument("file")
     s.add_argument("--source", required=True)
-    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s.set_defaults(fn=_ledger_verb(_ledger_import))
     return p
 
 

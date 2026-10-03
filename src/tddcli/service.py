@@ -418,6 +418,13 @@ class Service:
         finally:
             view.close()
 
+    def import_ledger(self, file: str, name: str) -> dict:
+        """An existing ledger, brought onto this host as the source `name`."""
+        source = Path(file)
+        target = self.config.home / source.name
+        marker = ledger_mod.import_as_source(source, target, name)
+        return _ok({"imported": str(target), "pre_split_import": marker})
+
     def metrics(self, repo: str | None = None) -> dict:
         """`tdd metrics`, over every source's runs, for each repository on the host."""
         out = {}
@@ -437,6 +444,8 @@ class Service:
             return _ok(self.fleet())
         if method == "log":
             return self.log(*args)
+        if method == "import":
+            return self.import_ledger(*args)
         if method == "sources":
             return _ok(self.sources())
         if method == "bind":
