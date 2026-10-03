@@ -89,3 +89,15 @@ def test_an_unreachable_socket_refuses_the_verb(repo, split_guest, ledger_servic
         "reason": "ledger_unreachable",
         "local_ledgers": [],
     }
+
+
+def test_a_guest_naming_another_sources_run_is_refused(repo, split_guest, ledger_service):
+    ledger_service.service.add_source("vm-2", ledger_service.dir / "vm-2.sock", executor=None)
+    run_id = start_run(repo)["run"]["id"]
+    guest_config(split_guest.runner, ledger_service.dir / "vm-2.sock")
+
+    out = run_cli(repo, "run", "abandon", "--run", str(run_id), "--reason", "x")
+    assert {k: out["result"].get(k) for k in ("reason", "refusal")} == {
+        "reason": "ledger_refused",
+        "refusal": "foreign_run",
+    }
