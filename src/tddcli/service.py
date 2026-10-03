@@ -91,6 +91,9 @@ class _Session:
         kwargs = request.get("kwargs") or {}
         if method == "ping":
             return _ok({"source": self.source, "executor": self.service.executors.get(self.source)})
+        if self.source is None:
+            # The admin socket: the operator's verbs, never a ledger method.
+            return self.service.admin(method, args, kwargs)
         if method == "open":
             repo = args[0] if args else None
             if not _well_formed_repo(repo):
@@ -257,3 +260,11 @@ class Service:
     def add_source(self, name: str, socket_path: Path, executor: str | None = None) -> None:
         self.executors[name] = executor
         self.listeners[name] = _Listener(Path(socket_path), self, name)
+
+    def admin(self, method: str, args: list, kwargs: dict) -> dict:
+        """An operator's request, from the admin socket."""
+        if method == "add_source":
+            name, socket_path = args
+            self.add_source(name, Path(socket_path), executor=kwargs.get("executor"))
+            return _ok({"name": name, "socket": str(socket_path), "executor": self.executors[name]})
+        return _refusal("method_not_allowed", f"{method} is not an admin request")

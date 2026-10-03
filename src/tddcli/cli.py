@@ -1648,6 +1648,20 @@ def _not_implemented(args, cfg) -> Envelope:
     return failure("not implemented", reason="not_implemented")
 
 
+def _ledger_add_source(args, cfg) -> Envelope:
+    added = wire.call(
+        cfg.admin_socket, "add_source", args.name, args.socket, executor=args.executor
+    )
+    return Envelope(
+        result=added,
+        next_action=NextAction(
+            Verb.COMPLETE,
+            f"Source {args.name} listens on {args.socket}. Forward that socket into the"
+            " guest and name it as the guest runner's `ledger_socket`.",
+        ),
+    )
+
+
 def cmd_docs(args) -> Envelope:
     """The shipped documentation, printed. No network, and versioned with the binary.
 
@@ -1849,7 +1863,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("name")
     s.add_argument("--socket", required=True)
     s.add_argument("--executor", help="the model this source runs, recorded on its runs")
-    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s.set_defaults(fn=_ledger_verb(_ledger_add_source))
     s = ledger_p.add_parser("remove-source", help="close a guest's socket")
     s.add_argument("name")
     s.set_defaults(fn=_ledger_verb(_not_implemented))
