@@ -7,7 +7,7 @@ source's history in one place. None of these verbs is ever forwarded to a runner
 from __future__ import annotations
 
 from conftest import run_cli
-from tddcli import wire
+from tddcli import service, wire
 
 
 def test_ledger_verbs_are_never_forwarded_to_a_runner(repo, split_client, tmp_path, monkeypatch):
@@ -58,3 +58,24 @@ def test_remove_source_closes_its_socket(repo, ledger_service):
 
     run_cli(repo, "ledger", "remove-source", "vm-1")
     assert (socket_path.exists(), unreachable(socket_path)) == (False, True)
+
+
+def ping_or_unreachable(socket_path):
+    try:
+        return wire.call(socket_path, "ping")
+    except wire.LedgerUnreachable:
+        return "unreachable"
+
+
+def test_sources_survive_a_service_restart(ledger_service):
+    socket_path = ledger_service.dir / "vm-1.sock"
+    ledger_service.service.add_source("vm-1", socket_path, executor="m")
+    ledger_service.service.stop()
+
+    restarted = service.Service(service.load_config(ledger_service.config))
+    restarted.start()
+    try:
+        reply = ping_or_unreachable(socket_path)
+    finally:
+        restarted.stop()
+    assert reply == {"source": "vm-1", "executor": "m"}
