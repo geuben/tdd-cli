@@ -185,3 +185,20 @@ def test_baseline_reports_how_many_files_fell_to_the_per_file_loop(repo, capsys,
         if line["project"] == "backend"
     )
     assert backend.get("per_file_collects") == 3, backend
+
+
+def test_parallel_baselines_report_how_many_files_fell_to_the_loop(repo, capsys, monkeypatch):
+    """`--baseline-jobs > 1` emits its own heartbeat; the count must not be lost there."""
+    for i in range(2):
+        (repo / "backend" / "tests" / f"test_gen{i}.py").write_text(f"def test_gen{i}(): pass\n")
+    _fail_the_batch(monkeypatch)
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    assert run_cli(repo, "run", "start", "--plan", plan, "--baseline-jobs", "2")["ok"]
+
+    backend = next(
+        line
+        for line in _lines(capsys.readouterr().err, "baseline_captured")
+        if line["project"] == "backend"
+    )
+    assert backend.get("per_file_collects") == 3, backend
