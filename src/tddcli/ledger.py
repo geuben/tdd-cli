@@ -1181,6 +1181,79 @@ class Ledger:
     def advance_claims(self) -> list[sqlite3.Row]:
         return self.all("SELECT * FROM advance_claim ORDER BY id")
 
+    # -- projections: the friction log, progress and metrics -------------------
+
+    def runs_in(self, worktree: str) -> list[sqlite3.Row]:
+        return self.all("SELECT * FROM run WHERE worktree_path = ? ORDER BY id", (worktree,))
+
+    def run_events(self, run_id: int) -> list[sqlite3.Row]:
+        return self.all("SELECT * FROM integrity_event WHERE run_id = ? ORDER BY id", (run_id,))
+
+    def cycle_events(self, cycle_id: int) -> list[sqlite3.Row]:
+        return self.all("SELECT * FROM integrity_event WHERE cycle_id = ? ORDER BY id", (cycle_id,))
+
+    def event_counts(self, run_id: int) -> list[sqlite3.Row]:
+        """(kind, n) per integrity event kind in the run."""
+        return self.all(
+            "SELECT kind, COUNT(*) n FROM integrity_event WHERE run_id = ? GROUP BY kind",
+            (run_id,),
+        )
+
+    def regenerated_artifacts(self, run_id: int) -> list[str]:
+        rows = self.all(
+            "SELECT DISTINCT artifact FROM artifact_check WHERE run_id = ? AND regenerated = 1",
+            (run_id,),
+        )
+        return [r["artifact"] for r in rows]
+
+    def interventions(self, run_id: int) -> list[sqlite3.Row]:
+        return self.all("SELECT * FROM human_intervention WHERE run_id = ? ORDER BY id", (run_id,))
+
+    def commits(self, cycle_id: int) -> list[sqlite3.Row]:
+        return self.all("SELECT * FROM commit_record WHERE cycle_id = ? ORDER BY id", (cycle_id,))
+
+    def annotations(self, cycle_id: int) -> list[sqlite3.Row]:
+        return self.all("SELECT * FROM annotation WHERE cycle_id = ? ORDER BY id", (cycle_id,))
+
+    def cycle_notes(self, cycle_id: int) -> list[sqlite3.Row]:
+        return self.all("SELECT * FROM note WHERE cycle_id = ? ORDER BY id", (cycle_id,))
+
+    def run_notes(self, run_id: int) -> list[sqlite3.Row]:
+        """Notes about the run as a whole, recorded while no cycle was open."""
+        return self.all(
+            "SELECT * FROM note WHERE run_id = ? AND cycle_id IS NULL ORDER BY id", (run_id,)
+        )
+
+    def blockers(self, run_id: int) -> list[sqlite3.Row]:
+        return self.all("SELECT * FROM blocker WHERE run_id = ? ORDER BY id", (run_id,))
+
+    def blocker_counts(self, run_id: int) -> list[sqlite3.Row]:
+        """(kind, n) per blocker kind in the run."""
+        return self.all(
+            "SELECT kind, COUNT(*) n FROM blocker WHERE run_id = ? GROUP BY kind", (run_id,)
+        )
+
+    def abandonment(self, run_id: int) -> sqlite3.Row | None:
+        return self.one("SELECT * FROM abandonment WHERE run_id = ?", (run_id,))
+
+    def suite_time_by_phase(self, run_id: int) -> list[sqlite3.Row]:
+        """(phase_at, n, ms) over every invocation of the run."""
+        return self.all(
+            "SELECT phase_at, COUNT(*) n, SUM(duration_ms) ms FROM invocation"
+            " WHERE run_id = ? GROUP BY phase_at",
+            (run_id,),
+        )
+
+    def cycle_times(self, run_id: int) -> list[sqlite3.Row]:
+        """(ordinal, opened_at, closed_at, n, ms) per cycle: its suite runs and their time."""
+        return self.all(
+            "SELECT c.ordinal, c.opened_at, c.closed_at,"
+            " COUNT(i.id) n, COALESCE(SUM(i.duration_ms), 0) ms"
+            " FROM cycle c LEFT JOIN invocation i ON i.cycle_id = c.id"
+            " WHERE c.run_id = ? GROUP BY c.id ORDER BY c.ordinal",
+            (run_id,),
+        )
+
 
 def open_readonly(path: Path) -> Ledger | None:
     """A reader on an existing ledger, or None when there is none yet.
