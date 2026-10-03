@@ -272,6 +272,12 @@ class Service:
         """An operator's request, from the admin socket."""
         if method == "sources":
             return _ok(self.sources())
+        if method == "bind":
+            name, executor = args
+            if name not in self.executors:
+                return _refusal("unknown_source", f"no source named {name!r}")
+            self.executors[name] = executor
+            return _ok({"name": name, "executor": executor})
         if method == "add_source":
             name, socket_path = args
             self.add_source(name, Path(socket_path), executor=kwargs.get("executor"))

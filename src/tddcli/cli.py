@@ -1656,6 +1656,17 @@ def _ledger_sources(args, cfg) -> Envelope:
     )
 
 
+def _ledger_bind(args, cfg) -> Envelope:
+    bound = wire.call(cfg.admin_socket, "bind", args.name, args.executor)
+    return Envelope(
+        result=bound,
+        next_action=NextAction(
+            Verb.COMPLETE,
+            f"Source {args.name}'s next runs record {args.executor}, as said by the operator.",
+        ),
+    )
+
+
 def _ledger_add_source(args, cfg) -> Envelope:
     added = wire.call(
         cfg.admin_socket, "add_source", args.name, args.socket, executor=args.executor
@@ -1878,7 +1889,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = ledger_p.add_parser("bind", help="set the executor a source's next runs record")
     s.add_argument("name")
     s.add_argument("--executor", required=True)
-    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s.set_defaults(fn=_ledger_verb(_ledger_bind))
     s = ledger_p.add_parser("fleet", help="active runs of every source")
     s.set_defaults(fn=_ledger_verb(_not_implemented))
     s = ledger_p.add_parser("metrics", help="metrics over every source's runs")
