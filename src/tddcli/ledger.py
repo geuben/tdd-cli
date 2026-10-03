@@ -625,20 +625,26 @@ class Ledger:
 
     # -- baseline claim ----------------------------------------------------
 
-    def claim(self, worktree: str, hostname: str, pid: int, projects_total: int) -> int:
-        """Insert the claim row. The insert is the lock: `worktree_path`
-        carries `UNIQUE`, so a second claim on the same worktree raises
-        `sqlite3.IntegrityError` rather than racing a read-then-write check."""
-        return self.insert(
-            "baseline_claim",
-            worktree_path=worktree,
-            hostname=hostname,
-            pid=pid,
-            projects_total=projects_total,
-            projects_done=0,
-            current_project=None,
-            started_at=now(),
-        )
+    def claim(self, worktree: str, hostname: str, pid: int, projects_total: int) -> int | None:
+        """Insert the claim row, or return None when the worktree is already claimed.
+
+        The insert is the lock: `worktree_path` carries `UNIQUE`, so a second claim
+        fails at the insert rather than racing a read-then-write check. The conflict
+        is answered as None, not as `sqlite3.IntegrityError`, because no sqlite
+        exception can cross a socket to a remote caller."""
+        try:
+            return self.insert(
+                "baseline_claim",
+                worktree_path=worktree,
+                hostname=hostname,
+                pid=pid,
+                projects_total=projects_total,
+                projects_done=0,
+                current_project=None,
+                started_at=now(),
+            )
+        except sqlite3.IntegrityError:
+            return None
 
     def release_claim(self, worktree: str) -> None:
         self.db.execute("DELETE FROM baseline_claim WHERE worktree_path = ?", (worktree,))
@@ -654,17 +660,19 @@ class Ledger:
         )
         self.db.commit()
 
-    def claim_advance(self, worktree: str, hostname: str, pid: int) -> int:
-        """Insert the advance claim row. The insert is the lock: `worktree_path`
-        carries `UNIQUE`, so a second claim on the same worktree raises
-        `sqlite3.IntegrityError` rather than racing a read-then-write check."""
-        return self.insert(
-            "advance_claim",
-            worktree_path=worktree,
-            hostname=hostname,
-            pid=pid,
-            started_at=now(),
-        )
+    def claim_advance(self, worktree: str, hostname: str, pid: int) -> int | None:
+        """Insert the advance claim row, or return None when the worktree is already
+        claimed. The insert is the lock, as in `claim`."""
+        try:
+            return self.insert(
+                "advance_claim",
+                worktree_path=worktree,
+                hostname=hostname,
+                pid=pid,
+                started_at=now(),
+            )
+        except sqlite3.IntegrityError:
+            return None
 
     def release_advance_claim(self, worktree: str) -> None:
         self.db.execute("DELETE FROM advance_claim WHERE worktree_path = ?", (worktree,))
@@ -672,7 +680,7 @@ class Ledger:
 
     def active_advance_claim(self, worktree: str) -> dict | None:
         """Read-only observer — staleness computed but no row deleted."""
-        row = self.one("SELECT * FROM advance_claim WHERE worktree_path = ?", (worktree,))
+        row = self.advance_claim_row(worktree)
         if row is None:
             return None
         claim = dict(row)
@@ -683,7 +691,7 @@ class Ledger:
         """Read-only, per the store's append-only contract — `cmd_progress` and
         `cmd_status` call this as pure observers. Only `cmd_run_start` acts on the
         computed `stale` flag (release + reclaim); nothing here deletes a row."""
-        row = self.one("SELECT * FROM baseline_claim WHERE worktree_path = ?", (worktree,))
+        row = self.claim_row(worktree)
         if row is None:
             return None
         claim = dict(row)
@@ -692,3 +700,230 @@ class Ledger:
         # "alive" bricks the worktree, a false "dead" reopens the bug (Decisions).
         claim["stale"] = self._claim_is_stale(claim["hostname"], claim["pid"], claim["started_at"])
         return claim
+
+    def claim_row(self, worktree: str) -> sqlite3.Row | None:
+        """The raw baseline claim, with no judgement of whether its owner lives."""
+        return self.one("SELECT * FROM baseline_claim WHERE worktree_path = ?", (worktree,))
+
+    def advance_claim_row(self, worktree: str) -> sqlite3.Row | None:
+        """The raw advance claim, with no judgement of whether its owner lives."""
+        return self.one("SELECT * FROM advance_claim WHERE worktree_path = ?", (worktree,))
+
+    # -- plan contracts ----------------------------------------------------
+
+    def contract_by_blob(self, plan_path: str, blob_sha: str | None) -> sqlite3.Row | None:
+        return self.one(
+            "SELECT * FROM plan_contract WHERE plan_path = ? AND git_blob_sha IS ?",
+            (plan_path, blob_sha),
+        )
+
+    def latest_contract(self, plan_path: str) -> sqlite3.Row | None:
+        return self.one(
+            "SELECT * FROM plan_contract WHERE plan_path = ? ORDER BY id DESC LIMIT 1",
+            (plan_path,),
+        )
+
+    def register_contract(
+        self,
+        *,
+        plan_path: str,
+        blob_sha: str | None,
+        commit_sha: str | None,
+        status: str,
+        declared_cycles: str,
+        annotation_keys: str,
+        ancillary_files: str,
+    ) -> int:
+        return self.insert(
+            "plan_contract",
+            plan_path=plan_path,
+            git_blob_sha=blob_sha,
+            git_commit=commit_sha,
+            status=status,
+            declared_cycles=declared_cycles,
+            annotation_keys=annotation_keys,
+            ancillary_files=ancillary_files,
+            registered_at=now(),
+        )
+
+    # -- runs ----------------------------------------------------------------
+
+    def run(self, run_id: int) -> sqlite3.Row | None:
+        return self.one("SELECT * FROM run WHERE id = ?", (run_id,))
+
+    def latest_run(self, worktree: str) -> sqlite3.Row | None:
+        return self.one(
+            "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1", (worktree,)
+        )
+
+    def latest_blocked_run(self, worktree: str) -> sqlite3.Row | None:
+        return self.one(
+            "SELECT * FROM run WHERE worktree_path = ? AND outcome = 'blocked'"
+            " ORDER BY id DESC LIMIT 1",
+            (worktree,),
+        )
+
+    def start_run(
+        self,
+        contract_id: int,
+        *,
+        executor_model: str,
+        executor_session: str | None,
+        executor_source: str,
+        worktree: str,
+        allow_dirty: bool,
+        preexisting_dirty: list[str],
+        config_sha: str | None,
+        start_sha: str | None,
+    ) -> int:
+        return self.insert(
+            "run",
+            plan_contract_id=contract_id,
+            executor_model=executor_model,
+            executor_session=executor_session,
+            executor_source=executor_source,
+            worktree_path=worktree,
+            started_at=now(),
+            allow_dirty=int(bool(allow_dirty)),
+            preexisting_dirty=json.dumps(preexisting_dirty),
+            config_sha=config_sha,
+            start_sha=start_sha,
+        )
+
+    def end_run(self, run_id: int, outcome: str) -> None:
+        self.update("run", run_id, ended_at=now(), outcome=outcome)
+
+    def reopen_run(self, run_id: int, note: str) -> None:
+        """`resume --unblock`: the run is live again, and a human said why."""
+        self.update("run", run_id, ended_at=None, outcome=None)
+        self.insert("human_intervention", run_id=run_id, note=note, at=now())
+
+    def abandon_run(
+        self,
+        run_id: int,
+        *,
+        reason: str,
+        account: str,
+        executor_model: str,
+        executor_source: str,
+        at: str,
+    ) -> None:
+        """End the run as abandoned, record who did it, and free its worktree's claims."""
+        run = self.run(run_id)
+        self.update("run", run_id, ended_at=at, outcome="abandoned")
+        self.insert(
+            "abandonment",
+            run_id=run_id,
+            reason=reason,
+            account=account,
+            executor_model=executor_model,
+            executor_source=executor_source,
+            at=at,
+        )
+        self.insert("human_intervention", run_id=run_id, note=f"abandoned: {reason}", at=at)
+        self.release_claim(run["worktree_path"])
+        self.release_advance_claim(run["worktree_path"])
+
+    def record_baseline(self, run_id: int, project: str, failing: list[str], source: str) -> None:
+        self.insert(
+            "baseline",
+            run_id=run_id,
+            project=project,
+            failing=json.dumps(sorted(failing)),
+            captured_at=now(),
+            source=source,
+        )
+
+    def record_collection(
+        self, run_id: int, project: str, tests: list[str], failed_files: dict
+    ) -> None:
+        self.insert(
+            "collection_snapshot",
+            run_id=run_id,
+            project=project,
+            tests=json.dumps(sorted(tests)),
+            failed_files=json.dumps(failed_files),
+            captured_at=now(),
+        )
+
+    def baseline_rows(self, run_id: int) -> list[sqlite3.Row]:
+        return self.all("SELECT * FROM baseline WHERE run_id = ?", (run_id,))
+
+    def amend_baseline(self, run_id: int, baseline_id: int, failing: list[str]) -> None:
+        self._write(
+            "UPDATE baseline SET failing = ? WHERE id = ? AND run_id = ?",
+            (json.dumps(sorted(failing)), baseline_id, run_id),
+        )
+
+    def latest_close_sweeps(self, run_id: int) -> list[sqlite3.Row]:
+        """Each project's most recent close-sweep invocation in the run."""
+        return self.all(
+            "SELECT project, other_failures FROM invocation WHERE id IN ("
+            "  SELECT MAX(id) FROM invocation WHERE run_id = ? AND phase_at = 'CLOSE_SWEEP'"
+            "  GROUP BY project)",
+            (run_id,),
+        )
+
+    # -- cycles and what is said about them ---------------------------------
+
+    def skip_cycle(self, cycle_id: int, *, from_phase: str, to_phase: str, reason: str) -> None:
+        at = now()
+        self._write(
+            "UPDATE cycle SET phase = ?, closed_at = ?, skip_reason = ? WHERE id = ?",
+            (to_phase, at, reason, cycle_id),
+        )
+        self.insert(
+            "transition", cycle_id=cycle_id, from_phase=from_phase, to_phase=to_phase, at=at
+        )
+
+    def set_targets(self, cycle_id: int, targets: list[str]) -> None:
+        self.update("cycle", cycle_id, target_tests=json.dumps(targets))
+
+    def add_annotation(self, run_id: int, cycle_id: int | None, key: str, value: str) -> None:
+        self.insert("annotation", run_id=run_id, cycle_id=cycle_id, key=key, value=value, at=now())
+
+    def add_note(self, run_id: int, cycle_id: int | None, phase: str | None, text: str) -> None:
+        self.insert("note", run_id=run_id, cycle_id=cycle_id, phase=phase, text=text, at=now())
+
+    def add_blocker(self, run_id: int, cycle_id: int | None, kind: str, detail: str) -> None:
+        self.insert("blocker", run_id=run_id, cycle_id=cycle_id, kind=kind, detail=detail, at=now())
+
+    # -- sensitivity checks --------------------------------------------------
+
+    def open_sensitivity_check(
+        self, cycle_id: int, *, reference_diff: str, reference_untracked: str
+    ) -> int:
+        return self.insert(
+            "sensitivity_check",
+            cycle_id=cycle_id,
+            reference_diff=reference_diff,
+            reference_untracked=reference_untracked,
+            opened_at=now(),
+        )
+
+    def record_sensitivity_mutation(
+        self,
+        cycle_id: int,
+        check_id: int,
+        *,
+        mutation_diff: str,
+        observed_failure: str,
+        evidence_line: str,
+    ) -> None:
+        self._write(
+            "UPDATE sensitivity_check SET mutation_diff = ?, observed_failure = ?,"
+            " evidence_line = ? WHERE id = ? AND cycle_id = ?",
+            (mutation_diff, observed_failure, evidence_line, check_id, cycle_id),
+        )
+
+    def close_sensitivity_check(self, cycle_id: int, check_id: int, *, restored_ok: bool) -> None:
+        self._write(
+            "UPDATE sensitivity_check SET restored_ok = ?, closed_at = ?"
+            " WHERE id = ? AND cycle_id = ?",
+            (int(restored_ok), now(), check_id, cycle_id),
+        )
+
+
+def open_ledger(repo_path: Path) -> Ledger:
+    """The ledger of a repository. Every command opens its ledger through here."""
+    return Ledger(repo_path)

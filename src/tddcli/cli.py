@@ -12,7 +12,6 @@ import json
 import os
 import pwd
 import socket
-import sqlite3
 import sys
 import time
 from collections.abc import Callable
@@ -44,7 +43,7 @@ from . import target_lint as target_lint_mod
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
 from .envelope import Envelope, NextAction, Verb, failure, heartbeat
-from .ledger import Ledger, LedgerVersionError, ledger_path, now
+from .ledger import Ledger, LedgerVersionError, ledger_path, now, open_ledger
 from .machine import CLOSED, SKIPPED, Engine
 
 BASELINE_MAX_FAILURE_RATIO_DEFAULT = 0.5
@@ -73,7 +72,7 @@ def _worktree() -> Path:
 def _context(require_run: bool = True):
     worktree = _worktree()
     cfg = config_mod.load(worktree)
-    ledger = Ledger(gitutil.repo_identity(worktree))
+    ledger = open_ledger(gitutil.repo_identity(worktree))
     run = ledger.active_run(str(worktree))
     if require_run and run is None:
         raise SystemExit(
@@ -369,7 +368,7 @@ def cmd_doctor(args) -> Envelope:
         return Envelope(ok=False, error="configuration invalid", result={"checks": checks})
 
     repo = gitutil.repo_identity(worktree)
-    ledger = Ledger(repo)
+    ledger = open_ledger(repo)
     check("ledger reachable", True, str(ledger.path))
     check(
         "ledger outside worktree", not str(ledger.path).startswith(str(worktree)), str(ledger.path)
@@ -537,7 +536,7 @@ def cmd_doctor(args) -> Envelope:
 def cmd_plan_register(args) -> Envelope:
     worktree = _worktree()
     cfg = config_mod.load(worktree)
-    ledger = Ledger(gitutil.repo_identity(worktree))
+    ledger = open_ledger(gitutil.repo_identity(worktree))
     rel = str(Path(args.plan))
     try:
         parsed = contract_mod.register(worktree, rel, cfg)
@@ -561,23 +560,18 @@ def cmd_plan_register(args) -> Envelope:
                 findings=lint_findings,
             )
 
-    existing = ledger.one(
-        "SELECT * FROM plan_contract WHERE plan_path = ? AND git_blob_sha IS ?",
-        (rel, parsed.blob_sha),
-    )
+    existing = ledger.contract_by_blob(rel, parsed.blob_sha)
     contract_id = (
         existing["id"]
         if existing
-        else ledger.insert(
-            "plan_contract",
+        else ledger.register_contract(
             plan_path=rel,
-            git_blob_sha=parsed.blob_sha,
-            git_commit=parsed.commit_sha,
+            blob_sha=parsed.blob_sha,
+            commit_sha=parsed.commit_sha,
             status=parsed.status,
             declared_cycles=contract_mod.cycles_to_json(parsed.cycles),
             annotation_keys=json.dumps(parsed.annotation_keys),
             ancillary_files=json.dumps(parsed.ancillary_files),
-            registered_at=now(),
         )
     )
     return Envelope(
@@ -739,7 +733,7 @@ def _probe_projects(
 def cmd_run_start(args) -> Envelope:
     worktree = _worktree()
     cfg = config_mod.load(worktree)
-    ledger = Ledger(gitutil.repo_identity(worktree))
+    ledger = open_ledger(gitutil.repo_identity(worktree))
 
     active = ledger.active_run(str(worktree))
     if active is not None:
@@ -751,9 +745,7 @@ def cmd_run_start(args) -> Envelope:
         )
 
     rel = str(Path(args.plan))
-    contract_row = ledger.one(
-        "SELECT * FROM plan_contract WHERE plan_path = ? ORDER BY id DESC LIMIT 1", (rel,)
-    )
+    contract_row = ledger.latest_contract(rel)
     if contract_row is None:
         return failure(f"{rel} is not registered; run `tdd plan register {rel}` first")
 
@@ -828,14 +820,13 @@ def cmd_run_start(args) -> Envelope:
     if existing is not None and existing["stale"]:
         ledger.release_claim(str(worktree))
 
-    try:
-        ledger.claim(
-            str(worktree),
-            hostname=socket.gethostname(),
-            pid=os.getpid(),
-            projects_total=len(probe_projects),
-        )
-    except sqlite3.IntegrityError:
+    claimed = ledger.claim(
+        str(worktree),
+        hostname=socket.gethostname(),
+        pid=os.getpid(),
+        projects_total=len(probe_projects),
+    )
+    if claimed is None:
         return failure(
             "a baseline is already being collected in this worktree; do not re-run"
             " `run start` — poll `tdd progress` instead, which reports"
@@ -919,20 +910,18 @@ def cmd_run_start(args) -> Envelope:
             )
 
         executor = identity.resolve(worktree, args.executor)
-        run_id = ledger.insert(
-            "run",
-            plan_contract_id=contract_row["id"],
+        run_id = ledger.start_run(
+            contract_row["id"],
             executor_model=executor.model,
             executor_session=executor.session,
             executor_source=executor.source,
-            worktree_path=str(worktree),
-            started_at=now(),
-            allow_dirty=int(bool(args.allow_dirty)),
-            preexisting_dirty=json.dumps(dirty),
+            worktree=str(worktree),
+            allow_dirty=bool(args.allow_dirty),
+            preexisting_dirty=dirty,
             config_sha=config_mod.config_sha(worktree),
             start_sha=start_sha,
         )
-        run = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
+        run = ledger.run(run_id)
         if blob_changed:
             ledger.event(run_id, None, "plan_blob_changed", rel)
         skipped = sorted(set(cfg.projects) - set(probe_projects))
@@ -948,21 +937,14 @@ def cmd_run_start(args) -> Envelope:
         # Baselines and the collection snapshot, per project (R9.5, R8.9) — from the
         # probe above, so the suite is not run twice.
         for name, (verdict, collection) in probes.items():
-            ledger.insert(
-                "baseline",
-                run_id=run_id,
-                project=name,
-                failing=json.dumps(sorted(verdict.failed)),
-                captured_at=now(),
+            ledger.record_baseline(
+                run_id,
+                name,
+                sorted(verdict.failed),
                 source="reused" if name in reused else "probed",
             )
-            ledger.insert(
-                "collection_snapshot",
-                run_id=run_id,
-                project=name,
-                tests=json.dumps(sorted(collection.tests)),
-                failed_files=json.dumps(collection.failed_files),
-                captured_at=now(),
+            ledger.record_collection(
+                run_id, name, sorted(collection.tests), collection.failed_files
             )
 
         for name, (verdict, _collection) in probes.items():
@@ -992,7 +974,7 @@ def cmd_run_start(args) -> Envelope:
         if artifact_outcome.failed:
             f = artifact_outcome.failed[0]
             stderr_tail = (f.get("stderr") or "").strip()[-200:]
-            ledger.update("run", run_id, ended_at=now(), outcome="refused")
+            ledger.end_run(run_id, "refused")
             return failure(
                 f"artifact {f['artifact']}: regenerate hook exited {f['code']}"
                 + (f" — {stderr_tail}" if stderr_tail else "")
@@ -1069,10 +1051,9 @@ def cmd_advance(args) -> Envelope:
     if existing_advance is not None and existing_advance["stale"]:
         ledger.release_advance_claim(str(worktree))
 
-    try:
-        ledger.claim_advance(str(worktree), hostname=socket.gethostname(), pid=os.getpid())
-    except sqlite3.IntegrityError:
-        held = ledger.one("SELECT * FROM advance_claim WHERE worktree_path = ?", (str(worktree),))
+    claimed = ledger.claim_advance(str(worktree), hostname=socket.gethostname(), pid=os.getpid())
+    if claimed is None:
+        held = ledger.advance_claim_row(str(worktree))
         started = datetime.fromisoformat(held["started_at"])
         if started.tzinfo is None:
             started = started.replace(tzinfo=timezone.utc)
@@ -1098,17 +1079,10 @@ def cmd_cycle_skip(args) -> Envelope:
     cycle = ledger.open_cycle(run["id"])
     if cycle is None:
         return failure("no open cycle")
-    ledger.update("cycle", cycle["id"], phase=SKIPPED, closed_at=now(), skip_reason=args.reason)
-    ledger.insert(
-        "transition",
-        cycle_id=cycle["id"],
-        from_phase=cycle["phase"],
-        to_phase=SKIPPED,
-        at=now(),
-    )
+    ledger.skip_cycle(cycle["id"], from_phase=cycle["phase"], to_phase=SKIPPED, reason=args.reason)
     nxt_declared = next((c for c in engine.declared if c.ordinal > cycle["ordinal"]), None)
     if nxt_declared is None:
-        ledger.update("run", run["id"], ended_at=now(), outcome="complete")
+        ledger.end_run(run["id"], "complete")
         return Envelope(
             run={"id": run["id"], "cycle": cycle["ordinal"], "phase": SKIPPED},
             next_action=NextAction(
@@ -1130,14 +1104,7 @@ def cmd_cycle_skip(args) -> Envelope:
 def cmd_annotate(args) -> Envelope:
     worktree, cfg, ledger, run = _context()
     cycle = ledger.open_cycle(run["id"])
-    ledger.insert(
-        "annotation",
-        run_id=run["id"],
-        cycle_id=cycle["id"] if cycle else None,
-        key=args.key,
-        value=args.value,
-        at=now(),
-    )
+    ledger.add_annotation(run["id"], cycle["id"] if cycle else None, args.key, args.value)
     return Envelope(
         run={"id": run["id"], "cycle": cycle["ordinal"] if cycle else None},
         result={"key": args.key},
@@ -1148,20 +1115,15 @@ def cmd_annotate(args) -> Envelope:
 def cmd_note(args) -> Envelope:
     worktree, cfg, ledger, run = _context(require_run=False)
     if run is None:
-        run = ledger.one(
-            "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1",
-            (str(worktree),),
-        )
+        run = ledger.latest_run(str(worktree))
     if run is None:
         return failure("no runs recorded for this worktree; `tdd run start --plan <path>`")
     cycle = ledger.open_cycle(run["id"])
-    ledger.insert(
-        "note",
-        run_id=run["id"],
-        cycle_id=cycle["id"] if cycle else None,
-        phase=cycle["phase"] if cycle else None,
-        text=args.text,
-        at=now(),
+    ledger.add_note(
+        run["id"],
+        cycle["id"] if cycle else None,
+        cycle["phase"] if cycle else None,
+        args.text,
     )
     if cycle is not None:
         next_action = NextAction(
@@ -1181,16 +1143,9 @@ def cmd_blocker(args) -> Envelope:
     if args.kind not in BLOCKER_KINDS:
         return failure(f"unknown blocker kind {args.kind!r}; use one of {sorted(BLOCKER_KINDS)}")
     cycle = ledger.open_cycle(run["id"])
-    ledger.insert(
-        "blocker",
-        run_id=run["id"],
-        cycle_id=cycle["id"] if cycle else None,
-        kind=args.kind,
-        detail=args.detail,
-        at=now(),
-    )
+    ledger.add_blocker(run["id"], cycle["id"] if cycle else None, args.kind, args.detail)
     # R8.7 — a blocked run is not live, so the stop hook must release.
-    ledger.update("run", run["id"], ended_at=now(), outcome="blocked")
+    ledger.end_run(run["id"], "blocked")
     return Envelope(
         run={"id": run["id"], "cycle": cycle["ordinal"] if cycle else None, "phase": "BLOCKED"},
         result={"kind": args.kind, "detail": args.detail},
@@ -1211,15 +1166,8 @@ def _accept_failures_into_baseline(
     A test that passes at start_sha is refused — it is a run-introduced regression.
     Returns (accepted, refused).
     """
-    latest = ledger.all(
-        "SELECT project, other_failures FROM invocation WHERE id IN ("
-        "  SELECT MAX(id) FROM invocation WHERE run_id = ? AND phase_at = 'CLOSE_SWEEP'"
-        "  GROUP BY project)",
-        (run_id,),
-    )
-    rows = {
-        r["project"]: r for r in ledger.all("SELECT * FROM baseline WHERE run_id = ?", (run_id,))
-    }
+    latest = ledger.latest_close_sweeps(run_id)
+    rows = {r["project"]: r for r in ledger.baseline_rows(run_id)}
     accepted: dict[str, list[str]] = {}
     refused: dict[str, list[str]] = {}
     for sweep in latest:
@@ -1244,11 +1192,11 @@ def _accept_failures_into_baseline(
                 acc = []
                 ref = list(new)
             if acc:
-                ledger.update("baseline", row["id"], failing=json.dumps(sorted(known | set(acc))))
+                ledger.amend_baseline(run_id, row["id"], sorted(known | set(acc)))
                 accepted[project] = acc
             if ref:
                 refused[project] = ref
-    run_row = ledger.one("SELECT start_sha FROM run WHERE id = ?", (run_id,))
+    run_row = ledger.run(run_id)
     start_sha = run_row["start_sha"] if run_row else None
     verdicts: dict[str, dict] = {}
     for project in set(list(accepted.keys()) + list(refused.keys())):
@@ -1264,18 +1212,10 @@ def _accept_failures_into_baseline(
     return accepted, refused
 
 
-def _latest_blocked_run(ledger: Ledger, worktree: Path) -> sqlite3.Row | None:
-    return ledger.one(
-        "SELECT * FROM run WHERE worktree_path = ? AND outcome = 'blocked'"
-        " ORDER BY id DESC LIMIT 1",
-        (str(worktree),),
-    )
-
-
 def cmd_resume(args) -> Envelope:
     worktree = _worktree()
     cfg = config_mod.load(worktree)
-    ledger = Ledger(gitutil.repo_identity(worktree))
+    ledger = open_ledger(gitutil.repo_identity(worktree))
     run = ledger.active_run(str(worktree))
     accepted: dict[str, list[str]] = {}
     refused_from_baseline: dict[str, list[str]] = {}
@@ -1286,14 +1226,13 @@ def cmd_resume(args) -> Envelope:
     if args.unblock:
         if run is not None:
             return failure("run is already live; --unblock applies to a blocked run")
-        blocked = _latest_blocked_run(ledger, worktree)
+        blocked = ledger.latest_blocked_run(str(worktree))
         if blocked is None:
             return failure("no blocked run to unblock in this worktree")
         if not args.note:
             return failure("--unblock requires --note describing the intervention")
-        ledger.update("run", blocked["id"], ended_at=None, outcome=None)
-        ledger.insert("human_intervention", run_id=blocked["id"], note=args.note, at=now())
-        run = ledger.one("SELECT * FROM run WHERE id = ?", (blocked["id"],))
+        ledger.reopen_run(blocked["id"], args.note)
+        run = ledger.run(blocked["id"])
         if args.accept_failures:
             _eng = _engine(worktree, cfg, ledger, run)
             accepted, refused_from_baseline = _accept_failures_into_baseline(
@@ -1339,9 +1278,9 @@ def cmd_run_abandon(args) -> Envelope:
     if not args.reason.strip():
         return failure("--reason must say why the run is abandoned", reason="reason_required")
     worktree = _worktree()
-    ledger = Ledger(gitutil.repo_identity(worktree))
+    ledger = open_ledger(gitutil.repo_identity(worktree))
     if args.run is not None:
-        run = ledger.one("SELECT * FROM run WHERE id = ?", (args.run,))
+        run = ledger.run(args.run)
         if run is None:
             return failure(f"no run {args.run} in this ledger", reason="run_not_found")
         if run["ended_at"] is not None and run["outcome"] != "blocked":
@@ -1355,7 +1294,7 @@ def cmd_run_abandon(args) -> Envelope:
                 reason="worktree_exists",
             )
     else:
-        run = ledger.active_run(str(worktree)) or _latest_blocked_run(ledger, worktree)
+        run = ledger.active_run(str(worktree)) or ledger.latest_blocked_run(str(worktree))
         if run is None:
             return failure("no live or blocked run in this worktree", reason="no_run")
     # A stale claim is released below, not obeyed; a live one means an advance is mid-flight.
@@ -1367,20 +1306,14 @@ def cmd_run_abandon(args) -> Envelope:
             pid=claim["pid"],
         )
     executor = identity.resolve(worktree)
-    at = now()
-    ledger.update("run", run["id"], ended_at=at, outcome="abandoned")
-    ledger.insert(
-        "abandonment",
-        run_id=run["id"],
+    ledger.abandon_run(
+        run["id"],
         reason=args.reason,
         account=_calling_account(),
         executor_model=executor.model,
         executor_source=executor.source,
-        at=at,
+        at=now(),
     )
-    ledger.insert("human_intervention", run_id=run["id"], note=f"abandoned: {args.reason}", at=at)
-    ledger.release_claim(run["worktree_path"])
-    ledger.release_advance_claim(run["worktree_path"])
     return Envelope(
         result={"run_id": run["id"]},
         next_action=NextAction(Verb.COMPLETE, f"Run {run['id']} abandoned."),
@@ -1396,12 +1329,10 @@ def cmd_sensitivity(args) -> Envelope:
     if args.step == "begin":
         if ledger.open_sensitivity(cycle["id"]) is not None:
             return failure("a sensitivity check is already open")
-        check_id = ledger.insert(
-            "sensitivity_check",
-            cycle_id=cycle["id"],
+        check_id = ledger.open_sensitivity_check(
+            cycle["id"],
             reference_diff=snapshot.capture(worktree, cfg),
             reference_untracked=snapshot.fingerprint(worktree, cfg),
-            opened_at=now(),
         )
         return Envelope(
             run={"id": run["id"], "cycle": cycle["ordinal"]},
@@ -1427,8 +1358,8 @@ def cmd_sensitivity(args) -> Envelope:
         # A mutation that breaks collection also proves the test depends on the code.
         bites = bool(outcomes) and all(o in (FAILED, NOT_COLLECTED) for o in outcomes.values())
         evidence = next((v.target_evidence for v in verdicts if v.target_evidence), "")
-        ledger.update(
-            "sensitivity_check",
+        ledger.record_sensitivity_mutation(
+            cycle["id"],
             open_check["id"],
             mutation_diff=gitutil.diff_text(worktree)[:20000],
             observed_failure=failure_text[:4000],
@@ -1457,12 +1388,7 @@ def cmd_sensitivity(args) -> Envelope:
     # end — restore and verify byte-identical (R8.5)
     to_restore = snapshot.restore(worktree, cfg, open_check["reference_diff"])
     restored_ok = snapshot.fingerprint(worktree, cfg) == open_check["reference_untracked"]
-    ledger.update(
-        "sensitivity_check",
-        open_check["id"],
-        restored_ok=int(restored_ok),
-        closed_at=now(),
-    )
+    ledger.close_sensitivity_check(cycle["id"], open_check["id"], restored_ok=restored_ok)
     if not restored_ok:
         ledger.event(run["id"], cycle["id"], "restore_mismatch", json.dumps(to_restore))
         return Envelope(
@@ -1517,7 +1443,7 @@ def cmd_target(args) -> Envelope:
             f" the target was not changed.{hint}"
         )
 
-    ledger.update("cycle", cycle["id"], target_tests=json.dumps([target]))
+    ledger.set_targets(cycle["id"], [target])
     ledger.event(run["id"], cycle["id"], "target_named_by_agent", target)
     return Envelope(
         run={"id": run["id"], "cycle": cycle["ordinal"]},
@@ -1529,10 +1455,7 @@ def cmd_target(args) -> Envelope:
 def cmd_log_render(args) -> Envelope:
     worktree, cfg, ledger, run = _context(require_run=False)
     if run is None:
-        run = ledger.one(
-            "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1",
-            (str(worktree),),
-        )
+        run = ledger.latest_run(str(worktree))
     if run is None:
         return failure("no runs recorded for this worktree")
     text = render.friction_log(ledger, run)
@@ -1561,10 +1484,7 @@ def cmd_progress(args) -> Envelope:
     """Human-readable progress. `status` remains the agent's machine view."""
     worktree, cfg, ledger, run = _context(require_run=False)
     if run is None:
-        run = ledger.one(
-            "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1",
-            (str(worktree),),
-        )
+        run = ledger.latest_run(str(worktree))
     if run is None:
         # A baseline can take minutes; a claim with no run row yet is in-flight, not
         # "never started". `ok: true` — a polling agent must not see
