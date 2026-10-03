@@ -105,15 +105,29 @@ class _Session:
             return {"ok": False, "error": f"{method}: {exc}"}
 
     def _foreign(self, arguments: dict) -> dict | None:
-        """A refusal when the call names a run of another source.
+        """A refusal when the call names a run, cycle or contract of another source.
 
-        A run that does not exist is refused the same way, so that a guest cannot learn
+        One that does not exist is refused the same way, so that a guest cannot learn
         which ids exist in other sources by probing for them.
         """
-        run_id = arguments.get("run_id")
-        if run_id is not None and self.ledger.run_source(run_id) != self.source:
-            return _refusal("foreign_run", f"run {run_id} is not one of this source's runs")
+        owners = (
+            ("run_id", "run", self.ledger.run_source),
+            ("cycle_id", "cycle", self._cycle_source),
+            ("contract_id", "plan contract", self._contract_source),
+        )
+        for param, noun, source_of in owners:
+            value = arguments.get(param)
+            if value is not None and source_of(value) != self.source:
+                return _refusal("foreign_run", f"{noun} {value} is not this source's")
         return None
+
+    def _cycle_source(self, cycle_id: int) -> str | None:
+        cycle = self.ledger.cycle(cycle_id)
+        return None if cycle is None else self.ledger.run_source(cycle["run_id"])
+
+    def _contract_source(self, contract_id: int) -> str | None:
+        contract = self.ledger.contract(contract_id)
+        return None if contract is None else contract["source"]
 
     def close(self) -> None:
         if self.ledger is not None:
