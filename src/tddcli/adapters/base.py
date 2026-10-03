@@ -238,23 +238,29 @@ class Adapter:
         invocation that is the environment manager resolving plus the runner
         booting, not collection work.
 
-        The batch and the loop do not discover the same way: a batch uses the
-        runner's own config, the loop walks `test_paths`. So the loop still runs for
-        every file the batch did not report — whether the batch failed, returned
-        nothing, or simply never mentioned that file. R10.3's guarantee is
+        A batch that lists at least one test is authoritative for its own suite
+        (issue #168): every file that suite owns is settled, listed or not, since
+        a file the runner's discovery skips is one no run observes. The owner is
+        an invocation's optional third element — `None` for the default suite, else
+        the override — and a file belongs to the suite `override_for` names. A
+        batch that fails or lists nothing settles nothing, and an invocation with
+        no owner settles only the files it listed, so R10.3's guarantee is
         unchanged: one uncollectable file is attributed to itself, and cannot
-        destroy the set. What changes is that the healthy case no longer pays for
-        the broken one.
+        destroy the set.
         """
         result = Collection()
         unaccounted = {str(p.relative_to(self.root)) for p in self._test_files()}
-        for command, env in self._collect_invocations():
+        for command, env, *owner in self._collect_invocations():
             batch = self._collect_batch(command, env)
             if batch is None:
                 continue
             tests, files = batch
             result.tests |= tests
             unaccounted -= files
+            if owner and tests:
+                unaccounted = {
+                    rel for rel in unaccounted if self.project.override_for(rel) is not owner[0]
+                }
         return self._collect_per_file(unaccounted, result)
 
     def _collect_invocations(self) -> list[tuple[str, dict[str, str] | None]]:
