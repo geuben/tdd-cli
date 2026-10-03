@@ -16,6 +16,7 @@ import contextlib
 import inspect
 import json
 import os
+import signal
 import socketserver
 import threading
 import tomllib
@@ -78,6 +79,25 @@ def load_config(path: Path | None = None) -> ServiceConfig:
         admin_socket=Path(section["admin_socket"]),
         home=Path(home) if home else Path.home() / ".local" / "share" / "tdd-cli",
     )
+
+
+def serve(config: ServiceConfig) -> Service:
+    """Run the service until SIGTERM or SIGINT, then close every socket and return it."""
+    svc = Service(config)
+    svc.start()
+    stopped = threading.Event()
+    previous = {
+        sig: signal.signal(sig, lambda *_: stopped.set()) for sig in (signal.SIGTERM, signal.SIGINT)
+    }
+    try:
+        # A timed wait, so the main thread returns to the interpreter to run the handler.
+        while not stopped.wait(0.5):
+            pass
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+        svc.stop()
+    return svc
 
 
 class _Session:
