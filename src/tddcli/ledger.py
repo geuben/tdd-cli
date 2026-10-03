@@ -15,7 +15,7 @@ from pathlib import Path
 
 from . import runner
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 
 class LedgerVersionError(RuntimeError):
@@ -54,28 +54,94 @@ MIGRATIONS: dict[int, str] = {
     ),
     # v11 -> v12 added others_observed column to invocation; ALTER TABLE covers old ledgers.
     11: "ALTER TABLE invocation ADD COLUMN others_observed INTEGER NOT NULL DEFAULT 1;",
-}
+    # v12 -> v13 records each row's source. `run` and `plan_contract` gain the column;
+    # the claims and the baseline cache are rebuilt, because their UNIQUE constraints
+    # gain it too and SQLite cannot alter a constraint in place.
+    12: """
+ALTER TABLE run ADD COLUMN source TEXT NOT NULL DEFAULT 'local';
+ALTER TABLE plan_contract ADD COLUMN source TEXT NOT NULL DEFAULT 'local';
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-
-CREATE TABLE IF NOT EXISTS baseline_claim (
+CREATE TABLE baseline_claim_v13 (
     id INTEGER PRIMARY KEY,
-    worktree_path TEXT NOT NULL UNIQUE,
+    source TEXT NOT NULL DEFAULT 'local',
+    worktree_path TEXT NOT NULL,
     hostname TEXT NOT NULL,
     pid INTEGER NOT NULL,
     projects_total INTEGER NOT NULL DEFAULT 0,
     projects_done INTEGER NOT NULL DEFAULT 0,
     current_project TEXT,
-    started_at TEXT NOT NULL
+    started_at TEXT NOT NULL,
+    UNIQUE(source, worktree_path)
+);
+INSERT INTO baseline_claim_v13 (id, worktree_path, hostname, pid, projects_total,
+    projects_done, current_project, started_at)
+    SELECT id, worktree_path, hostname, pid, projects_total, projects_done,
+    current_project, started_at FROM baseline_claim;
+DROP TABLE baseline_claim;
+ALTER TABLE baseline_claim_v13 RENAME TO baseline_claim;
+
+CREATE TABLE advance_claim_v13 (
+    id INTEGER PRIMARY KEY,
+    source TEXT NOT NULL DEFAULT 'local',
+    worktree_path TEXT NOT NULL,
+    hostname TEXT NOT NULL,
+    pid INTEGER NOT NULL,
+    started_at TEXT NOT NULL,
+    UNIQUE(source, worktree_path)
+);
+INSERT INTO advance_claim_v13 (id, worktree_path, hostname, pid, started_at)
+    SELECT id, worktree_path, hostname, pid, started_at FROM advance_claim;
+DROP TABLE advance_claim;
+ALTER TABLE advance_claim_v13 RENAME TO advance_claim;
+
+CREATE TABLE baseline_cache_v13 (
+    id INTEGER PRIMARY KEY,
+    source TEXT NOT NULL DEFAULT 'local',
+    project TEXT NOT NULL,
+    tree_hash TEXT NOT NULL,
+    config_sha TEXT NOT NULL,
+    failing TEXT NOT NULL,
+    tests TEXT NOT NULL,
+    failed_files TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(source, project, tree_hash, config_sha)
+);
+INSERT INTO baseline_cache_v13 (id, project, tree_hash, config_sha, failing, tests,
+    failed_files, created_at)
+    SELECT id, project, tree_hash, config_sha, failing, tests, failed_files, created_at
+    FROM baseline_cache;
+DROP TABLE baseline_cache;
+ALTER TABLE baseline_cache_v13 RENAME TO baseline_cache;
+""",
+}
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+-- No index may name a `source` column: SCHEMA runs before the migrations, so on a
+-- pre-v13 ledger that column does not exist yet when this script does.
+
+CREATE TABLE IF NOT EXISTS baseline_claim (
+    id INTEGER PRIMARY KEY,
+    source TEXT NOT NULL DEFAULT 'local',
+    worktree_path TEXT NOT NULL,
+    hostname TEXT NOT NULL,
+    pid INTEGER NOT NULL,
+    projects_total INTEGER NOT NULL DEFAULT 0,
+    projects_done INTEGER NOT NULL DEFAULT 0,
+    current_project TEXT,
+    started_at TEXT NOT NULL,
+    UNIQUE(source, worktree_path)
 );
 
 CREATE TABLE IF NOT EXISTS advance_claim (
     id INTEGER PRIMARY KEY,
-    worktree_path TEXT NOT NULL UNIQUE,
+    source TEXT NOT NULL DEFAULT 'local',
+    worktree_path TEXT NOT NULL,
     hostname TEXT NOT NULL,
     pid INTEGER NOT NULL,
-    started_at TEXT NOT NULL
+    started_at TEXT NOT NULL,
+    UNIQUE(source, worktree_path)
 );
 
 CREATE TABLE IF NOT EXISTS plan_contract (
@@ -87,7 +153,8 @@ CREATE TABLE IF NOT EXISTS plan_contract (
     declared_cycles TEXT NOT NULL,      -- json
     annotation_keys TEXT NOT NULL,      -- json
     ancillary_files TEXT NOT NULL DEFAULT '[]',  -- json
-    registered_at TEXT NOT NULL
+    registered_at TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'local'
 );
 
 CREATE TABLE IF NOT EXISTS run (
@@ -103,7 +170,8 @@ CREATE TABLE IF NOT EXISTS run (
     allow_dirty INTEGER NOT NULL DEFAULT 0,
     preexisting_dirty TEXT NOT NULL,    -- json: excluded from authorship forever (R9.21)
     config_sha TEXT,                    -- tdd.toml as of run start; drift is an event
-    start_sha TEXT                      -- HEAD at run start; late probes and accept-failures run suites here
+    start_sha TEXT,                     -- HEAD at run start; late probes and accept-failures run suites here
+    source TEXT NOT NULL DEFAULT 'local' -- where the run came in from: `local`, or a ledger service's source
 );
 
 CREATE TABLE IF NOT EXISTS baseline (
@@ -272,6 +340,7 @@ CREATE TABLE IF NOT EXISTS abandonment (
 
 CREATE TABLE IF NOT EXISTS baseline_cache (
     id INTEGER PRIMARY KEY,
+    source TEXT NOT NULL DEFAULT 'local',
     project TEXT NOT NULL,
     tree_hash TEXT NOT NULL,
     config_sha TEXT NOT NULL,
@@ -279,7 +348,7 @@ CREATE TABLE IF NOT EXISTS baseline_cache (
     tests TEXT NOT NULL,                -- json list
     failed_files TEXT NOT NULL,         -- json map path -> error
     created_at TEXT NOT NULL,
-    UNIQUE(project, tree_hash, config_sha)
+    UNIQUE(source, project, tree_hash, config_sha)
 );
 
 CREATE INDEX IF NOT EXISTS idx_cycle_run ON cycle(run_id);
@@ -590,7 +659,7 @@ class Ledger:
             """
             INSERT INTO baseline_cache (project, tree_hash, config_sha, failing, tests, failed_files, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(project, tree_hash, config_sha) DO UPDATE SET
+            ON CONFLICT(source, project, tree_hash, config_sha) DO UPDATE SET
                 failing = excluded.failing,
                 tests = excluded.tests,
                 failed_files = excluded.failed_files,
