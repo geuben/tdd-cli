@@ -59,3 +59,10 @@ def test_split_doctor_install_check_follows_what_the_agent_can_write(
     verdicts, _ = _probe(repo, monkeypatch, "install not writable by the agent", deny="test")
 
     assert verdicts == [False, True]
+
+
+def test_socket_mode_doctor_names_the_source_it_reaches(repo, split_guest):
+    reachable = _check(run_cli(repo, "doctor"), "ledger reachable")
+
+    # `source vm-1`, not just `vm-1`: the socket's own file name already says that.
+    assert (reachable["ok"], "source vm-1" in reachable["detail"]) == (True, True)

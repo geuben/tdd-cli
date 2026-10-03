@@ -12,7 +12,6 @@ import json
 import os
 import pwd
 import socket
-import sqlite3
 import sys
 import time
 from collections.abc import Callable
@@ -28,6 +27,7 @@ from . import (
     identity,
     render,
     snapshot,
+    wire,
 )
 from . import (
     config as config_mod,
@@ -40,12 +40,14 @@ from . import (
 )
 from . import ledger as ledger_mod
 from . import runner as runner_mod
+from . import service as service_mod
 from . import target_lint as target_lint_mod
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
 from .envelope import Envelope, NextAction, Verb, failure, heartbeat
-from .ledger import Ledger, LedgerVersionError, ledger_path, now
+from .ledger import Ledger, LedgerVersionError, ledger_path, now, open_ledger
 from .machine import CLOSED, SKIPPED, Engine
+from .remote import RemoteLedger
 
 BASELINE_MAX_FAILURE_RATIO_DEFAULT = 0.5
 BASELINE_MIN_COLLECTED = 10
@@ -73,7 +75,7 @@ def _worktree() -> Path:
 def _context(require_run: bool = True):
     worktree = _worktree()
     cfg = config_mod.load(worktree)
-    ledger = Ledger(gitutil.repo_identity(worktree))
+    ledger = open_ledger(gitutil.repo_identity(worktree))
     run = ledger.active_run(str(worktree))
     if require_run and run is None:
         raise SystemExit(
@@ -311,12 +313,15 @@ def _cleanliness_detail(blocking: list[str], unrelated: list[str]) -> str:
     return ""
 
 
-def _split_checks(check: Callable, split: runner_mod.RunnerConfig, ledger_file: Path) -> None:
+def _split_checks(
+    check: Callable, split: runner_mod.RunnerConfig, ledger_file: Path | None
+) -> None:
     """What split mode rests on, probed live and as the agent.
 
     Each probe goes through the installed actor, so on a real machine it is answered
     by the real sudo and the real accounts: that is the one place the uid change
-    itself is ever verified.
+    itself is ever verified. `ledger_file` is None when the ledger is on the host's
+    ledger service: there is then no file here for the agent to reach.
     """
     agent = os.environ.get("SUDO_USER", "")
     asked = actor.current().run_argv(["id", "-u"])
@@ -333,15 +338,16 @@ def _split_checks(check: Callable, split: runner_mod.RunnerConfig, ledger_file: 
         f" `{split.user} ALL=({agent}) NOPASSWD:SETENV: ALL`",
     )
 
-    readable = actor.current().run_argv(["test", "-r", str(ledger_file)]).returncode == 0
-    check(
-        "ledger out of the agent's reach",
-        not readable,
-        f"{agent!r} can read {ledger_file}. Its directory must belong to {split.user}"
-        " alone, at mode 700, somewhere the agent's account cannot otherwise reach"
-        if readable
-        else "",
-    )
+    if ledger_file is not None:
+        readable = actor.current().run_argv(["test", "-r", str(ledger_file)]).returncode == 0
+        check(
+            "ledger out of the agent's reach",
+            not readable,
+            f"{agent!r} can read {ledger_file}. Its directory must belong to {split.user}"
+            " alone, at mode 700, somewhere the agent's account cannot otherwise reach"
+            if readable
+            else "",
+        )
 
     # A runner whose code the agent can edit is the agent.
     install = Path(__file__).resolve().parent
@@ -369,8 +375,13 @@ def cmd_doctor(args) -> Envelope:
         return Envelope(ok=False, error="configuration invalid", result={"checks": checks})
 
     repo = gitutil.repo_identity(worktree)
-    ledger = Ledger(repo)
-    check("ledger reachable", True, str(ledger.path))
+    ledger = open_ledger(repo)
+    remote = isinstance(ledger, RemoteLedger)
+    if remote:
+        # Reaching the service is not enough: say which source it records this guest as.
+        check("ledger reachable", True, f"socket {ledger.path} (source {ledger.ping()['source']})")
+    else:
+        check("ledger reachable", True, str(ledger.path))
     check(
         "ledger outside worktree", not str(ledger.path).startswith(str(worktree)), str(ledger.path)
     )
@@ -387,7 +398,7 @@ def cmd_doctor(args) -> Envelope:
             " cannot reach.",
         )
     else:
-        _split_checks(check, split, ledger.path)
+        _split_checks(check, split, None if remote else ledger.path)
 
     ex = identity.resolve(worktree)
     ex_detail = f"{ex.source}: {ex.model}"
@@ -537,7 +548,7 @@ def cmd_doctor(args) -> Envelope:
 def cmd_plan_register(args) -> Envelope:
     worktree = _worktree()
     cfg = config_mod.load(worktree)
-    ledger = Ledger(gitutil.repo_identity(worktree))
+    ledger = open_ledger(gitutil.repo_identity(worktree))
     rel = str(Path(args.plan))
     try:
         parsed = contract_mod.register(worktree, rel, cfg)
@@ -561,23 +572,18 @@ def cmd_plan_register(args) -> Envelope:
                 findings=lint_findings,
             )
 
-    existing = ledger.one(
-        "SELECT * FROM plan_contract WHERE plan_path = ? AND git_blob_sha IS ?",
-        (rel, parsed.blob_sha),
-    )
+    existing = ledger.contract_by_blob(rel, parsed.blob_sha)
     contract_id = (
         existing["id"]
         if existing
-        else ledger.insert(
-            "plan_contract",
+        else ledger.register_contract(
             plan_path=rel,
-            git_blob_sha=parsed.blob_sha,
-            git_commit=parsed.commit_sha,
+            blob_sha=parsed.blob_sha,
+            commit_sha=parsed.commit_sha,
             status=parsed.status,
             declared_cycles=contract_mod.cycles_to_json(parsed.cycles),
             annotation_keys=json.dumps(parsed.annotation_keys),
             ancillary_files=json.dumps(parsed.ancillary_files),
-            registered_at=now(),
         )
     )
     return Envelope(
@@ -739,7 +745,7 @@ def _probe_projects(
 def cmd_run_start(args) -> Envelope:
     worktree = _worktree()
     cfg = config_mod.load(worktree)
-    ledger = Ledger(gitutil.repo_identity(worktree))
+    ledger = open_ledger(gitutil.repo_identity(worktree))
 
     active = ledger.active_run(str(worktree))
     if active is not None:
@@ -751,9 +757,7 @@ def cmd_run_start(args) -> Envelope:
         )
 
     rel = str(Path(args.plan))
-    contract_row = ledger.one(
-        "SELECT * FROM plan_contract WHERE plan_path = ? ORDER BY id DESC LIMIT 1", (rel,)
-    )
+    contract_row = ledger.latest_contract(rel)
     if contract_row is None:
         return failure(f"{rel} is not registered; run `tdd plan register {rel}` first")
 
@@ -828,14 +832,13 @@ def cmd_run_start(args) -> Envelope:
     if existing is not None and existing["stale"]:
         ledger.release_claim(str(worktree))
 
-    try:
-        ledger.claim(
-            str(worktree),
-            hostname=socket.gethostname(),
-            pid=os.getpid(),
-            projects_total=len(probe_projects),
-        )
-    except sqlite3.IntegrityError:
+    claimed = ledger.claim(
+        str(worktree),
+        hostname=socket.gethostname(),
+        pid=os.getpid(),
+        projects_total=len(probe_projects),
+    )
+    if claimed is None:
         return failure(
             "a baseline is already being collected in this worktree; do not re-run"
             " `run start` — poll `tdd progress` instead, which reports"
@@ -919,20 +922,18 @@ def cmd_run_start(args) -> Envelope:
             )
 
         executor = identity.resolve(worktree, args.executor)
-        run_id = ledger.insert(
-            "run",
-            plan_contract_id=contract_row["id"],
+        run_id = ledger.start_run(
+            contract_row["id"],
             executor_model=executor.model,
             executor_session=executor.session,
             executor_source=executor.source,
-            worktree_path=str(worktree),
-            started_at=now(),
-            allow_dirty=int(bool(args.allow_dirty)),
-            preexisting_dirty=json.dumps(dirty),
+            worktree=str(worktree),
+            allow_dirty=bool(args.allow_dirty),
+            preexisting_dirty=dirty,
             config_sha=config_mod.config_sha(worktree),
             start_sha=start_sha,
         )
-        run = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
+        run = ledger.run(run_id)
         if blob_changed:
             ledger.event(run_id, None, "plan_blob_changed", rel)
         skipped = sorted(set(cfg.projects) - set(probe_projects))
@@ -948,21 +949,14 @@ def cmd_run_start(args) -> Envelope:
         # Baselines and the collection snapshot, per project (R9.5, R8.9) — from the
         # probe above, so the suite is not run twice.
         for name, (verdict, collection) in probes.items():
-            ledger.insert(
-                "baseline",
-                run_id=run_id,
-                project=name,
-                failing=json.dumps(sorted(verdict.failed)),
-                captured_at=now(),
+            ledger.record_baseline(
+                run_id,
+                name,
+                sorted(verdict.failed),
                 source="reused" if name in reused else "probed",
             )
-            ledger.insert(
-                "collection_snapshot",
-                run_id=run_id,
-                project=name,
-                tests=json.dumps(sorted(collection.tests)),
-                failed_files=json.dumps(collection.failed_files),
-                captured_at=now(),
+            ledger.record_collection(
+                run_id, name, sorted(collection.tests), collection.failed_files
             )
 
         for name, (verdict, _collection) in probes.items():
@@ -992,7 +986,7 @@ def cmd_run_start(args) -> Envelope:
         if artifact_outcome.failed:
             f = artifact_outcome.failed[0]
             stderr_tail = (f.get("stderr") or "").strip()[-200:]
-            ledger.update("run", run_id, ended_at=now(), outcome="refused")
+            ledger.end_run(run_id, "refused")
             return failure(
                 f"artifact {f['artifact']}: regenerate hook exited {f['code']}"
                 + (f" — {stderr_tail}" if stderr_tail else "")
@@ -1069,10 +1063,9 @@ def cmd_advance(args) -> Envelope:
     if existing_advance is not None and existing_advance["stale"]:
         ledger.release_advance_claim(str(worktree))
 
-    try:
-        ledger.claim_advance(str(worktree), hostname=socket.gethostname(), pid=os.getpid())
-    except sqlite3.IntegrityError:
-        held = ledger.one("SELECT * FROM advance_claim WHERE worktree_path = ?", (str(worktree),))
+    claimed = ledger.claim_advance(str(worktree), hostname=socket.gethostname(), pid=os.getpid())
+    if claimed is None:
+        held = ledger.advance_claim_row(str(worktree))
         started = datetime.fromisoformat(held["started_at"])
         if started.tzinfo is None:
             started = started.replace(tzinfo=timezone.utc)
@@ -1098,17 +1091,10 @@ def cmd_cycle_skip(args) -> Envelope:
     cycle = ledger.open_cycle(run["id"])
     if cycle is None:
         return failure("no open cycle")
-    ledger.update("cycle", cycle["id"], phase=SKIPPED, closed_at=now(), skip_reason=args.reason)
-    ledger.insert(
-        "transition",
-        cycle_id=cycle["id"],
-        from_phase=cycle["phase"],
-        to_phase=SKIPPED,
-        at=now(),
-    )
+    ledger.skip_cycle(cycle["id"], from_phase=cycle["phase"], to_phase=SKIPPED, reason=args.reason)
     nxt_declared = next((c for c in engine.declared if c.ordinal > cycle["ordinal"]), None)
     if nxt_declared is None:
-        ledger.update("run", run["id"], ended_at=now(), outcome="complete")
+        ledger.end_run(run["id"], "complete")
         return Envelope(
             run={"id": run["id"], "cycle": cycle["ordinal"], "phase": SKIPPED},
             next_action=NextAction(
@@ -1130,14 +1116,7 @@ def cmd_cycle_skip(args) -> Envelope:
 def cmd_annotate(args) -> Envelope:
     worktree, cfg, ledger, run = _context()
     cycle = ledger.open_cycle(run["id"])
-    ledger.insert(
-        "annotation",
-        run_id=run["id"],
-        cycle_id=cycle["id"] if cycle else None,
-        key=args.key,
-        value=args.value,
-        at=now(),
-    )
+    ledger.add_annotation(run["id"], cycle["id"] if cycle else None, args.key, args.value)
     return Envelope(
         run={"id": run["id"], "cycle": cycle["ordinal"] if cycle else None},
         result={"key": args.key},
@@ -1148,20 +1127,15 @@ def cmd_annotate(args) -> Envelope:
 def cmd_note(args) -> Envelope:
     worktree, cfg, ledger, run = _context(require_run=False)
     if run is None:
-        run = ledger.one(
-            "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1",
-            (str(worktree),),
-        )
+        run = ledger.latest_run(str(worktree))
     if run is None:
         return failure("no runs recorded for this worktree; `tdd run start --plan <path>`")
     cycle = ledger.open_cycle(run["id"])
-    ledger.insert(
-        "note",
-        run_id=run["id"],
-        cycle_id=cycle["id"] if cycle else None,
-        phase=cycle["phase"] if cycle else None,
-        text=args.text,
-        at=now(),
+    ledger.add_note(
+        run["id"],
+        cycle["id"] if cycle else None,
+        cycle["phase"] if cycle else None,
+        args.text,
     )
     if cycle is not None:
         next_action = NextAction(
@@ -1181,16 +1155,9 @@ def cmd_blocker(args) -> Envelope:
     if args.kind not in BLOCKER_KINDS:
         return failure(f"unknown blocker kind {args.kind!r}; use one of {sorted(BLOCKER_KINDS)}")
     cycle = ledger.open_cycle(run["id"])
-    ledger.insert(
-        "blocker",
-        run_id=run["id"],
-        cycle_id=cycle["id"] if cycle else None,
-        kind=args.kind,
-        detail=args.detail,
-        at=now(),
-    )
+    ledger.add_blocker(run["id"], cycle["id"] if cycle else None, args.kind, args.detail)
     # R8.7 — a blocked run is not live, so the stop hook must release.
-    ledger.update("run", run["id"], ended_at=now(), outcome="blocked")
+    ledger.end_run(run["id"], "blocked")
     return Envelope(
         run={"id": run["id"], "cycle": cycle["ordinal"] if cycle else None, "phase": "BLOCKED"},
         result={"kind": args.kind, "detail": args.detail},
@@ -1211,15 +1178,8 @@ def _accept_failures_into_baseline(
     A test that passes at start_sha is refused — it is a run-introduced regression.
     Returns (accepted, refused).
     """
-    latest = ledger.all(
-        "SELECT project, other_failures FROM invocation WHERE id IN ("
-        "  SELECT MAX(id) FROM invocation WHERE run_id = ? AND phase_at = 'CLOSE_SWEEP'"
-        "  GROUP BY project)",
-        (run_id,),
-    )
-    rows = {
-        r["project"]: r for r in ledger.all("SELECT * FROM baseline WHERE run_id = ?", (run_id,))
-    }
+    latest = ledger.latest_close_sweeps(run_id)
+    rows = {r["project"]: r for r in ledger.baseline_rows(run_id)}
     accepted: dict[str, list[str]] = {}
     refused: dict[str, list[str]] = {}
     for sweep in latest:
@@ -1244,11 +1204,11 @@ def _accept_failures_into_baseline(
                 acc = []
                 ref = list(new)
             if acc:
-                ledger.update("baseline", row["id"], failing=json.dumps(sorted(known | set(acc))))
+                ledger.amend_baseline(run_id, row["id"], sorted(known | set(acc)))
                 accepted[project] = acc
             if ref:
                 refused[project] = ref
-    run_row = ledger.one("SELECT start_sha FROM run WHERE id = ?", (run_id,))
+    run_row = ledger.run(run_id)
     start_sha = run_row["start_sha"] if run_row else None
     verdicts: dict[str, dict] = {}
     for project in set(list(accepted.keys()) + list(refused.keys())):
@@ -1264,18 +1224,10 @@ def _accept_failures_into_baseline(
     return accepted, refused
 
 
-def _latest_blocked_run(ledger: Ledger, worktree: Path) -> sqlite3.Row | None:
-    return ledger.one(
-        "SELECT * FROM run WHERE worktree_path = ? AND outcome = 'blocked'"
-        " ORDER BY id DESC LIMIT 1",
-        (str(worktree),),
-    )
-
-
 def cmd_resume(args) -> Envelope:
     worktree = _worktree()
     cfg = config_mod.load(worktree)
-    ledger = Ledger(gitutil.repo_identity(worktree))
+    ledger = open_ledger(gitutil.repo_identity(worktree))
     run = ledger.active_run(str(worktree))
     accepted: dict[str, list[str]] = {}
     refused_from_baseline: dict[str, list[str]] = {}
@@ -1286,14 +1238,13 @@ def cmd_resume(args) -> Envelope:
     if args.unblock:
         if run is not None:
             return failure("run is already live; --unblock applies to a blocked run")
-        blocked = _latest_blocked_run(ledger, worktree)
+        blocked = ledger.latest_blocked_run(str(worktree))
         if blocked is None:
             return failure("no blocked run to unblock in this worktree")
         if not args.note:
             return failure("--unblock requires --note describing the intervention")
-        ledger.update("run", blocked["id"], ended_at=None, outcome=None)
-        ledger.insert("human_intervention", run_id=blocked["id"], note=args.note, at=now())
-        run = ledger.one("SELECT * FROM run WHERE id = ?", (blocked["id"],))
+        ledger.reopen_run(blocked["id"], args.note)
+        run = ledger.run(blocked["id"])
         if args.accept_failures:
             _eng = _engine(worktree, cfg, ledger, run)
             accepted, refused_from_baseline = _accept_failures_into_baseline(
@@ -1339,9 +1290,9 @@ def cmd_run_abandon(args) -> Envelope:
     if not args.reason.strip():
         return failure("--reason must say why the run is abandoned", reason="reason_required")
     worktree = _worktree()
-    ledger = Ledger(gitutil.repo_identity(worktree))
+    ledger = open_ledger(gitutil.repo_identity(worktree))
     if args.run is not None:
-        run = ledger.one("SELECT * FROM run WHERE id = ?", (args.run,))
+        run = ledger.run(args.run)
         if run is None:
             return failure(f"no run {args.run} in this ledger", reason="run_not_found")
         if run["ended_at"] is not None and run["outcome"] != "blocked":
@@ -1355,7 +1306,7 @@ def cmd_run_abandon(args) -> Envelope:
                 reason="worktree_exists",
             )
     else:
-        run = ledger.active_run(str(worktree)) or _latest_blocked_run(ledger, worktree)
+        run = ledger.active_run(str(worktree)) or ledger.latest_blocked_run(str(worktree))
         if run is None:
             return failure("no live or blocked run in this worktree", reason="no_run")
     # A stale claim is released below, not obeyed; a live one means an advance is mid-flight.
@@ -1367,20 +1318,14 @@ def cmd_run_abandon(args) -> Envelope:
             pid=claim["pid"],
         )
     executor = identity.resolve(worktree)
-    at = now()
-    ledger.update("run", run["id"], ended_at=at, outcome="abandoned")
-    ledger.insert(
-        "abandonment",
-        run_id=run["id"],
+    ledger.abandon_run(
+        run["id"],
         reason=args.reason,
         account=_calling_account(),
         executor_model=executor.model,
         executor_source=executor.source,
-        at=at,
+        at=now(),
     )
-    ledger.insert("human_intervention", run_id=run["id"], note=f"abandoned: {args.reason}", at=at)
-    ledger.release_claim(run["worktree_path"])
-    ledger.release_advance_claim(run["worktree_path"])
     return Envelope(
         result={"run_id": run["id"]},
         next_action=NextAction(Verb.COMPLETE, f"Run {run['id']} abandoned."),
@@ -1396,12 +1341,10 @@ def cmd_sensitivity(args) -> Envelope:
     if args.step == "begin":
         if ledger.open_sensitivity(cycle["id"]) is not None:
             return failure("a sensitivity check is already open")
-        check_id = ledger.insert(
-            "sensitivity_check",
-            cycle_id=cycle["id"],
+        check_id = ledger.open_sensitivity_check(
+            cycle["id"],
             reference_diff=snapshot.capture(worktree, cfg),
             reference_untracked=snapshot.fingerprint(worktree, cfg),
-            opened_at=now(),
         )
         return Envelope(
             run={"id": run["id"], "cycle": cycle["ordinal"]},
@@ -1427,8 +1370,8 @@ def cmd_sensitivity(args) -> Envelope:
         # A mutation that breaks collection also proves the test depends on the code.
         bites = bool(outcomes) and all(o in (FAILED, NOT_COLLECTED) for o in outcomes.values())
         evidence = next((v.target_evidence for v in verdicts if v.target_evidence), "")
-        ledger.update(
-            "sensitivity_check",
+        ledger.record_sensitivity_mutation(
+            cycle["id"],
             open_check["id"],
             mutation_diff=gitutil.diff_text(worktree)[:20000],
             observed_failure=failure_text[:4000],
@@ -1457,12 +1400,7 @@ def cmd_sensitivity(args) -> Envelope:
     # end — restore and verify byte-identical (R8.5)
     to_restore = snapshot.restore(worktree, cfg, open_check["reference_diff"])
     restored_ok = snapshot.fingerprint(worktree, cfg) == open_check["reference_untracked"]
-    ledger.update(
-        "sensitivity_check",
-        open_check["id"],
-        restored_ok=int(restored_ok),
-        closed_at=now(),
-    )
+    ledger.close_sensitivity_check(cycle["id"], open_check["id"], restored_ok=restored_ok)
     if not restored_ok:
         ledger.event(run["id"], cycle["id"], "restore_mismatch", json.dumps(to_restore))
         return Envelope(
@@ -1517,7 +1455,7 @@ def cmd_target(args) -> Envelope:
             f" the target was not changed.{hint}"
         )
 
-    ledger.update("cycle", cycle["id"], target_tests=json.dumps([target]))
+    ledger.set_targets(cycle["id"], [target])
     ledger.event(run["id"], cycle["id"], "target_named_by_agent", target)
     return Envelope(
         run={"id": run["id"], "cycle": cycle["ordinal"]},
@@ -1529,10 +1467,7 @@ def cmd_target(args) -> Envelope:
 def cmd_log_render(args) -> Envelope:
     worktree, cfg, ledger, run = _context(require_run=False)
     if run is None:
-        run = ledger.one(
-            "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1",
-            (str(worktree),),
-        )
+        run = ledger.latest_run(str(worktree))
     if run is None:
         return failure("no runs recorded for this worktree")
     text = render.friction_log(ledger, run)
@@ -1561,10 +1496,7 @@ def cmd_progress(args) -> Envelope:
     """Human-readable progress. `status` remains the agent's machine view."""
     worktree, cfg, ledger, run = _context(require_run=False)
     if run is None:
-        run = ledger.one(
-            "SELECT * FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1",
-            (str(worktree),),
-        )
+        run = ledger.latest_run(str(worktree))
     if run is None:
         # A baseline can take minutes; a claim with no run row yet is in-flight, not
         # "never started". `ok: true` — a polling agent must not see
@@ -1615,7 +1547,14 @@ def cmd_fleet(args) -> Envelope:
     `_context`: no tdd.toml, active run, or existing ledger is required, and the
     ledger is opened read-only so live agents cannot be perturbed."""
     worktree = _worktree()
-    summary = fleet.summarise(ledger_path(gitutil.repo_identity(worktree)))
+    repo = gitutil.repo_identity(worktree)
+    split = runner_mod.load()
+    if split is not None and split.role == "runner" and split.ledger_socket is not None:
+        # The ledger is on the host: read this source's view of it through the socket.
+        reader = open_ledger(repo)
+    else:
+        reader = ledger_mod.open_readonly(ledger_path(repo))
+    summary = fleet.summarise(reader)
     if args.json:
         return Envelope(result=summary, next_action=NextAction(Verb.COMPLETE, "Fleet reported."))
     sys.stdout.write(fleet.render(summary))
@@ -1644,6 +1583,13 @@ def cmd_runner_import(args) -> Envelope:
             "this machine is not split, or this is not its runner: `tdd docs split` sets one up",
             reason="not_split",
         )
+    if split.ledger_socket is not None:
+        # This runner keeps no ledger: it is the host's, behind the socket.
+        return failure(
+            "this runner keeps its ledger on the host's ledger service: import there, with"
+            " `tdd ledger import <file> --source <name>`",
+            reason="ledger_remote",
+        )
     # sudo sets SUDO_UID itself. Unset means someone logged in as the runner; "0" means
     # root. Anything else reached us the way an agent does, and an agent that could
     # import could hand the runner a history it wrote itself.
@@ -1671,6 +1617,136 @@ def cmd_runner_import(args) -> Envelope:
             Verb.COMPLETE,
             f"Imported to {target}. Runs up to {marker['last_run_id']} predate the"
             " split and are marked as such.",
+        ),
+    )
+
+
+# -- the ledger service: the operator's verbs ----------------------------------------
+
+
+def _ledger_verb(answer: Callable) -> Callable:
+    """A `tdd ledger` handler: it needs this machine's ledger service config first.
+
+    These verbs are the host operator's. They are answered here, never by a runner,
+    and only on a machine that runs a ledger service.
+    """
+
+    def handler(args) -> Envelope:
+        path = service_mod.config_path()
+        if not path.is_file():
+            return failure(
+                f"no ledger service is configured on this machine ({path} is absent):"
+                " `tdd docs split` describes one",
+                reason="no_service",
+            )
+        try:
+            return answer(args, service_mod.load_config(path))
+        except wire.LedgerRefused as exc:
+            # The operator's own service said no: its code is the reason.
+            return failure(exc.error, reason=exc.refusal)
+
+    return handler
+
+
+def _not_implemented(args, cfg) -> Envelope:
+    return failure("not implemented", reason="not_implemented")
+
+
+def _ledger_serve(args, cfg) -> Envelope:
+    heartbeat(event="ledger_service_listening", admin_socket=str(cfg.admin_socket))
+    service_mod.serve(cfg)
+    return Envelope(
+        result={"stopped": True},
+        next_action=NextAction(Verb.COMPLETE, "The ledger service stopped."),
+    )
+
+
+def _ledger_fleet(args, cfg) -> Envelope:
+    return Envelope(
+        result=wire.call(cfg.admin_socket, "fleet"),
+        next_action=NextAction(Verb.COMPLETE, "Fleet reported across every source."),
+    )
+
+
+def _ledger_log(args, cfg) -> Envelope:
+    rendered = wire.call(cfg.admin_socket, "log", args.repo, args.run)
+    if args.out:
+        out = Path(args.out)
+        actor.current().write_file(out, rendered["text"].encode())
+        return Envelope(
+            result={"written": str(out), "source": rendered["source"]},
+            next_action=NextAction(Verb.COMPLETE, f"Friction log written to {out}."),
+        )
+    sys.stdout.write(rendered["text"])
+    return Envelope(
+        result={"rendered": True, "source": rendered["source"]},
+        next_action=NextAction(Verb.COMPLETE, "Rendered."),
+        silent=True,
+    )
+
+
+def _ledger_import(args, cfg) -> Envelope:
+    source = Path(args.file).resolve()
+    if not source.is_file():
+        return failure(f"{source} is not a file")
+    imported = wire.call(cfg.admin_socket, "import", str(source), args.source)
+    return Envelope(
+        result=imported,
+        next_action=NextAction(
+            Verb.COMPLETE,
+            f"Imported to {imported['imported']} as source {args.source}. Runs up to"
+            f" {imported['pre_split_import']['last_run_id']} were recorded where the agent"
+            " could reach the ledger, and are marked as such.",
+        ),
+    )
+
+
+def _ledger_metrics(args, cfg) -> Envelope:
+    return Envelope(
+        result=wire.call(cfg.admin_socket, "metrics", args.repo),
+        next_action=NextAction(Verb.COMPLETE, "Metrics computed over every source."),
+    )
+
+
+def _ledger_sources(args, cfg) -> Envelope:
+    sources = wire.call(cfg.admin_socket, "sources")
+    return Envelope(
+        result={"sources": sources},
+        next_action=NextAction(Verb.COMPLETE, f"{len(sources)} source(s)."),
+    )
+
+
+def _ledger_bind(args, cfg) -> Envelope:
+    bound = wire.call(cfg.admin_socket, "bind", args.name, args.executor)
+    return Envelope(
+        result=bound,
+        next_action=NextAction(
+            Verb.COMPLETE,
+            f"Source {args.name}'s next runs record {args.executor}, as said by the operator.",
+        ),
+    )
+
+
+def _ledger_remove_source(args, cfg) -> Envelope:
+    removed = wire.call(cfg.admin_socket, "remove_source", args.name)
+    return Envelope(
+        result=removed,
+        next_action=NextAction(
+            Verb.COMPLETE, f"Source {args.name}'s socket is closed; its runs stay recorded."
+        ),
+    )
+
+
+def _ledger_add_source(args, cfg) -> Envelope:
+    added = wire.call(
+        cfg.admin_socket, "add_source", args.name, args.socket, executor=args.executor
+    )
+    return Envelope(
+        result=added,
+        next_action=NextAction(
+            Verb.COMPLETE,
+            f"Source {args.name} listens on {args.socket}. Forward that socket into the"
+            " guest and name it as the guest runner's `ledger_socket`.",
         ),
     )
 
@@ -1864,13 +1940,48 @@ def build_parser() -> argparse.ArgumentParser:
     s = runner_p.add_parser("import")
     s.add_argument("ledger")
     s.set_defaults(fn=cmd_runner_import)
+
+    ledger_p = sub.add_parser(
+        "ledger", help="the host's ledger service: its sources and every source's history"
+    ).add_subparsers(dest="ledger_command", required=True)
+    s = ledger_p.add_parser("serve", help="run the ledger service until SIGTERM")
+    s.set_defaults(fn=_ledger_verb(_ledger_serve))
+    s = ledger_p.add_parser("sources", help="every source, its socket and its executor")
+    s.set_defaults(fn=_ledger_verb(_ledger_sources))
+    s = ledger_p.add_parser("add-source", help="open a socket for a new guest")
+    s.add_argument("name")
+    s.add_argument("--socket", required=True)
+    s.add_argument("--executor", help="the model this source runs, recorded on its runs")
+    s.set_defaults(fn=_ledger_verb(_ledger_add_source))
+    s = ledger_p.add_parser("remove-source", help="close a guest's socket")
+    s.add_argument("name")
+    s.set_defaults(fn=_ledger_verb(_ledger_remove_source))
+    s = ledger_p.add_parser("bind", help="set the executor a source's next runs record")
+    s.add_argument("name")
+    s.add_argument("--executor", required=True)
+    s.set_defaults(fn=_ledger_verb(_ledger_bind))
+    s = ledger_p.add_parser("fleet", help="active runs of every source")
+    s.set_defaults(fn=_ledger_verb(_ledger_fleet))
+    s = ledger_p.add_parser("metrics", help="metrics over every source's runs")
+    s.add_argument("--repo", help="one repository's ledger, by its slug")
+    s.set_defaults(fn=_ledger_verb(_ledger_metrics))
+    s = ledger_p.add_parser("log", help="render any source's run as a friction log")
+    s.add_argument("--repo", required=True, help="the repository's slug")
+    s.add_argument("--run", type=int, required=True)
+    s.add_argument("--out")
+    s.set_defaults(fn=_ledger_verb(_ledger_log))
+    s = ledger_p.add_parser("import", help="bring an existing ledger in as one source")
+    s.add_argument("file")
+    s.add_argument("--source", required=True)
+    s.set_defaults(fn=_ledger_verb(_ledger_import))
     return p
 
 
-#: Verbs an agent's own `tdd` answers on a split machine. Neither reads or writes the
-#: ledger: `docs` prints what shipped with the binary, and `init` writes `tdd.toml`
-#: into the agent's own worktree. Everything else is the runner's to do.
-LOCAL_VERBS = {"docs", "init"}
+#: Verbs an agent's own `tdd` answers on a split machine. `docs` prints what shipped
+#: with the binary, and `init` writes `tdd.toml` into the agent's own worktree; neither
+#: touches the ledger. `ledger` is the host operator's, and talks to the ledger service
+#: on this machine. Everything else is the runner's to do.
+LOCAL_VERBS = {"docs", "init", "ledger"}
 
 
 def _actor_for(
@@ -1897,11 +2008,12 @@ def _refusal(split: runner_mod.RunnerConfig | None, args) -> Envelope | None:
 
     It must not fall back to acting as itself: that would run the agent's suites, and
     the agent's git hooks, as the uid that owns the ledger. `runner` verbs are the
-    exception: they are the operator's, touch no worktree and spawn nothing.
+    exception, and so are `ledger` verbs: they are the operator's, touch no worktree
+    and spawn nothing.
     """
     if split is None or split.role != "runner" or os.environ.get("SUDO_USER"):
         return None
-    if args.command == "runner":
+    if args.command in ("runner", "ledger"):
         return None
     return failure(
         f"this is the split-mode runner ({split.user}) and no agent called it: run `tdd`"
@@ -1948,11 +2060,18 @@ def main(argv: list[str] | None = None) -> int:
             " worktree readable by that user (`chmod -R go+rX` it, or share a group)",
             reason="worktree_unreadable",
         )
+    except wire.LedgerRefused as exc:
+        envelope = failure(exc.error, reason="ledger_refused", refusal=exc.refusal)
+    except wire.LedgerUnreachable as exc:
+        # Fail closed: a guest whose ledger service is gone refuses the verb, and never
+        # falls back to a ledger of its own.
+        envelope = failure(str(exc), reason="ledger_unreachable")
     except (
         config_mod.ConfigError,
         gitutil.GitError,
         LedgerVersionError,
         runner_mod.RunnerConfigError,
+        service_mod.ServiceConfigError,
     ) as exc:
         envelope = failure(str(exc))
     except SystemExit as exc:

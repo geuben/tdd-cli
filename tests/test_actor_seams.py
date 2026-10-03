@@ -36,8 +36,9 @@ WRITES = re.compile(
     r"|symlink_to\(|\.mkdir\("
 )
 
-#: Leases and the ledger are the tool's own state: they stay the runner's.
-OWN_STATE = {"actor.py", "agentfs.py", "leases.py", "ledger.py"}
+#: Leases and the ledger are the tool's own state: they stay the runner's. The ledger
+#: service's sockets and its sources file are the service's own.
+OWN_STATE = {"actor.py", "agentfs.py", "leases.py", "ledger.py", "service.py"}
 
 
 def test_only_the_actor_writes_outside_the_tools_own_state():

@@ -23,7 +23,7 @@ from . import contract as contract_mod
 from .config import Config
 from .contract import PIN, REFACTOR, DeclaredCycle
 from .envelope import Verb, heartbeat
-from .ledger import Ledger, now
+from .ledger import Ledger
 
 AWAITING_TEST = "AWAITING_TEST"
 AWAITING_IMPL = "AWAITING_IMPL"
@@ -71,9 +71,7 @@ class Engine:
         self.config = config
         self.worktree = worktree
         self.run = run_row
-        self.contract_row = ledger.one(
-            "SELECT * FROM plan_contract WHERE id = ?", (run_row["plan_contract_id"],)
-        )
+        self.contract_row = ledger.contract(run_row["plan_contract_id"])
         self.declared = contract_mod.cycles_from_json(self.contract_row["declared_cycles"])
         self.annotation_keys = json.loads(self.contract_row["annotation_keys"])
         self.ancillary_files = json.loads(self.contract_row["ancillary_files"])
@@ -238,10 +236,9 @@ class Engine:
                 if verdict.target_failure:
                     failure_text = verdict.target_failure
 
-            self.ledger.insert(
-                "invocation",
-                run_id=self.run["id"],
-                cycle_id=cycle_row["id"],
+            self.ledger.record_invocation(
+                self.run["id"],
+                cycle_row["id"],
                 phase_at=phase,
                 project=name,
                 adapter=adapter.name,
@@ -250,12 +247,11 @@ class Engine:
                 target_failure=verdict.target_failure[:2000],
                 total_passed=len(verdict.passed),
                 total_failed=len(verdict.failed),
-                other_failures=json.dumps(other),
-                others_observed=int(observed),
+                other_failures=other,
+                others_observed=bool(observed),
                 duration_ms=verdict.duration_ms,
-                retried=int(retried),
+                retried=bool(retried),
                 tree_hash=tree,
-                started_at=now(),
             )
             if verdict.error:
                 self.ledger.event(self.run["id"], cycle_row["id"], "tooling_defect", verdict.error)
@@ -287,37 +283,28 @@ class Engine:
             current_hash = self.tree_hash([name])
             gate_failed = False
             for kind, gate_fn in (("lint", adapter.lint), ("typecheck", adapter.typecheck)):
-                last = self.ledger.one(
-                    "SELECT ok, tree_hash FROM gate_result"
-                    " WHERE run_id = ? AND project = ? AND kind = ?"
-                    " ORDER BY id DESC LIMIT 1",
-                    (self.run["id"], name, kind),
-                )
+                last = self.ledger.last_gate(self.run["id"], name, kind)
                 if last and last["ok"] == 1 and last["tree_hash"] == current_hash:
-                    self.ledger.insert(
-                        "gate_result",
-                        run_id=self.run["id"],
-                        cycle_id=cycle_row["id"],
+                    self.ledger.record_gate(
+                        self.run["id"],
+                        cycle_row["id"],
                         project=name,
                         kind=kind,
-                        ok=1,
+                        ok=True,
                         output="",
                         tree_hash=current_hash,
-                        skipped=1,
-                        at=now(),
+                        skipped=True,
                     )
                     continue
                 gate = gate_fn()
-                self.ledger.insert(
-                    "gate_result",
-                    run_id=self.run["id"],
-                    cycle_id=cycle_row["id"],
+                self.ledger.record_gate(
+                    self.run["id"],
+                    cycle_row["id"],
                     project=name,
                     kind=kind,
-                    ok=int(gate.ok),
+                    ok=gate.ok,
                     output=gate.output,
                     tree_hash=current_hash,
-                    at=now(),
                 )
                 if not gate.ok:
                     gates.append((name, kind, gate.output))
@@ -343,22 +330,10 @@ class Engine:
             if name not in baselines:
                 probe = self.probe_at_start_sha(name)
                 if probe.observed:
-                    self.ledger.insert(
-                        "baseline",
-                        run_id=self.run["id"],
-                        project=name,
-                        failing=json.dumps(sorted(probe.failing)),
-                        captured_at=now(),
-                        source="late_probe",
+                    self.ledger.record_baseline(
+                        self.run["id"], name, sorted(probe.failing), source="late_probe"
                     )
-                    self.ledger.insert(
-                        "collection_snapshot",
-                        run_id=self.run["id"],
-                        project=name,
-                        tests=json.dumps([]),
-                        failed_files=json.dumps([]),
-                        captured_at=now(),
-                    )
+                    self.ledger.record_collection(self.run["id"], name, [], [])
                     self.ledger.event(
                         self.run["id"],
                         cycle_row["id"],
@@ -392,10 +367,9 @@ class Engine:
             else:
                 base = baselines[name]
                 failures.extend(f for f in verdict.failed if f not in base)
-            self.ledger.insert(
-                "invocation",
-                run_id=self.run["id"],
-                cycle_id=cycle_row["id"],
+            self.ledger.record_invocation(
+                self.run["id"],
+                cycle_row["id"],
                 phase_at="CLOSE_SWEEP",
                 project=name,
                 adapter=adapter.name,
@@ -404,10 +378,9 @@ class Engine:
                 target_failure="",
                 total_passed=len(verdict.passed),
                 total_failed=len(verdict.failed),
-                other_failures=json.dumps(verdict.failed),
+                other_failures=verdict.failed,
                 duration_ms=verdict.duration_ms,
                 tree_hash=self.tree_hash([name]),
-                started_at=now(),
             )
         return SweepOutcome(
             failures=failures, gates=gates, unbaselined=unbaselined, unobserved=unobserved
@@ -423,15 +396,12 @@ class Engine:
             if not art.check and not art.regenerate:
                 continue
             stale, failure = self._artifact_stale(art)
-            check_id = self.ledger.insert(
-                "artifact_check",
-                run_id=self.run["id"],
-                cycle_id=cycle_row["id"] if cycle_row else None,
+            check_id = self.ledger.record_artifact_check(
+                self.run["id"],
+                cycle_row["id"] if cycle_row else None,
                 artifact=art.name,
-                stale=int(stale),
-                regenerated=0,
-                regenerate_failed=int(bool(failure)),
-                at=now(),
+                stale=stale,
+                regenerate_failed=bool(failure),
             )
             if failure:
                 self.ledger.event(
@@ -449,7 +419,7 @@ class Engine:
                 rcode, _rout, rerr = adapters.base.run_command(art.regenerate, self.worktree)
                 if rcode != 0:
                     hook_failure = {"artifact": art.name, "code": rcode, "stderr": rerr[-2000:]}
-                    self.ledger.update("artifact_check", check_id, regenerate_failed=1)
+                    self.ledger.mark_artifact_check(self.run["id"], check_id, failed=True)
                     self.ledger.event(
                         self.run["id"],
                         cycle_row["id"] if cycle_row else None,
@@ -476,17 +446,15 @@ class Engine:
                     self.trailers(cycle_row, "artifact") if cycle_row else {},
                 )
                 if sha:
-                    self.ledger.insert(
-                        "commit_record",
-                        run_id=self.run["id"],
-                        cycle_id=cycle_row["id"] if cycle_row else None,
+                    self.ledger.record_commit(
+                        self.run["id"],
+                        cycle_row["id"] if cycle_row else None,
                         phase="artifact",
                         sha=sha,
                         message=f"chore({art.name}): regenerate",
-                        files=json.dumps(staged),
-                        at=now(),
+                        files=staged,
                     )
-                    self.ledger.update("artifact_check", check_id, regenerated=1)
+                    self.ledger.mark_artifact_check(self.run["id"], check_id, regenerated=True)
                     resolved = True
                 regenerated.append(art.name)
             if not resolved:
@@ -516,27 +484,22 @@ class Engine:
         declared = self.declared_for(ordinal)
         if declared is None:
             return None
-        existing = self.ledger.one(
-            "SELECT * FROM cycle WHERE run_id = ? AND ordinal = ? AND closed_at IS NULL",
-            (self.run["id"], ordinal),
-        )
+        existing = self.ledger.unclosed_cycle(self.run["id"], ordinal)
         if existing is not None:
             return existing
         phase = OPENING_PHASE.get(declared.kind, AWAITING_TEST)
-        cycle_id = self.ledger.insert(
-            "cycle",
-            run_id=self.run["id"],
+        cycle_id = self.ledger.add_cycle(
+            self.run["id"],
             ordinal=ordinal,
             kind=declared.kind,
-            projects=json.dumps(declared.projects),
-            declared_tests=json.dumps([self._qualify(declared, t) for t in declared.tests]),
-            target_tests=json.dumps([self._qualify(declared, t) for t in declared.tests]),
+            projects=declared.projects,
+            declared_tests=[self._qualify(declared, t) for t in declared.tests],
+            target_tests=[self._qualify(declared, t) for t in declared.tests],
             phase=phase,
             head_at_open=gitutil.head(self.worktree),
             title=declared.title,
-            opened_at=now(),
         )
-        return self.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle_id,))
+        return self.ledger.cycle(cycle_id)
 
     @staticmethod
     def _qualify(declared: DeclaredCycle, test_id: str) -> str:
@@ -548,24 +511,18 @@ class Engine:
         return f"{declared.projects[0]}::{test_id}"
 
     def transition(self, cycle_row, to_phase: str) -> None:
-        self.ledger.insert(
-            "transition",
-            cycle_id=cycle_row["id"],
-            from_phase=cycle_row["phase"],
-            to_phase=to_phase,
-            at=now(),
-        )
-        self.ledger.update("cycle", cycle_row["id"], phase=to_phase)
+        self.ledger.move_cycle(cycle_row["id"], from_phase=cycle_row["phase"], to_phase=to_phase)
 
-    def close_cycle(self, cycle_row):
-        row = self.ledger.one("SELECT closed_at FROM cycle WHERE id = ?", (cycle_row["id"],))
+    def close_cycle(self, cycle_row, outcome: str = "complete"):
+        """Close the cycle and open the next; after the last, end the run with `outcome`."""
+        row = self.ledger.cycle(cycle_row["id"])
         if row and row["closed_at"] is not None:
             return self.ledger.open_cycle(self.run["id"])
         self.transition(cycle_row, CLOSED)
-        self.ledger.update("cycle", cycle_row["id"], closed_at=now())
+        self.ledger.mark_cycle_closed(cycle_row["id"])
         nxt = next((c for c in self.declared if c.ordinal > cycle_row["ordinal"]), None)
         if nxt is None:
-            self.ledger.update("run", self.run["id"], ended_at=now(), outcome="complete")
+            self.ledger.end_run(self.run["id"], outcome)
             return None
         return self.open_cycle(nxt.ordinal)
 
@@ -575,14 +532,9 @@ class Engine:
         Cycle 1: returns all paths that appeared in any undeclared_file_touched event
         for this run (crude — cycle 2 will restrict to dirty-only).
         """
-        rows = self.ledger.all(
-            "SELECT detail FROM integrity_event"
-            " WHERE run_id = ? AND kind = 'undeclared_file_touched'",
-            (self.run["id"],),
-        )
         flagged: set[str] = set()
-        for row in rows:
-            flagged.update(json.loads(row["detail"]))
+        for detail in self.ledger.event_details(self.run["id"], "undeclared_file_touched"):
+            flagged.update(json.loads(detail))
         dirty = gitutil.dirty_paths(self.worktree)
         tracked = gitutil.tracked_at_head(self.worktree, list(flagged))
         dropped = sorted(p for p in flagged if p not in dirty and p not in tracked)
@@ -591,15 +543,8 @@ class Engine:
         return sorted(p for p in flagged if p in dirty)
 
     def record_commit(self, cycle_row, phase: str, sha: str, message: str, files: list[str]):
-        self.ledger.insert(
-            "commit_record",
-            run_id=self.run["id"],
-            cycle_id=cycle_row["id"],
-            phase=phase,
-            sha=sha,
-            message=message,
-            files=json.dumps(files),
-            at=now(),
+        self.ledger.record_commit(
+            self.run["id"], cycle_row["id"], phase=phase, sha=sha, message=message, files=files
         )
 
     def opening_action(self, cycle_row) -> tuple[Verb, str]:
@@ -623,10 +568,5 @@ class Engine:
     def missing_annotations(self, cycle_row) -> list[str]:
         if not self.annotation_keys:
             return []
-        present = {
-            r["key"]
-            for r in self.ledger.all(
-                "SELECT key FROM annotation WHERE cycle_id = ?", (cycle_row["id"],)
-            )
-        }
+        present = self.ledger.annotation_keys_of(cycle_row["id"])
         return [k for k in self.annotation_keys if k not in present]

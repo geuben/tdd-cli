@@ -12,7 +12,6 @@ from . import adapters, gitutil, staging
 from . import config as config_mod
 from .adapters.base import FAILED, NOT_COLLECTED, NOT_FOUND, PASSED
 from .envelope import Envelope, NextAction, Verb
-from .ledger import now
 from .machine import (
     AWAITING_IMPL,
     AWAITING_PIN,
@@ -28,22 +27,15 @@ NUDGE_KINDS = {"red_first_violation", "undeclared_file_touched", "implementation
 def _note_nudge(engine: Engine, cycle) -> str:
     if cycle is None:
         return ""
-    events = engine.ledger.all(
-        "SELECT kind FROM integrity_event WHERE cycle_id = ? AND kind IN ({})".format(
-            ",".join("?" * len(NUDGE_KINDS))
-        ),
-        (cycle["id"], *NUDGE_KINDS),
-    )
-    if not events:
+    if not engine.ledger.cycle_event_kinds(cycle["id"], sorted(NUDGE_KINDS)):
         return ""
-    existing_note = engine.ledger.one("SELECT id FROM note WHERE cycle_id = ?", (cycle["id"],))
-    if existing_note is not None:
+    if engine.ledger.cycle_has_note(cycle["id"]):
         return ""
     return ' An integrity event was recorded on this cycle — consider `tdd note "<why>"` while the reason is fresh.'
 
 
 def _reply(engine: Engine, cycle, verb: Verb, detail: str, **result) -> Envelope:
-    fresh = engine.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle["id"],)) if cycle else None
+    fresh = engine.ledger.cycle(cycle["id"]) if cycle else None
     nudge = _note_nudge(engine, fresh or cycle)
     return Envelope(
         run=engine.run_state(fresh or cycle),
@@ -67,11 +59,7 @@ def _adopt_target(engine: Engine, cycle, missing: list[str]) -> tuple[list[str],
     at_start = engine.ledger.collection(engine.run["id"])
     known = {t for tests in at_start.values() for t in tests}
     run_targets = {
-        t
-        for row in engine.ledger.all(
-            "SELECT target_tests FROM cycle WHERE run_id = ?", (engine.run["id"],)
-        )
-        for t in json.loads(row["target_tests"])
+        t for targets in engine.ledger.run_target_tests(engine.run["id"]) for t in targets
     }
 
     new_tests: list[str] = []
@@ -86,23 +74,11 @@ def _adopt_target(engine: Engine, cycle, missing: list[str]) -> tuple[list[str],
 
 
 def _stub_directive_issued(engine: Engine, cycle) -> bool:
-    return (
-        engine.ledger.one(
-            "SELECT id FROM integrity_event WHERE cycle_id = ? AND kind = 'stub_directive_issued'",
-            (cycle["id"],),
-        )
-        is not None
-    )
+    return engine.ledger.cycle_has_event(cycle["id"], "stub_directive_issued")
 
 
 def _last_outside_emitted(engine: Engine, cycle) -> str | None:
-    row = engine.ledger.one(
-        "SELECT detail FROM integrity_event"
-        " WHERE cycle_id = ? AND kind = 'undeclared_file_touched'"
-        " ORDER BY id DESC LIMIT 1",
-        (cycle["id"],),
-    )
-    return row["detail"] if row else None
+    return engine.ledger.last_cycle_event_detail(cycle["id"], "undeclared_file_touched")
 
 
 def _sanctioned_stubs(engine: Engine, cycle, implementation: list[str]) -> list[str]:
@@ -253,8 +229,8 @@ def _adopt(
             declared=missing,
         )
     engine.ledger.event(engine.run["id"], cycle["id"], "declared_test_mismatch", json.dumps(detail))
-    engine.ledger.update("cycle", cycle["id"], target_tests=json.dumps(kept + [adopted]))
-    cycle = engine.ledger.one("SELECT * FROM cycle WHERE id = ?", (cycle["id"],))
+    engine.ledger.set_targets(cycle["id"], kept + [adopted])
+    cycle = engine.ledger.cycle(cycle["id"])
     if outcome is None:
         return _reply(
             engine,
@@ -599,19 +575,17 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
             commit=sha,
         )
 
-    nxt = engine.close_cycle(cycle)
+    # The last cycle settles the run's outcome before ending it: a run is never ended
+    # complete and then reopened as blocked.
+    last = not any(c.ordinal > cycle["ordinal"] for c in engine.declared)
+    blocking = engine.close_undeclared_gate(cycle) if last else []
+    if blocking:
+        engine.ledger.add_blocker(
+            engine.run["id"], cycle["id"], "undeclared_file_uncommitted", json.dumps(blocking)
+        )
+    nxt = engine.close_cycle(cycle, outcome="blocked" if blocking else "complete")
     if nxt is None:
-        blocking = engine.close_undeclared_gate(cycle)
         if blocking:
-            engine.ledger.insert(
-                "blocker",
-                run_id=engine.run["id"],
-                cycle_id=cycle["id"],
-                kind="undeclared_file_uncommitted",
-                detail=json.dumps(blocking),
-                at=now(),
-            )
-            engine.ledger.update("run", engine.run["id"], outcome="blocked")
             return Envelope(
                 run={
                     "id": engine.run["id"],
@@ -684,12 +658,7 @@ def _check_config_drift(engine: Engine, cycle) -> None:
     current = config_mod.config_sha(engine.worktree)
     if current == pinned:
         return
-    already = engine.ledger.one(
-        "SELECT id FROM integrity_event WHERE run_id = ? AND kind = 'config_changed'"
-        " AND detail = ?",
-        (engine.run["id"], current),
-    )
-    if already is None:
+    if not engine.ledger.run_has_event(engine.run["id"], "config_changed", current):
         engine.ledger.event(
             engine.run["id"],
             cycle["id"],
