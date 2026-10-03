@@ -146,3 +146,16 @@ def test_root_may_import_and_is_told_what_was_marked(
 
     told = (out["ok"], out["result"]["pre_split_import"]["last_run_id"])
     assert told == (True, 1)
+
+
+def test_import_is_refused_when_the_ledger_is_on_the_host(repo, tmp_path, split_guest, monkeypatch):
+    from tddcli.ledger import Ledger
+
+    legacy = tmp_path / "legacy.sqlite3"
+    Ledger(tmp_path, path=legacy).close()
+    # Logged in as the runner: no sudo in between.
+    monkeypatch.delenv("SUDO_USER")
+    monkeypatch.delenv("SUDO_UID")
+
+    out = run_cli(repo, "runner", "import", str(legacy))
+    assert out["result"].get("reason") == "ledger_remote"
