@@ -29,21 +29,23 @@ from . import runner, wire
 CONFIG_PATH = Path("/etc/tdd-cli/ledger.toml")
 CONFIG_ENV = "TDD_LEDGER_SERVICE_CONFIG"
 
-#: A run with one of these outcomes takes no more writes from a guest.
-CLOSED_OUTCOMES = ("complete", "abandoned")
+#: Where the service keeps its sources, under its home, so a restart listens on them again.
+SOURCES_FILE = "sources.json"
 
-#: Writes that record who executed a run: the service sets the executor on them.
-STAMPED = frozenset({"start_run", "abandon_run"})
-
+#: The admin socket is the service account's alone; a guest's is shared with the group
+#: the operator forwards it through.
 ADMIN_MODE = 0o600
 GUEST_MODE = 0o660
 
-#: Where the service keeps its sources, under its home, so a restart listens on them again.
-SOURCES_FILE = "sources.json"
+#: A run with one of these outcomes takes no more writes from a guest.
+CLOSED_OUTCOMES = ("complete", "abandoned")
 
 #: The one write a closed run still takes: `tdd note` after the run is documented use,
 #: and is how an executor leaves its closing narrative.
 CLOSED_RUN_EXEMPT = frozenset({"add_note"})
+
+#: Writes that record who executed a run: the service sets the executor on them.
+STAMPED = frozenset({"start_run", "abandon_run"})
 
 
 class ServiceConfigError(RuntimeError):
@@ -259,8 +261,7 @@ class _Listener(socketserver.ThreadingUnixStreamServer):
         with contextlib.suppress(FileNotFoundError):
             path.unlink()
         super().__init__(str(path), _Handler)
-        # A socket's mode follows the umask unless set. The admin socket is the service
-        # account's alone; a guest's is shared with the group the operator forwards it to.
+        # A socket's mode follows the umask unless it is set.
         path.chmod(ADMIN_MODE if source is None else GUEST_MODE)
         self.thread = threading.Thread(target=self.serve_forever, daemon=True)
         self.thread.start()
