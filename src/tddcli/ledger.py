@@ -423,8 +423,6 @@ LOCAL_SOURCE = "local"
 GUEST_READS = frozenset(
     {
         "abandonment",
-        "active_advance_claim",
-        "active_claim",
         "active_run",
         "active_runs",
         "advance_claim_row",
@@ -517,9 +515,12 @@ GUEST_WRITES = frozenset(
 )
 
 #: Never answered for a guest. The generic helpers would let it name any row of any
-#: source.
+#: source; `active_claim` and `active_advance_claim` judge a pid's liveness, which only
+#: the guest that owns the pid can do, so a guest composes them from the raw rows.
 HOST_ONLY = frozenset(
     {
+        "active_advance_claim",
+        "active_claim",
         "all",
         "close",
         "insert",
@@ -533,8 +534,6 @@ HOST_ONLY = frozenset(
 #: Guest methods with no run, cycle or contract id: each filters by the ledger's source.
 SOURCE_ROOTED = frozenset(
     {
-        "active_advance_claim",
-        "active_claim",
         "active_run",
         "active_runs",
         "advance_claim_row",
@@ -605,6 +604,20 @@ def claim_is_stale(hostname: str, pid: int, started_at: str) -> bool:
     if started.tzinfo is None:
         started = started.replace(tzinfo=timezone.utc)
     return datetime.now(timezone.utc) - started > timedelta(minutes=60)
+
+
+def judged_claim(row, is_stale=claim_is_stale) -> dict | None:
+    """A raw claim row, with whether its owner is gone. Read-only: nothing is deleted.
+
+    A pid is meaningless from another host, and reused pids would make a host-crossing
+    liveness check actively wrong. `claim_is_stale` falls back to age there: a false
+    "alive" bricks the worktree, a false "dead" reopens the bug (Decisions).
+    """
+    if row is None:
+        return None
+    claim = dict(row)
+    claim["stale"] = is_stale(claim["hostname"], claim["pid"], claim["started_at"])
+    return claim
 
 
 class Ledger:
@@ -944,26 +957,13 @@ class Ledger:
 
     def active_advance_claim(self, worktree: str) -> dict | None:
         """Read-only observer — staleness computed but no row deleted."""
-        row = self.advance_claim_row(worktree)
-        if row is None:
-            return None
-        claim = dict(row)
-        claim["stale"] = self._claim_is_stale(claim["hostname"], claim["pid"], claim["started_at"])
-        return claim
+        return judged_claim(self.advance_claim_row(worktree), self._claim_is_stale)
 
     def active_claim(self, worktree: str) -> dict | None:
         """Read-only, per the store's append-only contract — `cmd_progress` and
         `cmd_status` call this as pure observers. Only `cmd_run_start` acts on the
         computed `stale` flag (release + reclaim); nothing here deletes a row."""
-        row = self.claim_row(worktree)
-        if row is None:
-            return None
-        claim = dict(row)
-        # A pid is meaningless from another host, and reused pids would make a
-        # host-crossing liveness check actively wrong. Fall back to age: a false
-        # "alive" bricks the worktree, a false "dead" reopens the bug (Decisions).
-        claim["stale"] = self._claim_is_stale(claim["hostname"], claim["pid"], claim["started_at"])
-        return claim
+        return judged_claim(self.claim_row(worktree), self._claim_is_stale)
 
     def claim_row(self, worktree: str) -> sqlite3.Row | None:
         """The raw baseline claim, with no judgement of whether its owner lives."""

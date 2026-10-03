@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import wire
+from .ledger import claim_is_stale, judged_claim
 
 
 class RemoteLedger:
@@ -30,6 +31,15 @@ class RemoteLedger:
             return self._conn.request(name, *args, **kwargs)
 
         return call
+
+    # Claim liveness is judged here, where the claiming pid lives. On the host the
+    # guest's hostname is foreign, so the host could only fall back to the claim's age.
+
+    def active_claim(self, worktree: str) -> dict | None:
+        return judged_claim(self.claim_row(worktree), claim_is_stale)
+
+    def active_advance_claim(self, worktree: str) -> dict | None:
+        return judged_claim(self.advance_claim_row(worktree), claim_is_stale)
 
     def close(self) -> None:
         self._conn.close()
