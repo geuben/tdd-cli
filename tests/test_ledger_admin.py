@@ -34,3 +34,11 @@ def test_sources_lists_each_source_and_its_binding(repo, ledger_service):
         {"name": "vm-1", "socket": str(sockets / "vm-1.sock"), "executor": None},
         {"name": "vm-2", "socket": str(sockets / "vm-2.sock"), "executor": "m"},
     ]
+
+
+def test_bind_changes_the_executor_for_the_next_run(repo, ledger_service):
+    socket_path = ledger_service.dir / "vm-1.sock"
+    ledger_service.service.add_source("vm-1", socket_path, executor=None)
+
+    run_cli(repo, "ledger", "bind", "vm-1", "--executor", "m2")
+    assert wire.call(socket_path, "ping")["executor"] == "m2"
