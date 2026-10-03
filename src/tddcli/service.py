@@ -25,7 +25,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import leases, runner, wire
+from . import leases, render, runner, wire
 from . import ledger as ledger_mod
 
 CONFIG_PATH = Path("/etc/tdd-cli/ledger.toml")
@@ -384,8 +384,26 @@ class Service:
             for name, executor in sorted(self.executors.items())
         ]
 
+    def host_files(self, repo: str | None = None) -> dict[str, Path]:
+        """Every repository's ledger on this host, by slug; only `repo`'s when named."""
+        files = {p.stem: p for p in sorted(self.config.home.glob("*.sqlite3"))}
+        return files if repo is None else {k: v for k, v in files.items() if k == repo}
+
+    def metrics(self, repo: str | None = None) -> dict:
+        """`tdd metrics`, over every source's runs, for each repository on the host."""
+        out = {}
+        for slug, path in self.host_files(repo).items():
+            view = ledger_mod.Ledger(Path(slug), path=path, source=None)
+            try:
+                out[slug] = render.metrics(view, None)
+            finally:
+                view.close()
+        return {"repos": out}
+
     def admin(self, method: str, args: list, kwargs: dict) -> dict:
         """An operator's request, from the admin socket."""
+        if method == "metrics":
+            return _ok(self.metrics(*args))
         if method == "sources":
             return _ok(self.sources())
         if method == "bind":

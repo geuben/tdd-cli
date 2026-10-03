@@ -1657,6 +1657,13 @@ def _ledger_serve(args, cfg) -> Envelope:
     )
 
 
+def _ledger_metrics(args, cfg) -> Envelope:
+    return Envelope(
+        result=wire.call(cfg.admin_socket, "metrics", args.repo),
+        next_action=NextAction(Verb.COMPLETE, "Metrics computed over every source."),
+    )
+
+
 def _ledger_sources(args, cfg) -> Envelope:
     sources = wire.call(cfg.admin_socket, "sources")
     return Envelope(
@@ -1913,7 +1920,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=_ledger_verb(_not_implemented))
     s = ledger_p.add_parser("metrics", help="metrics over every source's runs")
     s.add_argument("--repo", help="one repository's ledger, by its slug")
-    s.set_defaults(fn=_ledger_verb(_not_implemented))
+    s.set_defaults(fn=_ledger_verb(_ledger_metrics))
     s = ledger_p.add_parser("log", help="render any source's run as a friction log")
     s.add_argument("--repo", required=True, help="the repository's slug")
     s.add_argument("--run", type=int, required=True)
