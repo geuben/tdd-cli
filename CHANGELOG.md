@@ -6,8 +6,38 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Split mode across a VM boundary: a ledger service on the host** (#169). A runner
+  configured with `ledger_socket` (instead of `ledger_home`) keeps no ledger: it reads and
+  writes the host's through a unix socket served by `tdd ledger serve`, which owns the SQLite
+  files and is their only writer. Each run records the source of the socket it arrived on.
+  The service refuses a guest another source's runs, cycles and contracts (`foreign_run`),
+  writes to its own complete or abandoned runs (`run_closed`, except `tdd note`), host-only
+  methods (`method_not_allowed`) and malformed repository paths (`bad_repo`). An unreachable
+  socket fails the verb with `reason: "ledger_unreachable"`; nothing falls back to a local
+  ledger. `tdd doctor` in a guest names the source it reaches.
+- **Operator verbs, `tdd ledger …`** (#169): `serve`, `add-source`, `remove-source`, `bind`
+  (the executor a source's runs record, as `executor_source: "operator"`; an unbound guest's
+  `operator` claim is recorded as `claimed`), `sources`, and host-wide `metrics`, `fleet` and
+  `log` across every source. `tdd ledger import <file> --source <name>` brings an existing
+  ledger in as one source. `tdd runner import` on a socket-mode runner is refused with
+  `reason: "ledger_remote"`.
+- **Host-wide worker leases** (#169). A socket-mode runner takes its worker lease from the
+  ledger service, so one core budget covers every guest; a lease ends when its connection
+  closes, and `tdd fleet` in a guest reports the host's count.
+- **`per_file_collects` in the `baseline_captured` heartbeat** (#168): the number of files that
+  fell to the per-file loop, one runner start each, next to `collect_s`. Reported by serial and
+  `--baseline-jobs` probes alike.
+
 ### Changed
 
+- **Ledger schema v13: every run has a source** (#169). `run` and `plan_contract` gain a
+  `source` column, and the baseline/advance claims and the baseline cache are rebuilt keyed
+  by source, so two guests at the same path neither block each other nor share a cached
+  baseline. Existing rows migrate as `local`. Every ledger access now goes through named
+  `Ledger` methods; `fleet` reads through `ledger.open_readonly`. `tdd metrics` reports each
+  run's `source`.
 - **A successful batch listing is authoritative for its suite's files** (#168). `collect()`
   started the runner once more for every `test_paths` file a successful whole-suite listing did
   not mention — another project's test file on a shared root, a fixture, a helper — and
@@ -18,12 +48,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   the pytest, vitest and cargo adapters; a plugin adapter whose `_collect_invocations` returns
   `(command, env)` pairs keeps the old loop, and can opt in with a third element naming the
   suite (`None` for the default, else the override).
-
-### Added
-
-- **`per_file_collects` in the `baseline_captured` heartbeat** (#168): the number of files that
-  fell to the per-file loop, one runner start each, next to `collect_s`. Reported by serial and
-  `--baseline-jobs` probes alike.
 
 ## [0.14.1] - 2026-09-25
 
