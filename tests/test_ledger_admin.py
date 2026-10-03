@@ -6,6 +6,8 @@ source's history in one place. None of these verbs is ever forwarded to a runner
 
 from __future__ import annotations
 
+import stat
+
 from conftest import run_cli
 from tddcli import service, wire
 
@@ -79,3 +81,14 @@ def test_sources_survive_a_service_restart(ledger_service):
     finally:
         restarted.stop()
     assert reply == {"source": "vm-1", "executor": "m"}
+
+
+def test_socket_modes(ledger_service):
+    guest = ledger_service.dir / "vm-1.sock"
+    ledger_service.service.add_source("vm-1", guest, executor=None)
+
+    modes = {
+        "admin": stat.S_IMODE((ledger_service.dir / "admin.sock").stat().st_mode),
+        "vm-1": stat.S_IMODE(guest.stat().st_mode),
+    }
+    assert modes == {"admin": 0o600, "vm-1": 0o660}
