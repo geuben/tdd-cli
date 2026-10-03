@@ -25,6 +25,7 @@ from . import ledger as ledger_mod
 from . import runner, wire
 
 CONFIG_PATH = Path("/etc/tdd-cli/ledger.toml")
+CONFIG_ENV = "TDD_LEDGER_SERVICE_CONFIG"
 
 #: A run with one of these outcomes takes no more writes from a guest.
 CLOSED_OUTCOMES = ("complete", "abandoned")
@@ -35,7 +36,6 @@ STAMPED = frozenset({"start_run", "abandon_run"})
 #: The one write a closed run still takes: `tdd note` after the run is documented use,
 #: and is how an executor leaves its closing narrative.
 CLOSED_RUN_EXEMPT = frozenset({"add_note"})
-CONFIG_ENV = "TDD_LEDGER_SERVICE_CONFIG"
 
 
 class ServiceConfigError(RuntimeError):
