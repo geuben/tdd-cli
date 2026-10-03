@@ -923,6 +923,243 @@ class Ledger:
             (int(restored_ok), now(), check_id, cycle_id),
         )
 
+    # -- the state machine's records ------------------------------------------
+
+    def contract(self, contract_id: int) -> sqlite3.Row | None:
+        return self.one("SELECT * FROM plan_contract WHERE id = ?", (contract_id,))
+
+    def cycle(self, cycle_id: int) -> sqlite3.Row | None:
+        return self.one("SELECT * FROM cycle WHERE id = ?", (cycle_id,))
+
+    def unclosed_cycle(self, run_id: int, ordinal: int) -> sqlite3.Row | None:
+        return self.one(
+            "SELECT * FROM cycle WHERE run_id = ? AND ordinal = ? AND closed_at IS NULL",
+            (run_id, ordinal),
+        )
+
+    def add_cycle(
+        self,
+        run_id: int,
+        *,
+        ordinal: int,
+        kind: str,
+        projects: list[str],
+        declared_tests: list[str],
+        target_tests: list[str],
+        phase: str,
+        head_at_open: str,
+        title: str | None,
+    ) -> int:
+        return self.insert(
+            "cycle",
+            run_id=run_id,
+            ordinal=ordinal,
+            kind=kind,
+            projects=json.dumps(projects),
+            declared_tests=json.dumps(declared_tests),
+            target_tests=json.dumps(target_tests),
+            phase=phase,
+            head_at_open=head_at_open,
+            title=title,
+            opened_at=now(),
+        )
+
+    def move_cycle(self, cycle_id: int, *, from_phase: str, to_phase: str) -> None:
+        """Record a phase transition and put the cycle in its new phase."""
+        self.insert(
+            "transition", cycle_id=cycle_id, from_phase=from_phase, to_phase=to_phase, at=now()
+        )
+        self.update("cycle", cycle_id, phase=to_phase)
+
+    def mark_cycle_closed(self, cycle_id: int) -> None:
+        self.update("cycle", cycle_id, closed_at=now())
+
+    def set_run_outcome(self, run_id: int, outcome: str) -> None:
+        self.update("run", run_id, outcome=outcome)
+
+    def run_target_tests(self, run_id: int) -> list[list[str]]:
+        """Every cycle's targets in the run, one list per cycle."""
+        rows = self.all("SELECT target_tests FROM cycle WHERE run_id = ?", (run_id,))
+        return [json.loads(r["target_tests"]) for r in rows]
+
+    def record_invocation(
+        self,
+        run_id: int,
+        cycle_id: int | None,
+        *,
+        phase_at: str,
+        project: str,
+        adapter: str,
+        target_test: str | None,
+        target_outcome: str | None,
+        target_failure: str,
+        total_passed: int,
+        total_failed: int,
+        other_failures: list[str],
+        others_observed: bool = True,
+        duration_ms: int,
+        retried: bool = False,
+        tree_hash: str | None,
+    ) -> int:
+        return self.insert(
+            "invocation",
+            run_id=run_id,
+            cycle_id=cycle_id,
+            phase_at=phase_at,
+            project=project,
+            adapter=adapter,
+            target_test=target_test,
+            target_outcome=target_outcome,
+            target_failure=target_failure,
+            total_passed=total_passed,
+            total_failed=total_failed,
+            other_failures=json.dumps(other_failures),
+            others_observed=int(others_observed),
+            duration_ms=duration_ms,
+            retried=int(retried),
+            tree_hash=tree_hash,
+            started_at=now(),
+        )
+
+    def last_gate(self, run_id: int, project: str, kind: str) -> sqlite3.Row | None:
+        return self.one(
+            "SELECT ok, tree_hash FROM gate_result"
+            " WHERE run_id = ? AND project = ? AND kind = ?"
+            " ORDER BY id DESC LIMIT 1",
+            (run_id, project, kind),
+        )
+
+    def record_gate(
+        self,
+        run_id: int,
+        cycle_id: int | None,
+        *,
+        project: str,
+        kind: str,
+        ok: bool,
+        output: str,
+        tree_hash: str | None,
+        skipped: bool = False,
+    ) -> None:
+        self.insert(
+            "gate_result",
+            run_id=run_id,
+            cycle_id=cycle_id,
+            project=project,
+            kind=kind,
+            ok=int(ok),
+            output=output,
+            tree_hash=tree_hash,
+            skipped=int(skipped),
+            at=now(),
+        )
+
+    def record_artifact_check(
+        self,
+        run_id: int,
+        cycle_id: int | None,
+        *,
+        artifact: str,
+        stale: bool,
+        regenerate_failed: bool,
+    ) -> int:
+        return self.insert(
+            "artifact_check",
+            run_id=run_id,
+            cycle_id=cycle_id,
+            artifact=artifact,
+            stale=int(stale),
+            regenerated=0,
+            regenerate_failed=int(regenerate_failed),
+            at=now(),
+        )
+
+    def mark_artifact_check(
+        self, run_id: int, check_id: int, *, regenerated: bool = False, failed: bool = False
+    ) -> None:
+        """Flag an artifact check regenerated, or its regenerate hook failed."""
+        cols = {}
+        if regenerated:
+            cols["regenerated"] = 1
+        if failed:
+            cols["regenerate_failed"] = 1
+        sets = ", ".join(f"{k} = ?" for k in cols)
+        self._write(
+            f"UPDATE artifact_check SET {sets} WHERE id = ? AND run_id = ?",
+            (*cols.values(), check_id, run_id),
+        )
+
+    def record_commit(
+        self,
+        run_id: int,
+        cycle_id: int | None,
+        *,
+        phase: str,
+        sha: str,
+        message: str,
+        files: list[str],
+    ) -> None:
+        self.insert(
+            "commit_record",
+            run_id=run_id,
+            cycle_id=cycle_id,
+            phase=phase,
+            sha=sha,
+            message=message,
+            files=json.dumps(files),
+            at=now(),
+        )
+
+    def event_details(self, run_id: int, kind: str) -> list[str]:
+        """The detail of every integrity event of one kind in the run, oldest first."""
+        rows = self.all(
+            "SELECT detail FROM integrity_event WHERE run_id = ? AND kind = ? ORDER BY id",
+            (run_id, kind),
+        )
+        return [r["detail"] for r in rows]
+
+    def cycle_event_kinds(self, cycle_id: int, kinds: list[str]) -> list[str]:
+        """Which of `kinds` were recorded against the cycle, one entry per event."""
+        rows = self.all(
+            "SELECT kind FROM integrity_event WHERE cycle_id = ? AND kind IN ({})".format(
+                ",".join("?" * len(kinds))
+            ),
+            (cycle_id, *kinds),
+        )
+        return [r["kind"] for r in rows]
+
+    def last_cycle_event_detail(self, cycle_id: int, kind: str) -> str | None:
+        row = self.one(
+            "SELECT detail FROM integrity_event WHERE cycle_id = ? AND kind = ?"
+            " ORDER BY id DESC LIMIT 1",
+            (cycle_id, kind),
+        )
+        return row["detail"] if row else None
+
+    def cycle_has_event(self, cycle_id: int, kind: str) -> bool:
+        return (
+            self.one(
+                "SELECT id FROM integrity_event WHERE cycle_id = ? AND kind = ?", (cycle_id, kind)
+            )
+            is not None
+        )
+
+    def run_has_event(self, run_id: int, kind: str, detail: str) -> bool:
+        return (
+            self.one(
+                "SELECT id FROM integrity_event WHERE run_id = ? AND kind = ? AND detail = ?",
+                (run_id, kind, detail),
+            )
+            is not None
+        )
+
+    def cycle_has_note(self, cycle_id: int) -> bool:
+        return self.one("SELECT id FROM note WHERE cycle_id = ?", (cycle_id,)) is not None
+
+    def annotation_keys_of(self, cycle_id: int) -> set[str]:
+        rows = self.all("SELECT key FROM annotation WHERE cycle_id = ?", (cycle_id,))
+        return {r["key"] for r in rows}
+
 
 def open_ledger(repo_path: Path) -> Ledger:
     """The ledger of a repository. Every command opens its ledger through here."""
