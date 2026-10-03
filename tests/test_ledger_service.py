@@ -11,6 +11,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from conftest import guest_config, run_cli, run_cli_text, write_plan
 from tddcli import gitutil, service, wire
 from tddcli import ledger as ledger_mod
@@ -101,3 +103,19 @@ def test_a_guest_naming_another_sources_run_is_refused(repo, split_guest, ledger
         "reason": "ledger_refused",
         "refusal": "foreign_run",
     }
+
+
+def test_a_guest_naming_another_sources_cycle_is_refused(repo, split_guest, ledger_service):
+    ledger_service.service.add_source("vm-2", ledger_service.dir / "vm-2.sock", executor=None)
+    start_run(repo)
+    host = ledger_mod.open_readonly(host_file(ledger_service, repo), source=None)
+    cycle_id = host.open_cycle(host.active_runs()[0]["id"])["id"]
+
+    conn = wire.Connection(ledger_service.dir / "vm-2.sock")
+    try:
+        conn.request("open", str(gitutil.repo_identity(repo)))
+        with pytest.raises(wire.LedgerRefused) as refused:
+            conn.request("cycle", cycle_id)
+    finally:
+        conn.close()
+    assert refused.value.refusal == "foreign_run"
