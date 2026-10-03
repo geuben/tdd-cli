@@ -623,6 +623,25 @@ def cmd_plan_paths(args) -> Envelope:
     )
 
 
+def _baseline_captured(name, collection, *, elapsed_s, run_s, collect_s) -> None:
+    """The `baseline_captured` heartbeat, shared by the serial and parallel probes.
+
+    Split, not just totalled: `run` and `collect` have unrelated cost models — one
+    scales with tests, the other with files — and a single number sends whoever asks
+    "why was that slow?" out of the tool to measure by hand. `per_file_collects` is
+    the files that fell to the per-file loop, one runner start each (issue #168).
+    """
+    heartbeat(
+        event="baseline_captured",
+        project=name,
+        test_count=len(collection.tests),
+        elapsed_s=elapsed_s,
+        run_s=run_s,
+        collect_s=collect_s,
+        per_file_collects=collection.per_file_collects,
+    )
+
+
 def _probe_projects(
     projects,
     worktree,
@@ -674,17 +693,12 @@ def _probe_projects(
             collection = adapter.collect()
             elapsed = time.monotonic() - started
             probes[name] = (verdict, collection)
-            # Split, not just totalled: `run` and `collect` have unrelated cost models
-            # — one scales with tests, the other with files — and a single number sends
-            # whoever asks "why was that slow?" out of the tool to measure by hand.
-            heartbeat(
-                event="baseline_captured",
-                project=name,
-                test_count=len(collection.tests),
+            _baseline_captured(
+                name,
+                collection,
                 elapsed_s=round(elapsed, 2),
                 run_s=round(ran - started, 2),
                 collect_s=round(elapsed - (ran - started), 2),
-                per_file_collects=collection.per_file_collects,
             )
             if reuse_baselines and cfg is not None and config_sha is not None:
                 ledger.cache_baseline(
@@ -725,14 +739,8 @@ def _probe_projects(
             except Exception as exc:
                 raise RuntimeError(f"{proj_name}: baseline probe failed: {exc}") from exc
             probes[name] = (verdict, collection)
-            heartbeat(
-                event="baseline_captured",
-                project=name,
-                test_count=len(collection.tests),
-                elapsed_s=elapsed_s,
-                run_s=run_s,
-                collect_s=collect_s,
-                per_file_collects=collection.per_file_collects,
+            _baseline_captured(
+                name, collection, elapsed_s=elapsed_s, run_s=run_s, collect_s=collect_s
             )
             on_progress(done, name)
     return probes, reused
