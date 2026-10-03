@@ -1535,9 +1535,14 @@ def cmd_fleet(args) -> Envelope:
     `_context`: no tdd.toml, active run, or existing ledger is required, and the
     ledger is opened read-only so live agents cannot be perturbed."""
     worktree = _worktree()
-    summary = fleet.summarise(
-        ledger_mod.open_readonly(ledger_path(gitutil.repo_identity(worktree)))
-    )
+    repo = gitutil.repo_identity(worktree)
+    split = runner_mod.load()
+    if split is not None and split.role == "runner" and split.ledger_socket is not None:
+        # The ledger is on the host: read this source's view of it through the socket.
+        reader = open_ledger(repo)
+    else:
+        reader = ledger_mod.open_readonly(ledger_path(repo))
+    summary = fleet.summarise(reader)
     if args.json:
         return Envelope(result=summary, next_action=NextAction(Verb.COMPLETE, "Fleet reported."))
     sys.stdout.write(fleet.render(summary))

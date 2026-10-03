@@ -34,6 +34,8 @@ class RunnerConfig:
     role: str  # runner | client
     sudo: str = DEFAULT_SUDO
     ledger_home: Path | None = None
+    #: A ledger service's socket: the ledger is kept on the host, never here.
+    ledger_socket: Path | None = None
     executors: dict[str, str] = field(default_factory=dict)
 
 
@@ -100,11 +102,13 @@ def load() -> RunnerConfig | None:
             f"{path}: [runner] user {section['user']!r} does not exist"
         ) from exc
     ledger_home = section.get("ledger_home")
+    ledger_socket = section.get("ledger_socket")
     return RunnerConfig(
         user=section["user"],
         command=section["command"],
         role="runner" if runner_uid == os.geteuid() else "client",
         sudo=section.get("sudo", DEFAULT_SUDO),
         ledger_home=Path(ledger_home) if ledger_home else None,
+        ledger_socket=Path(ledger_socket) if ledger_socket else None,
         executors=dict(raw.get("executor") or {}),
     )

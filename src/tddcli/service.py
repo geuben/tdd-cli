@@ -20,6 +20,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import ledger as ledger_mod
 from . import runner, wire
 
 CONFIG_PATH = Path("/etc/tdd-cli/ledger.toml")
@@ -61,13 +62,59 @@ def load_config(path: Path | None = None) -> ServiceConfig:
     )
 
 
+class _Session:
+    """One client connection, and the ledger it opened.
+
+    Each connection opens its own `Ledger`, in its own handler thread: an SQLite
+    connection must not cross threads.
+    """
+
+    def __init__(self, service: Service, source: str | None):
+        self.service = service
+        self.source = source
+        self.ledger: ledger_mod.Ledger | None = None
+
+    def answer(self, request: dict) -> dict:
+        method = request.get("method")
+        args = request.get("args") or []
+        kwargs = request.get("kwargs") or {}
+        if method == "ping":
+            return _ok({"source": self.source, "executor": self.service.executors.get(self.source)})
+        if method == "open":
+            repo = str(args[0])
+            self.ledger = ledger_mod.Ledger(
+                Path(repo),
+                source=self.source,
+                path=self.service.config.home / f"{ledger_mod.slug(repo)}.sqlite3",
+            )
+            return _ok(None)
+        if self.ledger is None:
+            return {"ok": False, "error": "no ledger is open on this connection: send `open`"}
+        try:
+            return _ok(getattr(self.ledger, method)(*args, **kwargs))
+        except Exception as exc:  # the client gets the reason, the service keeps serving
+            return {"ok": False, "error": f"{method}: {exc}"}
+
+    def close(self) -> None:
+        if self.ledger is not None:
+            self.ledger.close()
+
+
+def _ok(result) -> dict:
+    return {"ok": True, "result": wire.encode(result)}
+
+
 class _Handler(socketserver.StreamRequestHandler):
     """One connection: requests answered in order until the client closes it."""
 
     def handle(self) -> None:
         listener: _Listener = self.server  # type: ignore[assignment]
-        while (request := wire.receive(self.rfile)) is not None:
-            wire.send(self.wfile, listener.service.answer(listener.source, request))
+        session = _Session(listener.service, listener.source)
+        try:
+            while (request := wire.receive(self.rfile)) is not None:
+                wire.send(self.wfile, session.answer(request))
+        finally:
+            session.close()
 
 
 class _Listener(socketserver.ThreadingUnixStreamServer):
@@ -111,11 +158,3 @@ class Service:
     def add_source(self, name: str, socket_path: Path, executor: str | None = None) -> None:
         self.executors[name] = executor
         self.listeners[name] = _Listener(Path(socket_path), self, name)
-
-    def answer(self, source: str | None, request: dict) -> dict:
-        if request.get("method") == "ping":
-            return {
-                "ok": True,
-                "result": {"source": source, "executor": self.executors.get(source)},
-            }
-        return {"ok": False, "refusal": "method_not_allowed", "error": "unknown method"}
