@@ -162,3 +162,21 @@ def test_a_malformed_repo_path_is_refused(split_guest):
     malformed = ["relative/repo", "", "/a\x00b", "/a\nb"]
 
     assert [open_refusal(split_guest.socket, p) for p in malformed] == ["bad_repo"] * 4
+
+
+def complete_on_host(ledger_service, repo) -> int:
+    """Start a guest run, then mark it complete through the host's unscoped view."""
+    run_id = start_run(repo)["run"]["id"]
+    host = ledger_mod.Ledger(repo, source=None, path=host_file(ledger_service, repo))
+    host.update("run", run_id, ended_at=ledger_mod.now(), outcome="complete")
+    host.close()
+    return run_id
+
+
+def test_a_guest_cannot_write_to_a_completed_run(repo, split_guest, ledger_service):
+    run_id = complete_on_host(ledger_service, repo)
+
+    refusal = refusal_of(
+        split_guest.socket, str(gitutil.repo_identity(repo)), "event", run_id, None, "x", ""
+    )
+    assert refusal == "run_closed"
