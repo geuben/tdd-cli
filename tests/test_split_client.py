@@ -70,6 +70,7 @@ ARGV = {
     "target": ["target", "x"],
     "log": ["log", "render"],
     "runner": ["runner", "import", "x"],
+    "ledger": ["ledger", "sources"],
 }
 
 
@@ -83,7 +84,8 @@ def _verbs() -> list[str]:
     return sorted(subparsers.choices)
 
 
-def test_only_docs_and_init_stay_local(repo, split_client):
+def test_only_docs_init_and_ledger_stay_local(repo, split_client):
+    # `ledger` is the host operator's: it talks to this machine's ledger service.
     stayed_local = set()
     for verb in _verbs():
         before = len(split_client.shim.lines())
@@ -91,4 +93,4 @@ def test_only_docs_and_init_stay_local(repo, split_client):
         if len(split_client.shim.lines()) == before:
             stayed_local.add(verb)
 
-    assert stayed_local == {"docs", "init"}
+    assert stayed_local == {"docs", "init", "ledger"}
