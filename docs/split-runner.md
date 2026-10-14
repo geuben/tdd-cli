@@ -183,5 +183,164 @@ Afterwards, remove the agent's copy so that nothing reads it by mistake.
 - `tdd fleet`, `tdd metrics` and `tdd log render` are forwarded like everything else
   and read the runner's ledger.
 - A runner invoked directly, with no sudo in between, acts for nobody: every verb
-  except `runner import` is refused with `reason: "no_agent"`. It never falls back to
-  running suites as itself.
+  except `runner import` and `ledger` is refused with `reason: "no_agent"`. It never
+  falls back to running suites as itself.
+
+## Across a VM boundary
+
+Everything above is one machine. Once agents run in disposable VMs or containers, the
+runner has to be in the guest, because that is where the suites run. Its ledger must not
+be: it would be deleted with the guest, two guests' files could never be merged, and an
+agent with root in the guest (a `docker` group membership is enough) could rewrite it
+whatever the file modes say.
+
+So the runner in the guest keeps **no ledger**. It reads and writes the host's through a
+unix socket, served by a **ledger service** on the host. The service owns the SQLite
+files and is their only writer. The runner still runs every suite, gate and git command
+as the agent, in the agent's worktree, exactly as above.
+
+    host                                         guest (one per run)
+    ┌──────────────────────────────┐             ┌──────────────────────────────┐
+    │ tdd ledger serve             │             │ agent ─sudo─▶ runner          │
+    │   admin.sock   (operator)    │             │                ledger_socket │
+    │   vm-1.sock ───forwarded──────────────────▶│ /run/tdd-cli/ledger.sock     │
+    │   <home>/<repo>.sqlite3      │             │ (no ledger file here)        │
+    └──────────────────────────────┘             └──────────────────────────────┘
+
+A run's **source** is the socket it arrived on. The operator names it when they create
+the socket, and the protocol has no field in which a guest could name it instead.
+
+### The service
+
+`/etc/tdd-cli/ledger.toml` (or `TDD_LEDGER_SERVICE_CONFIG`), owned by root or the
+service account and not group- or world-writable, the same trust rule as `runner.toml`:
+
+    [service]
+    admin_socket = "/run/tdd-cli/admin.sock"
+    # home       = "/var/lib/tdd-cli"     # default: the service account's ~/.local/share/tdd-cli
+
+Run `tdd ledger serve` under a dedicated account that owns `home`. It runs until SIGTERM
+and exits 0. A systemd unit:
+
+    [Unit]
+    Description=tdd-cli ledger service
+
+    [Service]
+    User=tdd-ledger
+    Group=tdd-guests
+    RuntimeDirectory=tdd-cli
+    ExecStart=/opt/tdd-cli/bin/tdd ledger serve
+    KillSignal=SIGTERM
+
+    [Install]
+    WantedBy=multi-user.target
+
+Host ledgers are `<home>/<slug>.sqlite3`, one per repository, where the slug is the
+guest's repository path with `/` replaced by `-`, as on a single machine. Every guest
+that checks a repository out at the same path shares that file, kept apart by source.
+
+### One source per guest
+
+The operator adds a source for each guest, from the host:
+
+    tdd ledger add-source vm-1 --socket /run/tdd-cli/vm-1.sock --executor claude-fable-5-1
+    tdd ledger bind vm-1 --executor claude-opus-5-5     # the model for its next runs
+    tdd ledger sources                                   # every source, socket and binding
+    tdd ledger remove-source vm-1                        # closes the socket; its runs stay
+
+Sources are kept in `<home>/sources.json`, so a restarted service listens on all of them
+again. The admin socket is mode 600, the service account's alone. A guest's socket is
+mode 660: give its group to whatever forwards it into the guest, and nothing else.
+
+`tdd ledger` verbs are always answered on the machine you run them on, never forwarded to
+a runner. With no service config they fail with `reason: "no_service"`.
+
+### Forwarding the socket into the guest
+
+The forwarding itself is the operator's, and tdd-cli does not set it up:
+
+- **ssh**: `ssh -R /run/tdd-cli/ledger.sock:/run/tdd-cli/vm-1.sock guest`, with
+  `StreamLocalBindUnlink yes` in the guest's `sshd_config` so a reconnect can replace a
+  stale socket, and `StreamLocalBindMask 0117` so the forwarded socket is not world-open.
+- **containers**: bind-mount the source's socket, `-v /run/tdd-cli/vm-1.sock:/run/tdd-cli/ledger.sock`.
+  Mount the one socket, never the host's ledger directory.
+- **vsock**: forward the source's socket to a vsock port with a relay such as `socat`,
+  and relay it back to a unix socket in the guest.
+
+### The guest
+
+The guest's `runner.toml` names the forwarded socket instead of a ledger home:
+
+    [runner]
+    user          = "tdd-runner"
+    command       = "/opt/tdd-cli/bin/tdd"
+    ledger_socket = "/run/tdd-cli/ledger.sock"   # instead of ledger_home
+
+Naming both `ledger_socket` and `ledger_home` is refused. In the guest, `tdd doctor`'s
+`ledger reachable` check pings the service and names the source it reached:
+`socket /run/tdd-cli/ledger.sock (source vm-1)`.
+
+**It fails closed.** If the socket is missing or the service hangs up, every verb that
+needs the ledger fails with `reason: "ledger_unreachable"`. Nothing in the guest ever
+falls back to a ledger of its own.
+
+### What it does and does not protect
+
+The service enforces this for every request, so a modified client cannot get around it:
+
+- **A guest reads and writes only its own source's runs.** A run, cycle or plan contract
+  of another source is refused with `refusal: "foreign_run"`, and so is one that does not
+  exist, so a guest cannot probe for other sources' ids. Claims and the baseline cache
+  are per source: one guest can neither block another's `run start` at the same path nor
+  hand it a forged cached baseline.
+- **A closed run stays closed.** Writes to a `complete` or `abandoned` run are refused with
+  `refusal: "run_closed"`. `tdd note` is the one exception, so a closing narrative can still
+  be added. A `blocked` run is not closed: `resume --unblock` still works.
+- **A guest reaches only named domain methods.** The wire carries a method name and its
+  arguments, never SQL. Methods meant for the host alone (`set_meta`, the generic row
+  helpers) are refused with `refusal: "method_not_allowed"`, and a repository path that is
+  not absolute is refused with `refusal: "bad_repo"`.
+
+Refusals reach the guest's envelope as `reason: "ledger_refused"` with the `refusal` code.
+
+What a compromised guest can still do is record runs under its own source, and lie in
+them, which is no worse than a forged test report on a single machine.
+
+**Executor identity is set on the host.** A guest's `[executor]` table is guest root's to
+edit, so it is a claim. When the operator binds an executor to a source, the service
+records that model with `executor_source: "operator"` on every run the source starts or
+abandons, whatever the guest sent. With no binding, a guest that says `operator` is
+recorded as `claimed`.
+
+### One history per host
+
+On the host, the operator reads every source together through the admin socket:
+
+    tdd ledger metrics [--repo <slug>]              # `tdd metrics` over every source, per repository
+    tdd ledger fleet                                # active runs of every source, and the host's suites
+    tdd ledger log --repo <slug> --run <id> [--out FILE]
+
+Every run in them carries its `source`. Inside a guest, `tdd metrics`, `tdd fleet` and
+`tdd log render` still work, and see only that guest's source.
+
+**Worker leases are the host's.** A socket-mode runner takes each suite's worker lease
+from the service, which splits the host's cores across every guest's running suites. A
+lease ends when its connection closes, which is also what a dead VM does, and one older
+than the stale limit is not counted. Named leases stay in the guest: they guard
+resources the guest's suites run against.
+
+### Existing ledgers
+
+`tdd runner import` is refused on a socket-mode runner (`reason: "ledger_remote"`): it has
+no ledger to import into. Bring an existing ledger in on the host instead, as one source:
+
+    tdd ledger import /home/agent1/.local/share/tdd-cli/<repo>.sqlite3 --source legacy
+
+It copies the file into the service's home under the same name, migrates it, retags every
+run and plan contract it recorded to the named source, drops its claims, and marks it as
+`pre_split_import`, which `tdd ledger metrics` reports. It refuses a file the host already
+holds (`reason: "ledger_exists"`). There is no merge.
+
+Ledgers from before schema v13 gain a source on their first open: every existing run,
+contract, claim and cached baseline becomes `local`, the source of single-user mode and of
+a split runner on one machine.

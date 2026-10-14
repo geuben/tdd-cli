@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import pwd
 
+import pytest
+
 from tddcli import runner
 
 
@@ -56,3 +58,15 @@ def test_an_untrusted_runner_config_is_refused(tmp_path, monkeypatch):
         "foreign owner": refused(0o644, real_euid + 1),
     }
     assert forgeries == dict.fromkeys(forgeries, True)
+
+
+def test_ledger_socket_and_ledger_home_together_are_refused(tmp_path, monkeypatch):
+    cfg = tmp_path / "runner.toml"
+    monkeypatch.setenv("TDD_RUNNER_CONFIG", str(cfg))
+    cfg.write_text(
+        f'[runner]\nuser = "{_current_user()}"\ncommand = "/opt/tdd-cli/bin/tdd"\n'
+        'ledger_home = "/var/lib/tdd"\nledger_socket = "/run/tdd-cli/ledger.sock"\n'
+    )
+
+    with pytest.raises(runner.RunnerConfigError, match="ledger_socket"):
+        runner.load()
