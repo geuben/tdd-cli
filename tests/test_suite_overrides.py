@@ -212,6 +212,8 @@ def test_pytest_collection_routes_override_files_to_the_override_command(tmp_pat
 
     def fake(command, cwd, timeout=1800, extra_env=None, label=None):
         seen.append((command, extra_env))
+        if "contract" in command and command.endswith("--collect-only -q"):
+            return 2, "", ""  # the override's batch fails, so its file is routed per file
         name = "test_api.py::test_ping" if "contract" in command else "test_a.py::test_a"
         return 0, name, ""
 

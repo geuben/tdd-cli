@@ -287,11 +287,12 @@ class PytestAdapter(Adapter):
             ),
         )
 
-    def _collect_invocations(self) -> list[tuple[str, dict[str, str] | None]]:
+    def _collect_invocations(self) -> list[tuple[str, dict[str, str] | None, object]]:
         """An override without a `collect_command` collects with its `test_command`
-        — `--collect-only` composes with any run command."""
-        return [(self._collect_cmd(), self._suite_env(None))] + [
-            (ov.collect_command or ov.test_command, self._suite_env(ov))
+        — `--collect-only` composes with any run command. Each names its suite
+        (None for the default) so a successful batch settles that suite's files."""
+        return [(self._collect_cmd(), self._suite_env(None), None)] + [
+            (ov.collect_command or ov.test_command, self._suite_env(ov), ov)
             for ov in self.project.overrides
         ]
 

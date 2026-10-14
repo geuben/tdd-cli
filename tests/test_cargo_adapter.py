@@ -370,6 +370,24 @@ def test_batch_collection_command_lists_with_merged_streams(tmp_path):
     assert rs.call_args_list[0].args[0] == "cargo test --tests -- --list 2>&1"
 
 
+def test_a_test_file_the_listing_did_not_list_costs_no_runner_start(tmp_path):
+    """Issue #168: a helper under tests/ is never a target in a successful listing,
+    so it must not cost a `cargo test --test helpers` of its own."""
+    a = make_adapter(tmp_path)
+    (tmp_path / "kernel" / "tests" / "helpers.rs").write_text("pub fn h() {}\n")
+    calls: list[str] = []
+
+    def side_effect(cmd, env=None, timeout=None):
+        calls.append(cmd)
+        if cmd.startswith("cargo test --tests -- --list"):
+            return (0, LIST_OUTPUT, "")
+        return (0, "", "")
+
+    with patch.object(CargoAdapter, "_run_suite", side_effect=side_effect):
+        a.collect()
+    assert calls == ["cargo test --tests -- --list 2>&1"]
+
+
 def test_per_file_collection_records_compile_failure_against_its_file(tmp_path):
     a = make_adapter(tmp_path)
     (tmp_path / "kernel" / "tests" / "broken.rs").write_text("fn nope( {}\n")

@@ -8,10 +8,15 @@ again per file. A single file's tests enumerate in milliseconds.
 Both adapters already had a whole-suite probe (`collectable()`); collection now
 uses that shape and keeps the per-file loop for the case it exists to serve.
 
-The rule that makes this safe: **a file the batch does not account for gets
-exactly the old per-file treatment.** Batch fails, batch is empty, batch skips a
-file the registry declares — each falls through to the loop, so the collected set
-can only match or improve on the old one, never silently shrink (R10.3/R10.4).
+The rule (issue #168): **a successful batch is authoritative for its own suite's
+files.** A batch that lists at least one test settles every file its suite owns,
+listed or not: a file the runner's own discovery skips is one no run observes, so
+rescuing it one runner start at a time bought only unreachable targets. A batch
+settles nothing outside its suite — a failed override batch still loops its own
+files — and a batch that fails, or succeeds with nothing listed, settles nothing,
+so R10.3's guarantee holds where it matters: one uncollectable file is attributed
+to itself and cannot destroy the set. An adapter whose invocations do not name
+their suite keeps the old loop for every unlisted file.
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ from pathlib import Path
 from conftest import run_cli, write_plan
 from tddcli import adapters
 from tddcli import config as config_mod
+from test_suite_overrides import OVERRIDE_BLOCK, project_with
 
 
 def _adapter(repo: Path, project: str = "backend"):
@@ -75,9 +81,9 @@ def test_the_batch_finds_the_same_tests_the_per_file_loop_would(repo, monkeypatc
     assert batched == per_file, batched ^ per_file
 
 
-def test_a_file_the_batch_never_reported_is_collected_individually(repo, monkeypatch):
-    """A file matching `test_paths` that the runner's config excludes must not
-    vanish from the set — a quietly smaller baseline is worse than a slow one."""
+def test_a_file_a_successful_batch_did_not_list_costs_no_runner_start(repo, monkeypatch):
+    """Issue #168: a file the runner's own discovery skips is one no run observes,
+    so starting the runner again to rescue it buys a target nothing can reach."""
     _write_tests(repo, 3)
     adapter = _adapter(repo)
     real = adapters.base.run_command
@@ -93,10 +99,12 @@ def test_a_file_the_batch_never_reported_is_collected_individually(repo, monkeyp
     monkeypatch.setattr(adapters.pytest_adapter, "run_command", hide_one)
     collected = adapter.collect()
 
-    assert any("test_gen1.py" in t for t in collected.tests), collected.tests
-    # Exactly one rescue invocation, naming that file — not a whole re-sweep.
-    per_file = [c for c in seen if "test_gen1.py" in c]
-    assert len(per_file) == 1, seen
+    rescues = [c for c in seen if "test_gen1.py" in c]
+    assert (rescues, any("test_gen1" in t for t in collected.tests), collected.failed_files) == (
+        [],
+        False,
+        {},
+    )
 
 
 def test_a_failing_batch_falls_back_to_per_file_attribution(repo_broken):
@@ -240,6 +248,27 @@ def test_vitest_batch_leaves_a_text_listing_to_the_per_file_loop(repo_multi, mon
     }
 
 
+def test_vitest_a_file_the_listing_did_not_name_costs_no_runner_start(repo_multi, monkeypatch):
+    """Issue #168 as measured: on a shared root, another project's test file sits in
+    this project's `test_paths` and is never in its listing. A successful listing
+    settles it instead of starting the runner for it."""
+    (repo_multi / "frontend" / "a.test.ts").write_text("")
+    (repo_multi / "frontend" / "b.test.ts").write_text("")  # another project's file
+    listing = json.dumps([{"name": "alpha", "file": str(repo_multi / "frontend" / "a.test.ts")}])
+    per_file: list[str] = []
+
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
+        if "--json" in command:
+            return 0, listing, ""
+        per_file.append(command)
+        return 0, "", ""
+
+    monkeypatch.setattr(adapters.vitest_adapter, "run_command", fake)
+    collected = _adapter(repo_multi, "frontend").collect()
+
+    assert (per_file, collected.failed_files) == ([], {})
+
+
 def test_run_start_still_reports_the_same_baseline(repo, monkeypatch):
     """End to end, through the command that pays for this."""
     _write_tests(repo, 3)
@@ -261,3 +290,65 @@ cycles:
     out = run_cli(repo, "run", "start", "--plan", plan)
     assert out["ok"], out
     assert out["result"]["baselines"] == {"backend": 0}, out["result"]
+
+
+def test_an_empty_successful_batch_leaves_its_files_to_the_loop(repo, monkeypatch):
+    """A batch that exits 0 having listed nothing settles nothing: its files still
+    get the per-file loop, so an empty listing cannot erase a suite."""
+    real = adapters.base.run_command
+
+    def empty_batch(command, cwd, timeout=1800, extra_env=None, label=None):
+        if command.endswith("--collect-only -q"):
+            return 0, "", ""
+        return real(command, cwd, timeout=timeout, extra_env=extra_env, label=label)
+
+    monkeypatch.setattr(adapters.pytest_adapter, "run_command", empty_batch)
+
+    assert "backend::tests/test_smoke.py::test_smoke" in _adapter(repo).collect().tests
+
+
+def test_a_failed_override_batch_still_attributes_its_own_files(tmp_path, monkeypatch):
+    """A batch settles only the files its own suite owns: the default suite
+    succeeding says nothing about an override whose batch failed."""
+    project = project_with(tmp_path, OVERRIDE_BLOCK)
+    (tmp_path / "backend" / "tests").mkdir(parents=True)
+    (tmp_path / "backend" / "contract").mkdir()
+    (tmp_path / "backend" / "tests" / "test_a.py").write_text("def test_a(): pass\n")
+    (tmp_path / "backend" / "contract" / "test_api.py").write_text("def test_ping(): pass\n")
+
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
+        if command.startswith("pytest contract"):
+            return 2, "", "ERROR collecting"
+        return 0, "tests/test_a.py::test_a", ""
+
+    monkeypatch.setattr(adapters.pytest_adapter, "run_command", fake)
+    collection = adapters.build(project, tmp_path).collect()
+
+    assert set(collection.failed_files) == {"contract/test_api.py"}
+
+
+def test_an_adapter_whose_invocations_name_no_suite_keeps_the_loop(repo, monkeypatch):
+    """A plugin adapter's `_collect_invocations` returns `(command, env)` pairs with
+    no owning suite. Nothing can be settled for an unknown owner, so a file its
+    batch did not list still gets one per-file rescue."""
+
+    class OwnerlessAdapter(adapters.pytest_adapter.PytestAdapter):
+        def _collect_invocations(self):
+            return [(c, e) for c, e, *_ in super()._collect_invocations()]
+
+    _write_tests(repo, 3)
+    adapter = OwnerlessAdapter(config_mod.load(repo).project("backend"), repo)
+    real = adapters.base.run_command
+    seen: list[str] = []
+
+    def hide_one(command, cwd, timeout=1800, extra_env=None, label=None):
+        seen.append(command)
+        code, out, err = real(command, cwd, timeout=timeout, extra_env=extra_env, label=label)
+        if "test_gen1.py" not in command:  # the batch "forgets" this file
+            out = "\n".join(line for line in out.splitlines() if "test_gen1.py" not in line)
+        return code, out, err
+
+    monkeypatch.setattr(adapters.pytest_adapter, "run_command", hide_one)
+    adapter.collect()
+
+    assert len([c for c in seen if "test_gen1.py" in c]) == 1, seen

@@ -6,6 +6,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **A successful batch listing is authoritative for its suite's files** (#168). `collect()`
+  started the runner once more for every `test_paths` file a successful whole-suite listing did
+  not mention — another project's test file on a shared root, a fixture, a helper — and
+  recorded each in `failed_files` as `no tests parsed`. On a four-project vitest repo that was
+  180 runner starts and 135 s per `collect()`. A batch that lists at least one test now settles
+  every file its own suite owns; the per-file loop still runs for files whose suite's batch
+  failed or listed nothing, so one uncollectable file is still attributed to itself. Applies to
+  the pytest, vitest and cargo adapters; a plugin adapter whose `_collect_invocations` returns
+  `(command, env)` pairs keeps the old loop, and can opt in with a third element naming the
+  suite (`None` for the default, else the override).
+
+### Added
+
+- **`per_file_collects` in the `baseline_captured` heartbeat** (#168): the number of files that
+  fell to the per-file loop, one runner start each, next to `collect_s`. Reported by serial and
+  `--baseline-jobs` probes alike.
+
 ## [0.14.1] - 2026-09-25
 
 ### Fixed

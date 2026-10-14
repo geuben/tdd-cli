@@ -465,7 +465,7 @@ streams of events use it:
 
 | Event | When | Fields |
 |---|---|---|
-| `baseline_captured` | after each project's baseline (§8.2) | `project`, `test_count`, `elapsed_s`, `run_s`, `collect_s` |
+| `baseline_captured` | after each project's baseline (§8.2) | `project`, `test_count`, `elapsed_s`, `run_s`, `collect_s`, `per_file_collects` |
 | `baseline_reused` | when `--reuse-baselines` hits a cache entry (§8.2, R9.5e) | `project`, `test_count`, `tree_hash` (first 8 chars) |
 | `baseline_accepted` | when `--accept-baseline` overrides the implausibility gate (R9.5g) | array of `{project, failing, collected, ratio, threshold}` |
 | `baseline_standing_delta` | after a non-empty baseline is recorded (R9.5h) | `{project, new: [...], inherited: [...], resolved: [...]}` |
@@ -474,7 +474,10 @@ streams of events use it:
 `run_s` and `collect_s` are reported separately because their cost models are unrelated — a suite
 run scales with tests, per-file collection (R10.3) with *files* — so a single total cannot say
 which one was slow, and answering that question otherwise means measuring the projects by hand
-outside the tool. `elapsed_s` remains the total.
+outside the tool. `elapsed_s` remains the total. `per_file_collects` is the number of files that
+fell to the per-file loop — one runner start each — so a slow `collect_s` names its own cause
+(issue #168). Serial and parallel (`--baseline-jobs`) probes both report it; a reused baseline
+does no collection and does not.
 
 `command_timing` is off by default: the per-file collect loop emits one line per test file, which
 would drown the heartbeats that exist to make a slow baseline legible. Its `label` (`suite`,
@@ -822,15 +825,23 @@ Adapter.typecheck(project)               -> GateResult
   as `not_collected` and never conflated with an unmatched identifier; vitest's non-JSON stdout
   preamble must be handled.
 - **R10.3** `collect()` runs **one invocation per declared suite** (the default plus each
-  override), then the **per-file loop for every file no batch accounted for** — whether the batch
-  failed, returned nothing, or never mentioned that file. The guarantee is unchanged: a file that
+  override). A **successful batch — one that lists at least one test — is authoritative for its
+  own suite's files**: every file that suite owns (`override_for` names it, or none for the
+  default) is settled, listed or not. The **per-file loop runs for every file no successful batch
+  settled**: its suite's batch failed or listed nothing, or its suite has no batch (a vitest
+  override without a `collect_command`). The guarantee is unchanged where it matters: a file that
   fails to collect yields `collect_failed` for that file alone, and every other file still
   contributes its test ids. Both pytest and vitest support single-file targeting, which is what
   makes the fallback possible.
 - **R10.3a** The two paths do not discover alike: a batch uses the runner's own config, the loop
-  walks `test_paths`. Reconciling them — per-file for anything the batch did not report — is what
-  keeps the collected set from silently shrinking when a declared file is outside the runner's
-  discovery. A quietly smaller baseline is worse than a slow one.
+  walks `test_paths`. A file the runner's own successful discovery skips is one no suite run
+  observes either, so rescuing it one runner start at a time bought only targets no run could
+  see — and on a shared root, where `test_paths` must be the union of every project's test files,
+  it cost one runner start per foreign file on every `collect()` (issue #168: 180 starts, 135 s).
+  A batch settles only its own suite: a failed override batch still loops that override's files
+  even when the default batch succeeded. An adapter whose `_collect_invocations` returns
+  `(command, env)` pairs without the owning suite settles only the files its batch listed, and
+  keeps the loop for the rest.
 - **R10.4** Rationale: `collect()` is load-bearing for target adoption (R8.9), test-weakening
   detection and the one-behaviour check — and in `AWAITING_TEST` the tree frequently does not
   import, which is exactly what `stub_expected` describes. Whole-suite collection fails precisely
