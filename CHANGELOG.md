@@ -6,6 +6,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-14
+
 ### Added
 
 - **Split mode across a VM boundary: a ledger service on the host** (#169). A runner
