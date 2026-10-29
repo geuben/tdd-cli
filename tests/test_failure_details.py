@@ -11,8 +11,10 @@ from conftest import git, run_cli, write_plan
 from tddcli import adapters, gitutil
 from tddcli import config as config_mod
 from tddcli.adapters.base import FailureDetail
+from tddcli.adapters.cargo_adapter import CargoAdapter
 from tddcli.ledger import Ledger
 from test_baseline_integrity import PLAN, TEST_ADD, reach_refactor
+from test_cargo_adapter import FULL_RUN, make_adapter
 from test_evidence_extraction import _vitest_adapter
 
 
@@ -212,5 +214,21 @@ def test_vitest_reports_each_failure_with_its_first_message_line(tmp_path):
             phase=None,
             message="AssertionError: expected 2 to be 3 // Object.is equality",
             detail=message,
+        )
+    }
+
+
+def test_cargo_reports_each_failure_with_its_panic_line(tmp_path):
+    adapter = make_adapter(tmp_path)
+    with patch.object(CargoAdapter, "_run_suite", return_value=(101, FULL_RUN, "")):
+        verdict = adapter.run(None)
+    panic = "thread 'layout::tests::fails_on_purpose' (173172849) panicked at src/lib.rs:7:41:"
+    assert verdict.failure_details == {
+        "kernel::lib::layout::tests::fails_on_purpose": FailureDetail(
+            phase=None,
+            message=panic,
+            detail=panic + "\nassertion `left == right` failed: expected width mismatch\n"
+            "  left: 2\n right: 3\n"
+            "note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
         )
     }
