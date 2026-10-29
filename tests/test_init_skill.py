@@ -193,3 +193,10 @@ def test_a_harness_file_that_differs_is_refused_with_or_without_force(bare_repo,
         read(bare_repo, SKILL),
         (bare_repo / "tdd.toml").exists(),
     ) == ([(False, "harness_files_differ", [SKILL])] * 2, "my skill\n", False)
+
+
+def test_update_skill_replaces_a_harness_file_that_differs(bare_repo, packaged):
+    (bare_repo / SKILL).parent.mkdir(parents=True)
+    (bare_repo / SKILL).write_text("my skill\n")
+    out = run_cli(bare_repo, "init", "--skill", "claude-code", "--update-skill")
+    assert (out["ok"], read(bare_repo, SKILL)) == (True, "packaged skill\n")
