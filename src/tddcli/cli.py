@@ -201,6 +201,12 @@ def cmd_init(args) -> Envelope:
             actor.current().write_file(
                 worktree / scaffold.dest, docs_mod.shipped(scaffold.source).read_bytes()
             )
+        settings = worktree / chosen.settings_path
+        if not settings.exists():
+            actor.current().write_file(
+                settings, (json.dumps(chosen.settings, indent=2) + "\n").encode()
+            )
+        result["harness"] = {"name": chosen.name, "settings": "written"}
     return Envelope(result=result, next_action=NextAction(Verb.CONFIRM_CYCLE_APPLICABLE, detail))
 
 
