@@ -14,6 +14,8 @@ from tddcli.envelope import ENVELOPE_VERSION, VERB_SET_VERSION
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL = ".claude/skills/tdd-drive/SKILL.md"
+STOP_HOOK = ".claude/hooks/tdd_stop_hook.py"
+BASH_HOOK = ".claude/hooks/tdd_bash_hook.py"
 
 
 @pytest.fixture
@@ -67,3 +69,11 @@ def test_an_unknown_harness_is_refused_and_nothing_is_written(bare_repo):
         "claude-code" in out.get("error", ""),
         (bare_repo / "tdd.toml").exists(),
     ) == (False, "unknown_harness", True, False)
+
+
+def test_init_skill_writes_the_installed_hooks(bare_repo, packaged):
+    run_cli(bare_repo, "init", "--skill", "claude-code")
+    assert {STOP_HOOK: read(bare_repo, STOP_HOOK), BASH_HOOK: read(bare_repo, BASH_HOOK)} == {
+        STOP_HOOK: "packaged stop\n",
+        BASH_HOOK: "packaged bash\n",
+    }
