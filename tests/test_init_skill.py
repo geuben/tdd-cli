@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -77,3 +78,12 @@ def test_init_skill_writes_the_installed_hooks(bare_repo, packaged):
         STOP_HOOK: "packaged stop\n",
         BASH_HOOK: "packaged bash\n",
     }
+
+
+def test_every_scaffolded_file_is_carried_into_the_wheel():
+    from tddcli import harness
+
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+    included = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
+    sources = [f.source for h in harness.HARNESSES.values() for f in h.files]
+    assert {s: included.get(s) for s in sources} == {s: f"tddcli/_docs/{s}" for s in sources}
