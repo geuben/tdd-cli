@@ -288,9 +288,9 @@ falls back to a ledger of its own.
 
 The service enforces this for every request, so a modified client cannot get around it:
 
-- **A guest reads and writes only its own source's runs.** A run, cycle or plan contract
-  of another source is refused with `refusal: "foreign_run"`, and so is one that does not
-  exist, so a guest cannot probe for other sources' ids. Claims and the baseline cache
+- **A guest reads and writes only its own source's runs.** A run, cycle, plan contract or
+  suite invocation of another source is refused with `refusal: "foreign_run"`, and so is
+  one that does not exist, so a guest cannot probe for other sources' ids. Claims and the baseline cache
   are per source: one guest can neither block another's `run start` at the same path nor
   hand it a forged cached baseline.
 - **A closed run stays closed.** Writes to a `complete` or `abandoned` run are refused with

@@ -426,9 +426,9 @@ LOCAL_SOURCE = "local"
 # A ledger service exposes `Ledger` methods to guests by name, so every public method
 # is classified here, exactly once. A guest method that touches one run's rows names
 # that run by a parameter called exactly `run_id`, `cycle_id`, `contract_id` or
-# `invocation_id`, which
-# the service checks belongs to the guest's source; one that finds rows by worktree,
-# project or cache key is SOURCE_ROOTED, and filters by the ledger's own source.
+# `invocation_id`, which the service checks belongs to the guest's source; one that
+# finds rows by worktree, project or cache key is SOURCE_ROOTED, and filters by the
+# ledger's own source.
 
 #: Reads a guest may make.
 GUEST_READS = frozenset(
