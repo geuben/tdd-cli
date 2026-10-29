@@ -57,3 +57,13 @@ def test_the_shipped_skill_declares_the_versions_this_binary_emits():
 def test_init_skill_writes_the_installed_driving_skill(bare_repo, packaged):
     run_cli(bare_repo, "init", "--skill", "claude-code")
     assert read(bare_repo, SKILL) == "packaged skill\n"
+
+
+def test_an_unknown_harness_is_refused_and_nothing_is_written(bare_repo):
+    out = run_cli(bare_repo, "init", "--skill", "cursor")
+    assert (
+        out["ok"],
+        out["result"].get("reason"),
+        "claude-code" in out.get("error", ""),
+        (bare_repo / "tdd.toml").exists(),
+    ) == (False, "unknown_harness", True, False)
