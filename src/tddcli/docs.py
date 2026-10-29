@@ -27,13 +27,17 @@ class Topic:
     summary: str
 
     def resolve(self) -> Path:
-        """The readable copy, preferring the packaged one.
+        return shipped(self.path)
 
-        A source checkout has no `_docs`; an installed wheel has no repository
-        above it. Exactly one of these exists in any given installation.
-        """
-        packaged = _PACKAGED / self.path
-        return packaged if packaged.is_file() else _SOURCE / self.path
+
+def shipped(path: str) -> Path:
+    """The readable copy of a shipped file, preferring the packaged one.
+
+    A source checkout has no `_docs`; an installed wheel has no repository
+    above it. Exactly one of these exists in any given installation.
+    """
+    packaged = _PACKAGED / path
+    return packaged if packaged.is_file() else _SOURCE / path
 
 
 TOPICS: tuple[Topic, ...] = (
