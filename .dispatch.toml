@@ -1,0 +1,26 @@
+# Dispatch console settings for this repo (geuben/dispatch README "Task kinds", ADR-0004 to ADR-0007).
+# No [trust] section: the trusted-label gate (geuben/dispatch ADR-0025) stays on, so a next-action
+# label the automation applies to an issue an unlisted account wrote is held, not run.
+
+[kinds.investigate]
+# A next-action label, not a category: `bug` or `flaky-test` stays on the issue.
+# A reproduced bug's investigation swaps `investigate` for `needs-plan` (ADR-0006).
+label = "investigate"
+next_label = "needs-plan"
+
+[kinds.plan]
+# A reproduced bug's next action, and a classified enhancement's. The repo's own
+# skill plans it in full (a plan PR, needs-plan -> plan-review) or comments the
+# decisions a person must make (needs-plan -> needs-decision). Merging the plan
+# PR labels it hardened (ADR-0007).
+label = "needs-plan"
+
+[kinds.classify]
+# What classify may apply to an issue with no next action (or `dispatch:ignore`,
+# always); listing them turns it on.
+# The category labels, plus the next actions a classification may set (ADR-0005):
+# `investigate` with a bug or a flaky test, `needs-plan` with an enhancement.
+# Not `hardened` (only plan-issue sets it) nor the maintainer's calls (wontfix,
+# duplicate, invalid).
+labels = ["bug", "enhancement", "documentation", "accessibility", "flaky-test", "question", "investigate", "needs-plan"]
+effort = "low"
