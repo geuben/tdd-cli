@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import json
 import textwrap
+from unittest.mock import patch
 
 from conftest import git, run_cli, write_plan
 from tddcli import adapters, gitutil
 from tddcli import config as config_mod
+from tddcli.adapters.base import FailureDetail
 from tddcli.ledger import Ledger
 from test_baseline_integrity import PLAN, TEST_ADD, reach_refactor
+from test_evidence_extraction import _vitest_adapter
 
 
 def _at(minute):
@@ -178,3 +181,36 @@ def test_a_close_sweep_records_why_its_failures_failed(repo):
     assert [
         (r["test_id"], r["phase"], r["message"]) for r in ledger.failure_details(sweep["id"])
     ] == [("backend::tests/test_smoke.py::test_smoke", "call", "AssertionError: smoke broke")]
+
+
+def test_vitest_reports_each_failure_with_its_first_message_line(tmp_path):
+    adapter = _vitest_adapter(tmp_path)
+    message = (
+        "AssertionError: expected 2 to be 3 // Object.is equality\n"
+        "    at Object.<anonymous> (calc.test.ts:5:14)\n"
+    )
+    report = {
+        "testResults": [
+            {
+                "name": str(tmp_path / "frontend" / "calc.test.ts"),
+                "status": "failed",
+                "assertionResults": [
+                    {
+                        "fullName": "calc add returns the sum",
+                        "status": "failed",
+                        "failureMessages": [message],
+                    },
+                    {"fullName": "calc add is pure", "status": "passed", "failureMessages": []},
+                ],
+            }
+        ],
+    }
+    with patch.object(type(adapter), "_run_suite", return_value=(1, json.dumps(report), "")):
+        verdict = adapter.run(None)
+    assert verdict.failure_details == {
+        "frontend::calc.test.ts > calc add returns the sum": FailureDetail(
+            phase=None,
+            message="AssertionError: expected 2 to be 3 // Object.is equality",
+            detail=message,
+        )
+    }
