@@ -200,3 +200,12 @@ def test_update_skill_replaces_a_harness_file_that_differs(bare_repo, packaged):
     (bare_repo / SKILL).write_text("my skill\n")
     out = run_cli(bare_repo, "init", "--skill", "claude-code", "--update-skill")
     assert (out["ok"], read(bare_repo, SKILL)) == (True, "packaged skill\n")
+
+
+def test_update_skill_without_skill_is_refused(bare_repo):
+    out = run_cli(bare_repo, "init", "--update-skill")
+    assert (out["ok"], out["result"].get("reason"), (bare_repo / "tdd.toml").exists()) == (
+        False,
+        "skill_required",
+        False,
+    )
