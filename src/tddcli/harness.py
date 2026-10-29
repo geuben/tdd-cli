@@ -27,6 +27,10 @@ class Harness:
 HARNESSES: dict[str, Harness] = {
     "claude-code": Harness(
         "claude-code",
-        (Scaffold("examples/skills/tdd-drive/SKILL.md", ".claude/skills/tdd-drive/SKILL.md"),),
+        (
+            Scaffold("examples/skills/tdd-drive/SKILL.md", ".claude/skills/tdd-drive/SKILL.md"),
+            Scaffold("examples/claude-code-hooks/stop_hook.py", ".claude/hooks/tdd_stop_hook.py"),
+            Scaffold("examples/claude-code-hooks/bash_hook.py", ".claude/hooks/tdd_bash_hook.py"),
+        ),
     ),
 }
