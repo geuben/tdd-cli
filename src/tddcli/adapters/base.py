@@ -18,6 +18,16 @@ FAILED = "failed"
 
 
 @dataclass
+class FailureDetail:
+    """Why one failing test failed: the phase (when the runner has phases), the first
+    line of the message, and the failure text."""
+
+    phase: str | None
+    message: str
+    detail: str
+
+
+@dataclass
 class Verdict:
     project: str
     adapter: str
@@ -29,6 +39,7 @@ class Verdict:
     failed: list[str] = field(default_factory=list)
     duration_ms: int = 0
     error: str | None = None
+    failure_details: dict[str, FailureDetail] = field(default_factory=dict)
 
 
 @dataclass
