@@ -189,8 +189,23 @@ def cmd_init(args) -> Envelope:
                 )
     path = worktree / config_mod.CONFIG_NAME
     if path.exists() and not args.force:
-        return failure(f"{path} already exists; pass --force to overwrite")
+        if chosen is None:
+            return failure(f"{path} already exists; pass --force to overwrite")
+        # Adding the harness to a configured project must not cost its config.
+        result: dict = {"config": "kept"}
+        detail = "Kept the existing tdd.toml."
+    else:
+        result, detail = _write_config(worktree, path)
+    if chosen is not None:
+        for scaffold in chosen.files:
+            actor.current().write_file(
+                worktree / scaffold.dest, docs_mod.shipped(scaffold.source).read_bytes()
+            )
+    return Envelope(result=result, next_action=NextAction(Verb.CONFIRM_CYCLE_APPLICABLE, detail))
 
+
+def _write_config(worktree: Path, path: Path) -> tuple[dict, str]:
+    """Detect the worktree's projects and write `tdd.toml` for review."""
     detected: list[tuple[str, str, str, str]] = []  # (name, root, adapter, test_paths)
     unmatched: list[str] = []
 
@@ -223,30 +238,23 @@ def cmd_init(args) -> Envelope:
             "",
         ]
     actor.current().write_file(path, "\n".join(lines).encode())
-    if chosen is not None:
-        for scaffold in chosen.files:
-            actor.current().write_file(
-                worktree / scaffold.dest, docs_mod.shipped(scaffold.source).read_bytes()
-            )
-    return Envelope(
-        result={
-            "written": str(path),
-            "detected": [d[0] for d in detected],
-            "unmatched": unmatched or None,
-        },
-        next_action=NextAction(
-            Verb.CONFIRM_CYCLE_APPLICABLE,
-            "Review tdd.toml: confirm roots, add lint/typecheck commands and artifact edges."
-            " Then read `tdd docs harness` before driving a run."
-            + (
-                f" No supported adapter detected for: {', '.join(unmatched)} —"
-                " declare one manually (third-party adapters register under the"
-                " `tddcli.adapters` entry-point group)."
-                if unmatched
-                else ""
-            ),
-        ),
+    result = {
+        "written": str(path),
+        "detected": [d[0] for d in detected],
+        "unmatched": unmatched or None,
+    }
+    detail = (
+        "Review tdd.toml: confirm roots, add lint/typecheck commands and artifact edges."
+        " Then read `tdd docs harness` before driving a run."
+        + (
+            f" No supported adapter detected for: {', '.join(unmatched)} —"
+            " declare one manually (third-party adapters register under the"
+            " `tddcli.adapters` entry-point group)."
+            if unmatched
+            else ""
+        )
     )
+    return result, detail
 
 
 LEGACY_ARTIFACTS = (".pytest_report.json", ".tdd-state.json")
