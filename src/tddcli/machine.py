@@ -387,6 +387,7 @@ class Engine:
                 other_failures=verdict.failed,
                 duration_ms=verdict.duration_ms,
                 tree_hash=self.tree_hash([name]),
+                failures={tid: dataclasses.asdict(d) for tid, d in verdict.failure_details.items()},
             )
         return SweepOutcome(
             failures=failures, gates=gates, unbaselined=unbaselined, unobserved=unobserved
