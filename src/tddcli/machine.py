@@ -39,6 +39,12 @@ SKIPPED = "SKIPPED"
 OPENING_PHASE = {PIN: AWAITING_PIN, REFACTOR: AWAITING_REFACTOR}
 
 
+def _failure_rows(verdict, ids) -> dict[str, dict]:
+    """The verdict's failure details for `ids`, as plain dicts: they cross the ledger
+    socket as JSON, and dataclasses do not."""
+    return {tid: dataclasses.asdict(d) for tid, d in verdict.failure_details.items() if tid in ids}
+
+
 @dataclass
 class ArtifactOutcome:
     regenerated: list[str]
@@ -253,11 +259,7 @@ class Engine:
                 duration_ms=verdict.duration_ms,
                 retried=bool(retried),
                 tree_hash=tree,
-                failures={
-                    tid: dataclasses.asdict(d)
-                    for tid, d in verdict.failure_details.items()
-                    if tid in other
-                },
+                failures=_failure_rows(verdict, other),
             )
             if verdict.error:
                 self.ledger.event(self.run["id"], cycle_row["id"], "tooling_defect", verdict.error)
@@ -387,7 +389,7 @@ class Engine:
                 other_failures=verdict.failed,
                 duration_ms=verdict.duration_ms,
                 tree_hash=self.tree_hash([name]),
-                failures={tid: dataclasses.asdict(d) for tid, d in verdict.failure_details.items()},
+                failures=_failure_rows(verdict, verdict.failed),
             )
         return SweepOutcome(
             failures=failures, gates=gates, unbaselined=unbaselined, unobserved=unobserved
