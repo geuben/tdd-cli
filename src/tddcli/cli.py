@@ -195,7 +195,7 @@ def cmd_init(args) -> Envelope:
             and (worktree / scaffold.dest).read_bytes()
             != docs_mod.shipped(scaffold.source).read_bytes()
         ]
-        if differs:
+        if differs and not args.update_skill:
             return failure(
                 f"{', '.join(differs)} differ from this version's copies; nothing was written."
                 " Pass --update-skill to replace them (re-apply any local additions after).",
@@ -1885,6 +1885,11 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("init", help="scaffold tdd.toml for review")
     s.add_argument("--force", action="store_true")
     s.add_argument("--skill", help="also scaffold the driving skill and hooks for this harness")
+    s.add_argument(
+        "--update-skill",
+        action="store_true",
+        help="replace harness files that differ from this version's copies",
+    )
     s.set_defaults(fn=cmd_init)
 
     s = sub.add_parser("doctor", help="environment preflight")
