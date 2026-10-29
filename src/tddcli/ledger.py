@@ -1316,6 +1316,7 @@ class Ledger:
         duration_ms: int,
         retried: bool = False,
         tree_hash: str | None,
+        failures: dict[str, dict] | None = None,
     ) -> int:
         return self.insert(
             "invocation",
@@ -1336,6 +1337,9 @@ class Ledger:
             tree_hash=tree_hash,
             started_at=now(),
         )
+
+    def failure_details(self, invocation_id: int) -> list:
+        raise NotImplementedError
 
     def last_gate(self, run_id: int, project: str, kind: str) -> sqlite3.Row | None:
         return self.one(
