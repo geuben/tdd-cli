@@ -10,7 +10,7 @@ from conftest import git, run_cli, write_plan
 from tddcli import adapters, gitutil
 from tddcli import config as config_mod
 from tddcli.ledger import Ledger
-from test_baseline_integrity import PLAN, TEST_ADD
+from test_baseline_integrity import PLAN, TEST_ADD, reach_refactor
 
 
 def _at(minute):
@@ -165,4 +165,16 @@ def test_a_green_run_records_why_its_other_failures_failed(repo):
     inv = next(r for r in rows if json.loads(r["other_failures"]))
     assert [
         (r["test_id"], r["phase"], r["message"]) for r in ledger.failure_details(inv["id"])
+    ] == [("backend::tests/test_smoke.py::test_smoke", "call", "AssertionError: smoke broke")]
+
+
+def test_a_close_sweep_records_why_its_failures_failed(repo):
+    reach_refactor(repo)
+    (repo / "backend" / "tests" / "test_smoke.py").write_text(SMOKE_BROKE)
+    run_cli(repo, "advance")
+
+    ledger, rows = _invocations(repo, "CLOSE_SWEEP")
+    sweep = rows[-1]
+    assert [
+        (r["test_id"], r["phase"], r["message"]) for r in ledger.failure_details(sweep["id"])
     ] == [("backend::tests/test_smoke.py::test_smoke", "call", "AssertionError: smoke broke")]
