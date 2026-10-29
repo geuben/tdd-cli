@@ -24,6 +24,7 @@ from . import (
     adapters,
     fleet,
     gitutil,
+    harness,
     identity,
     render,
     snapshot,
@@ -207,6 +208,11 @@ def cmd_init(args) -> Envelope:
             "",
         ]
     actor.current().write_file(path, "\n".join(lines).encode())
+    if args.skill:
+        for scaffold in harness.HARNESSES[args.skill].files:
+            actor.current().write_file(
+                worktree / scaffold.dest, docs_mod.shipped(scaffold.source).read_bytes()
+            )
     return Envelope(
         result={
             "written": str(path),
@@ -1820,6 +1826,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("init", help="scaffold tdd.toml for review")
     s.add_argument("--force", action="store_true")
+    s.add_argument("--skill", help="also scaffold the driving skill and hooks for this harness")
     s.set_defaults(fn=cmd_init)
 
     s = sub.add_parser("doctor", help="environment preflight")
