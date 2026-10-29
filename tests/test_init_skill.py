@@ -181,3 +181,15 @@ def test_settings_that_already_wire_both_hooks_are_reported_as_wired(bare_repo, 
         out["result"]["harness"]["settings"],
         "settings_stanza" in out["next_action"]["detail"],
     ) == ("wired", False)
+
+
+def test_a_harness_file_that_differs_is_refused_with_or_without_force(bare_repo, packaged):
+    (bare_repo / SKILL).parent.mkdir(parents=True)
+    (bare_repo / SKILL).write_text("my skill\n")
+    plain = run_cli(bare_repo, "init", "--skill", "claude-code")
+    forced = run_cli(bare_repo, "init", "--skill", "claude-code", "--force")
+    assert (
+        [(o["ok"], o["result"].get("reason"), o["result"].get("differs")) for o in (plain, forced)],
+        read(bare_repo, SKILL),
+        (bare_repo / "tdd.toml").exists(),
+    ) == ([(False, "harness_files_differ", [SKILL])] * 2, "my skill\n", False)
