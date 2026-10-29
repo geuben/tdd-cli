@@ -258,18 +258,21 @@ in this plan:
 
 - **Behaviour:** when a declared artifact is stale and unresolved at `run start`, the command
   fails with `result.reason == "stale_artifact"` and `result.stale_artifacts` naming it, the
-  error names it, and no run is left active.
+  error names it, the run row is ended with outcome `refused`, and no run is left active.
 - **Test:** `test_unresolved_stale_artifact_at_run_start_refuses`.
   `plan = _register_spec_artifact(repo, 'check       = "false"\n')`; `out = run_cli(repo,
-  "run", "start", "--plan", plan)`; `status = run_cli(repo, "status")`. Single assertion:
+  "run", "start", "--plan", plan)`; `status = run_cli(repo, "status")`; `run_row =
+  Ledger(gitutil.repo_identity(repo)).one("SELECT outcome FROM run ORDER BY id DESC LIMIT 1")`.
+  Single assertion:
 
       (
           out["ok"],
           "spec" in (out.get("error") or ""),
           out["result"].get("reason"),
           out["result"].get("stale_artifacts"),
+          run_row["outcome"],
           status["result"].get("active"),
-      ) == (False, True, "stale_artifact", ["spec"], False)
+      ) == (False, True, "stale_artifact", ["spec"], "refused", False)
 
   (`reason` is under `result`, never at the envelope's top level.)
 - **Target:** `cli.py::cmd_run_start`, directly after the `artifact_outcome.failed` refusal
@@ -301,9 +304,10 @@ in this plan:
     cycle stays open until the check passes. `tdd run start` refuses with `reason:
     "stale_artifact"` and ends the run `refused`. An artifact the tool regenerates and
     commits is unaffected."
-- **EXPECTED FAILURE:** `AssertionError: assert (True, False, None, None, None) == (False,
-  True, 'stale_artifact', ['spec'], False)` (probed on main: `run start` succeeds, its result has
-  neither key, and a live run's `status` result has no `active` key).
+- **EXPECTED FAILURE:** `AssertionError: assert (True, False, None, None, None, None) ==
+  (False, True, 'stale_artifact', ['spec'], 'refused', False)` (probed on main: `run start`
+  succeeds, its result has neither key, a live run's `outcome` is NULL, and a live run's
+  `status` result has no `active` key).
 - **Minimal GREEN:** the refusal block and the docs. Nothing in `machine.py` or `advance.py`.
 
 ## Execution
