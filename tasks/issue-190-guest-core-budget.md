@@ -119,7 +119,7 @@ That work is outside this repo.
 7. **`leases.worker_lease` reads the guest's config once per lease.** It replaces
    `_ledger_socket()` with a helper that returns the guest's `RunnerConfig` (or `None`), which
    both `worker_lease` and `snapshot` use. `snapshot` still reads only `ledger_socket` from it.
-   Nothing in `tests/` patches `_ledger_socket` (`grep -rn _ledger_socket tests/` is empty), so
+   Nothing in `tests/` patches it (`grep -rn "leases\._ledger_socket\|\"_ledger_socket\"" tests/` is empty), so
    the rename breaks no test. *Convention*: `runner.load()` is already called per lease today.
 8. **Existing remote-lease tests get a fixed, large guest affinity.** `tests/test_remote_leases.py`
    runs the service in-process with `TDD_CORE_BUDGET=12`, so its guest's affinity is the test
