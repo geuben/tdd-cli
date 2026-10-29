@@ -13,6 +13,7 @@ in advance, never inferred from the outcome.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import time
 from dataclasses import dataclass, field
@@ -252,6 +253,11 @@ class Engine:
                 duration_ms=verdict.duration_ms,
                 retried=bool(retried),
                 tree_hash=tree,
+                failures={
+                    tid: dataclasses.asdict(d)
+                    for tid, d in verdict.failure_details.items()
+                    if tid in other
+                },
             )
             if verdict.error:
                 self.ledger.event(self.run["id"], cycle_row["id"], "tooling_defect", verdict.error)
