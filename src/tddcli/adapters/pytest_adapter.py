@@ -24,6 +24,7 @@ from .base import (
     PASSED,
     Adapter,
     Collection,
+    FailureDetail,
     GateResult,
     Verdict,
     _overlap_error,
@@ -41,6 +42,30 @@ RUNNER_MARKERS = (
     ("Pipfile", "pipenv run "),
     ("pdm.lock", "pdm run "),
 )
+
+
+def _failure_detail(test: dict) -> FailureDetail:
+    """Why a non-passing test failed: the first phase that did not pass.
+
+    `setup`, `call`, `teardown` in that order, so a call that failed and then tore down
+    badly records the call, its cause. The message is the crash's first line; with no
+    crash (XPASS(strict)), the longrepr's last non-empty line, since under xdist its
+    first is the worker header.
+    """
+    for phase in ("setup", "call", "teardown"):
+        report = test.get(phase)
+        if report and report.get("outcome") != "passed":
+            break
+    else:
+        phase, report = None, {}
+    longrepr = str(report.get("longrepr", ""))
+    crash = (report.get("crash") or {}).get("message", "")
+    if crash:
+        message = crash.splitlines()[0]
+    else:
+        lines = [line for line in longrepr.splitlines() if line.strip()]
+        message = lines[-1] if lines else ""
+    return FailureDetail(phase=phase, message=message, detail=longrepr)
 
 
 def _strip_xdist_group(nodeid: str) -> str:
@@ -170,6 +195,7 @@ class PytestAdapter(Adapter):
                 verdict.passed.append(qualified)
             elif test["outcome"] in ("failed", "error"):
                 verdict.failed.append(qualified)
+                verdict.failure_details[qualified] = _failure_detail(test)
 
         if target is None:
             verdict.target_outcome = NOT_FOUND
