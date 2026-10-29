@@ -87,3 +87,17 @@ def test_every_scaffolded_file_is_carried_into_the_wheel():
     included = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
     sources = [f.source for h in harness.HARNESSES.values() for f in h.files]
     assert {s: included.get(s) for s in sources} == {s: f"tddcli/_docs/{s}" for s in sources}
+
+
+def test_a_scaffold_missing_from_the_install_is_refused_and_nothing_is_written(
+    bare_repo, monkeypatch
+):
+    monkeypatch.setattr(docs, "_PACKAGED", Path("/nonexistent"))
+    monkeypatch.setattr(docs, "_SOURCE", Path("/nonexistent"))
+    out = run_cli(bare_repo, "init", "--skill", "claude-code")
+    assert (
+        out["ok"],
+        out["result"].get("reason"),
+        (bare_repo / "tdd.toml").exists(),
+        read(bare_repo, SKILL),
+    ) == (False, "missing_from_install", False, None)
