@@ -228,6 +228,16 @@ CREATE TABLE IF NOT EXISTS invocation (
     started_at TEXT NOT NULL
 );
 
+-- Why each of an invocation's other_failures failed (#105). Written with the invocation.
+CREATE TABLE IF NOT EXISTS failure_detail (
+    id INTEGER PRIMARY KEY,
+    invocation_id INTEGER NOT NULL REFERENCES invocation(id),
+    test_id TEXT NOT NULL,
+    phase TEXT,                         -- NULL: the runner reports no phases
+    message TEXT NOT NULL,
+    detail TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS gate_result (
     id INTEGER PRIMARY KEY,
     run_id INTEGER NOT NULL REFERENCES run(id),
@@ -523,6 +533,7 @@ HOST_ONLY = frozenset(
         "active_claim",
         "all",
         "close",
+        "failure_details",
         "insert",
         "one",
         "run_source",
@@ -1318,7 +1329,7 @@ class Ledger:
         tree_hash: str | None,
         failures: dict[str, dict] | None = None,
     ) -> int:
-        return self.insert(
+        invocation_id = self.insert(
             "invocation",
             run_id=run_id,
             cycle_id=cycle_id,
@@ -1337,9 +1348,24 @@ class Ledger:
             tree_hash=tree_hash,
             started_at=now(),
         )
+        for test_id, detail in (failures or {}).items():
+            self.insert(
+                "failure_detail",
+                invocation_id=invocation_id,
+                test_id=test_id,
+                phase=detail["phase"],
+                message=detail["message"],
+                detail=detail["detail"],
+            )
+        return invocation_id
 
-    def failure_details(self, invocation_id: int) -> list:
-        raise NotImplementedError
+    def failure_details(self, invocation_id: int) -> list[sqlite3.Row]:
+        """Why each of an invocation's other failures failed, ordered by test id."""
+        return self.all(
+            "SELECT test_id, phase, message, detail FROM failure_detail"
+            " WHERE invocation_id = ? ORDER BY test_id",
+            (invocation_id,),
+        )
 
     def last_gate(self, run_id: int, project: str, kind: str) -> sqlite3.Row | None:
         return self.one(
