@@ -172,3 +172,12 @@ def test_an_existing_settings_file_is_left_alone_and_the_stanza_handed_over(
             )
         )
     assert seen == [(True, "not_written", EXPECTED_SETTINGS, True)] * 2
+
+
+def test_settings_that_already_wire_both_hooks_are_reported_as_wired(bare_repo, packaged):
+    run_cli(bare_repo, "init", "--skill", "claude-code")
+    out = run_cli(bare_repo, "init", "--skill", "claude-code")
+    assert (
+        out["result"]["harness"]["settings"],
+        "settings_stanza" in out["next_action"]["detail"],
+    ) == ("wired", False)
