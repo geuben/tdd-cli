@@ -187,6 +187,21 @@ def cmd_init(args) -> Envelope:
                     " nothing was written. Please report the packaging bug.",
                     reason="missing_from_install",
                 )
+        # A dest that differs may be a local customisation; --force is for tdd.toml only.
+        differs = [
+            scaffold.dest
+            for scaffold in chosen.files
+            if (worktree / scaffold.dest).is_file()
+            and (worktree / scaffold.dest).read_bytes()
+            != docs_mod.shipped(scaffold.source).read_bytes()
+        ]
+        if differs:
+            return failure(
+                f"{', '.join(differs)} differ from this version's copies; nothing was written."
+                " Pass --update-skill to replace them (re-apply any local additions after).",
+                reason="harness_files_differ",
+                differs=differs,
+            )
     path = worktree / config_mod.CONFIG_NAME
     if path.exists() and not args.force:
         if chosen is None:
