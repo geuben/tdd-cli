@@ -1,19 +1,26 @@
 ---
 name: automated-planning
-description: Plan an issue labelled needs-plan with nobody present, in a dispatch slot. Either opens a PR with a hardened plan, when every design choice can be settled from evidence, or opens nothing and comments the decisions a person must make. Use when the prompt is "/automated-planning NNN". Never use it interactively; there, use /plan-issue.
+description: Plan an issue labelled needs-plan with nobody present, in an unattended automation run. Either opens a PR with a hardened plan, when every design choice can be settled from evidence, or opens nothing and comments the decisions a person must make. Use when the prompt is "/automated-planning NNN". Never use it interactively; there, use /plan-issue.
 ---
 
 # automated-planning
 
-You are planning issue **#$0** in a dispatch slot. Nobody is watching and nobody will
-answer a question. The console started this run because the issue is labelled `needs-plan`,
-after an investigation reproduced the bug (dispatch ADR-0006), or after classify labelled it an
-enhancement (dispatch ADR-0005), when there is no investigation to read. The rules are in
-geuben/dispatch's
-[ADR-0007](https://github.com/geuben/dispatch/blob/main/docs/adr/0007-automated-planning-plans-or-asks-and-merge-hands-on.md);
-this repo's settings for it are in `.dispatch.toml`.
+You are planning issue **#$0** unattended. An automation service started this run, in a fresh
+clone of this repo, because the issue carries the `needs-plan` label. Nobody is watching and
+nobody will answer a question. The label got there in one of two ways:
 
-Console notes (the first word is the issue number; follow the rest): $ARGUMENTS
+- An earlier automated investigation reproduced a bug. It left a report on the issue and,
+  usually, a failing test on a branch (step 2).
+- The issue was classified as an enhancement. Then there is no investigation to read.
+
+The issue's labels name its next action, and each step swaps one label for the next:
+`needs-plan` (you), then `plan-review` (a person reviews your plan PR) or `needs-decision` (a
+person answers your questions), then `hardened` once the plan PR merges. **Merging the plan PR
+is the approval:** the service then labels the issue `hardened` and may start implementing the
+plan unattended, so the plan must be complete enough to execute without asking anyone.
+
+Notes from whoever queued the run (the first word is the issue number; follow the rest):
+$ARGUMENTS
 
 **Planning is all or nothing.** End in exactly one of two ways:
 
@@ -22,12 +29,13 @@ Console notes (the first word is the issue number; follow the rest): $ARGUMENTS
 - **Needs a decision:** at least one product or design choice is open. Open **no** branch and
   **no** PR. Comment the decisions on the issue, then swap `needs-plan` for `needs-decision`.
 
-The console checks which happened. A run that does neither is recorded `refused`.
+The service checks which happened. A run that does neither is recorded as refused, for a
+person to look at.
 
 ## Hard rules
 
 - Never label the issue `hardened`. Never edit the issue body. When the plan PR merges,
-  dispatch's handoff adds the label and the `Task file:` line.
+  the service adds the label and the `Task file:` line.
 - Never push to `main`. Never write implementation code: the plan is the only deliverable.
 - Never close the issue, and never put a closing keyword (`close`, `fix`, `resolve` and their
   forms) next to `#N` in the PR's title or body, or in a commit message. Write `Refs #N`.
@@ -53,7 +61,7 @@ as they bind any other. They hold what earlier plans here learned the hard way: 
 the released `tdd` on `PATH`, how a RED dies through `conftest.run_cli`, where spawns must live,
 when `SCHEMA_VERSION` needs a bump. You will follow its Phase 0, A (except where noted), B, D and E. **If
 that skill is not installed, stop:** say so in your final message and change nothing. Without its
-hardening rules a plan cannot be hardened, and the console will record the run `refused` for a
+hardening rules a plan cannot be hardened, and the service will record the run as refused for a
 person to see.
 
 Then read, in this order:
@@ -85,7 +93,7 @@ already names a plan on `main`, open decision (step 3) — "re-plan, or keep the
 List every design branch the plan needs, as Phase C does, then put each one into exactly one
 group:
 
-- **Settled by evidence.** The code, an ADR, the issue, a person's answer, or the
+- **Settled by evidence.** The code, `docs/PRD.md` or another doc, the issue, a person's answer, or the
   investigation (once verified) decides it. Record the decision and cite the evidence.
 - **Settled by convention.** A choice the repo already makes the same way elsewhere, or that
   a careful maintainer would not need asking about. Examples: a refusal is an
@@ -123,7 +131,7 @@ next run does not have to redo the work. Then write one comment, in this shape:
 - **A. <option> (recommended)**: <what it means, and its trade-off>
 - **B. <option>**: <what it means, and its trade-off>
 
-Evidence: <file:line, ADR or comment links that bear on it>
+Evidence: <file:line, doc sections or comment links that bear on it>
 
 ### 2. ...
 
@@ -155,9 +163,9 @@ Stop. Do not create a branch, a plan file or a PR.
      succeed. If it cannot, and fixing that needs a choice, the choice is an open decision
      (step 4a). Delete the branch locally; do not push it. Register with the released `tdd`
      on `PATH`, never `uv run tdd` from this tree (the note at the top of `tdd.toml`). If no
-     released `tdd` is on `PATH`, that is the slot's fault, not a design choice: stop, change
+     released `tdd` is on `PATH`, the environment is broken, not a design choice: stop, change
      nothing, and say so in your final message.
-   - **E-18:** skip it all. Do not label the issue, and do not edit its body. Dispatch's handoff
+   - **E-18:** skip it all. Do not label the issue, and do not edit its body. The service
      does both when the PR merges.
    - **E-19:** the readiness report goes into the PR body, not to a user.
    - If hardening turns up an open decision, go to step 4a. Do not push the branch.
@@ -171,7 +179,7 @@ Stop. Do not create a branch, a plan file or a PR.
 
    The body starts with the summary of the plan and its **Design decisions (locked)**, each
    with what decided it, so a reviewer can disagree with one quickly. Then comes the readiness
-   report, and then `Refs #N` on its own line. Merging this PR approves the plan: dispatch's handoff
+   report, and then `Refs #N` on its own line. Merging this PR approves the plan: the service
    then labels the issue `hardened`, and the fix may start unattended. Closing it unmerged
    sends the issue back to `needs-decision`.
 
@@ -180,11 +188,12 @@ Stop. Do not create a branch, a plan file or a PR.
 
    This plan edits `.github/workflows/`: merging this plan labels #$0 `<label>` (if you merge it yourself).
 
-   `<label>` is the `label` in the repo's `.dispatch.toml` `[ci]` table, or `ci` when there is
-   none (there is none today). A run without the console's `ci` grant cannot push such a change: GitHub rejects the
-   whole push, so the run hands the change back as a patch instead (dispatch ADR-0022). Merging the
-   plan adds the label when the person who merges it is in the handoff's `HANDOFF_CI_ACTORS`
-   (dispatch ADR-0023); anyone else labels the issue by hand before merging.
+   `<label>` is the `label` in the `[ci]` table of this repo's `.dispatch.toml`, or `ci` when
+   there is no such table (there is none today). An implementation run may push changes under
+   `.github/workflows/` only when its issue carries that label. Without it GitHub rejects the
+   whole push, and the run can only hand the change back as a patch. Merging the plan adds
+   the label automatically when the person merging is on the service's list of people trusted
+   with workflow changes; anyone else must label the issue by hand before merging.
 5. Comment on the issue, and swap the labels:
 
    ```sh
