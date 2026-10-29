@@ -44,6 +44,8 @@ https://github.com/geuben/tdd-cli/issues/110
 Task file: `tasks/issue-110-stale-artifact-gate.md`
 Predecessor: #107 (`tasks/issue-107-regenerate-hook-failure.md`), which cut this gate out of
 its scope and gave `check_artifacts` the structured `ArtifactOutcome` this plan extends.
+**Blocked by #99** (`tasks/issue-99-inherited-artifacts-unreadable-baseline.md`, plan merged):
+implement this plan only after #99 has landed on `main` (decision 10).
 
 ## Context
 
@@ -81,6 +83,12 @@ issue's earlier planning comment
 (https://github.com/geuben/tdd-cli/issues/110#issuecomment-6506417445) reported the same
 numbers on b487ce1. The sketch was deleted.
 
+#99's plan was merged while this one was being written, and is not implemented yet. It
+rewrites the same branch of `check_artifacts`, so this plan runs after it (decision 10). The
+probes above ran before #99. Its code cannot change their outcome, because every artifact in
+this plan is produced by the plan's own project (decision 9). #99's tests are new, so this
+sketch could not run them. Decision 10 records what reading them shows.
+
 ## Design decisions (locked)
 
 1. **The gate is real. The code changes and the PRD keeps its meaning.** *Evidence:* R9.12
@@ -88,12 +96,18 @@ numbers on b487ce1. The sketch was deleted.
    stale declared artifact"). The issue's alternative, making the event advisory, would rewrite
    the spec to match a bug. §12 and the IntegrityEvent list do not change. R9.12 gains two
    clarifying sentences (cycles 1 and 4).
-2. **`ArtifactOutcome` gains `stale: list[str]`**, the names of artifacts that were stale and
-   that the tool did not resolve. `check_artifacts` appends `art.name` in the existing
-   `if not resolved:` branch, next to the `stale_artifact` event, which stays. That one branch
-   covers both unresolved forms (no hook; hook exited 0 and staged nothing, so
-   `commit_generated` returned no sha). *Evidence:* the issue's scope note names
-   `ArtifactOutcome` as the place, and #107's decision 5 made it the outcome type.
+2. **`ArtifactOutcome` gains `stale: list[str]`**, the names of the artifacts for which this
+   check wrote a `stale_artifact` event. `check_artifacts` appends `art.name` at the
+   `self.ledger.event(..., "stale_artifact", art.name)` call in its `if not resolved:` branch,
+   and **only there**. The event stays. That branch covers both unresolved forms: no hook, or a
+   hook that exited 0 and staged nothing, so `commit_generated` returned no sha. After #99 that
+   branch also has an `artifact_stale_inherited` arm, for `run start` with an artifact outside
+   the run's reachable set. That arm does **not** add to `stale`. #99's
+   `test_run_start_reports_outside_stale_artifacts_once_as_inherited` already guards this: its
+   `run start` must succeed with two inherited stale artifacts. *Evidence:* the issue's scope note
+   names `ArtifactOutcome` as the place, and #107's decision 5 made it the outcome type. #99's
+   plan ("Interactions with other open plans") says the #110 gate "gates only what still emits
+   `stale_artifact`, the in-scope and touched artifacts".
    *Mechanism note:* the field has no default. `ArtifactOutcome` is built in exactly one
    place, the `return` at the end of `check_artifacts`, with keyword arguments
    (`grep -rn "ArtifactOutcome(" src/ tests/` → that line only), so pass
@@ -150,7 +164,19 @@ numbers on b487ce1. The sketch was deleted.
    creates the marker before `advance`. The marker is outside the repo, so it changes no tree
    hash and fires no `undeclared_file_touched`. The run-start test uses `check = "false"`. The
    plan is the file's existing `PLAN` (one refactor cycle on `backend`), which opens straight
-   into `AWAITING_REFACTOR`, so the first `advance` reaches `check_artifacts`.
+   into `AWAITING_REFACTOR`, so the first `advance` reaches `check_artifacts`. `spec`'s
+   producer, `backend`, is the plan's own project, so under #99's scoping `spec` is in scope at
+   `run start` and at every close. The fixtures mean the same before and after #99.
+10. **This plan lands after #99.** #99's merged plan scopes artifact checks to the run's
+    reachable projects and turns inherited staleness into `artifact_stale_inherited`. Its
+    cycle 2 and 3 tests declare an out-of-scope `check = "false"` artifact and need `run start`
+    to succeed. If this gate landed first, those `run start` calls would be refused before #99's
+    cycle 3 could exempt them, and #99's run could not proceed. Landed in the other order, #99's
+    tests still pass under this gate (decision 2). The one difference is the reply in its
+    cycle 2 "touched" case: `fix_regression` instead of `blocked`, and that test does not assert
+    the reply. The issue is marked blocked by #99 through GitHub's issue dependencies. The
+    Execution section checks the precondition. *Evidence:* #99's plan (its decisions 1–3, its
+    cycle 2 and 3 setups, and its "Interactions" section).
 
 ## Deliberate scope cuts (do not build)
 
@@ -173,6 +199,7 @@ refused run is visible in its envelope and in `tdd status`.
 | `check` fails, hook exits 0, nothing staged | `fix_regression`, `stale_artifacts: [name]` | refused, `reason: stale_artifact` | cycle 2 (same branch as cycle 4) |
 | hook exits non-zero | `fix_regression`, `artifact_failures` (unchanged) | refused, `reason: artifact_regenerate_failed` (unchanged) | existing #107 tests |
 | hook commits | `complete`, `regenerated` (unchanged) | run opens (unchanged) | existing #56 tests (decision 6) |
+| stays stale, outside the run's reachable set (#99) | not checked (unless the cycle touched its producer, then as row 1) | run opens, `artifact_stale_inherited` | #99's cycle 2 and 3 tests (decision 10) |
 
 ## Cycles
 
@@ -208,8 +235,8 @@ in this plan:
   -f {marker}"\n')`; `run start` (assert `ok`); `marker.touch()`; `adv = run_cli(repo,
   "advance")`. Single assertion:
   `(adv["next_action"]["verb"], adv["result"].get("stale_artifacts")) == ("fix_regression", ["spec"])`.
-- **Target:** `machine.py`: `ArtifactOutcome.stale` and `check_artifacts`'s
-  `if not resolved:` branch (decision 2). `advance.py::_handle_refactor`: the reply directly
+- **Target:** `machine.py`: `ArtifactOutcome.stale`, and the append at `check_artifacts`'s
+  `stale_artifact` event call, not at the `artifact_stale_inherited` arm (decision 2). `advance.py::_handle_refactor`: the reply directly
   after the `artifact_outcome.failed` reply (decision 3).
 - **Docs, in this cycle's GREEN:**
   - `docs/PRD.md` R9.12: after "blocks the close — this is one of the few hard gates (§12),
@@ -292,18 +319,21 @@ in this plan:
     Update the comment above `run start` to say the start-time check passes. Its assertion
     (`kinds == ["artifact_regenerate_failed"]`) is unchanged.
 - **Docs, in this cycle's GREEN:**
-  - `docs/PRD.md` R9.12: after the last sentence ("`run start` refuses when a regenerate hook
-    fails before the first cycle; the run row is ended with outcome `refused`."), add: "It
-    likewise refuses, with reason `stale_artifact`, when a declared artifact is stale and the
-    tool cannot resolve it before the first cycle; that run row is also ended `refused`."
-  - `CHANGELOG.md`, under `## [Unreleased]`, a `### Fixed` heading with one bullet:
+  - `docs/PRD.md` R9.12: directly after the sentence "`run start` refuses when a regenerate hook
+    fails before the first cycle; the run row is ended with outcome `refused`." (anchor on that
+    sentence; #99 adds other sentences to R9.12), add: "It likewise refuses, with reason
+    `stale_artifact`, when an artifact records `stale_artifact` before the first cycle; that run
+    row is also ended `refused`. An inherited artifact (`artifact_stale_inherited`) does not
+    refuse."
+  - `CHANGELOG.md`, under `## [Unreleased]`'s `### Fixed` heading (#99 creates it; create it if
+    it is absent), one bullet:
     "**An unresolved stale artifact now blocks the close, as PRD R9.12 specifies** (#110). An
     artifact whose `check` fails and that the tool cannot regenerate (no `regenerate` hook, or
     the hook commits nothing) used to record `stale_artifact` and let the cycle close. `tdd
     advance` now replies `fix_regression` with `result.stale_artifacts` naming it, and the
     cycle stays open until the check passes. `tdd run start` refuses with `reason:
     "stale_artifact"` and ends the run `refused`. An artifact the tool regenerates and
-    commits is unaffected."
+    commits is unaffected, and so is inherited staleness (`artifact_stale_inherited`, #99)."
 - **EXPECTED FAILURE:** `AssertionError: assert (True, False, None, None, None, None) ==
   (False, True, 'stale_artifact', ['spec'], 'refused', False)` (probed on main: `run start`
   succeeds, its result has neither key, a live run's `outcome` is NULL, and a live run's
@@ -327,6 +357,10 @@ does not stop the run: note it and go on. Any other failing check stops it.
 If the branch already exists, do not force-checkout and do not pick another name: check it out
 only if it carries this plan's commit and no unrelated work, otherwise stop and ask.
 
+**Precondition: #99 has landed.** Before `tdd run start`, `grep -n artifact_stale_inherited
+src/tddcli/machine.py` must print a line. If it prints nothing, #99 is not on `main` yet: do not
+start the run. Stop and say so (decision 10).
+
 **Referee.** Use the released `tdd` on `PATH`, never `uv run tdd` from this tree (the note at
 the top of `tdd.toml`). This plan changes no ledger table, so `SCHEMA_VERSION` does not move
 and no frozen referee is needed. This repo's own `tdd.toml` declares no `[artifact]`, so the
@@ -340,9 +374,13 @@ raise the PR — see Done-criteria below.
 
 - `tdd advance` is the only command that changes phase. Do not `git add` or `git commit` — the
   tool stages and commits, deriving the file set from the phase.
-- The baseline is captured at `run start` and subtracted from later verdicts. The suite is
-  green at the plan's base (verified in a fresh worktree: `722 passed`). Expect
-  `baselines: {tddcli: 0}` and no standing failures.
+- The baseline is captured at `run start` and subtracted from later verdicts. The suite was
+  green at 37accb5, in a fresh worktree (`722 passed`), and #99 adds tests of its own, so the
+  count will be higher. Expect `baselines: {tddcli: 0}` and no standing failures. Anything else
+  means the branch moved: stop and find out why.
+- #99's tests in `tests/test_artifact_regeneration.py` must stay green through every cycle
+  (decision 10). If one fails, the GREEN that preceded it added an inherited artifact to
+  `stale`. Fix that GREEN, never #99's test.
 - Verbs this plan will hit:
   - `write_test`, `write_implementation`, `refactor_or_advance`.
   - `run_sensitivity_check` → `tdd sensitivity begin|check|end`: the pins (cycles 2 and 3), and
@@ -358,8 +396,8 @@ raise the PR — see Done-criteria below.
 
 **Minimal GREEN, per cycle: add this and nothing earlier.**
 
-- cycle 1 adds `ArtifactOutcome.stale`, the `stale_names.append(art.name)` (or equivalent) in
-  `check_artifacts`'s `if not resolved:` branch, the `fix_regression` reply in
+- cycle 1 adds `ArtifactOutcome.stale`, a `stale_names.append(art.name)` (or equivalent) beside
+  the `stale_artifact` event call and nowhere else (not in #99's inherited arm), the `fix_regression` reply in
   `_handle_refactor` after the `failed` reply, and the two doc edits. It does not touch
   `cmd_run_start`, and it does not move `regenerated.append` (decision 7).
 - cycles 2 and 3 add no production code.
