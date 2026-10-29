@@ -207,6 +207,8 @@ def cmd_init(args) -> Envelope:
                 settings, (json.dumps(chosen.settings, indent=2) + "\n").encode()
             )
             result["harness"] = {"name": chosen.name, "settings": "written"}
+        elif harness.wires(chosen, settings.read_text(errors="replace")):
+            result["harness"] = {"name": chosen.name, "settings": "wired"}
         else:
             # Never merged into: it is the user's file, and may already hold hooks.
             result["harness"] = {

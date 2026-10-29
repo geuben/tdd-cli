@@ -7,6 +7,7 @@ place, so a project commits no path into somebody's site-packages.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 
 
@@ -52,3 +53,33 @@ HARNESSES: dict[str, Harness] = {
         },
     ),
 }
+
+
+def wires(h: Harness, text: str) -> bool:
+    """Whether settings `text` already runs every hook `h.settings` wires.
+
+    For each event, some group must carry a hook with the stanza's exact command.
+    Text that is not a JSON object wires nothing; it is never an error here.
+    """
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return False
+    hooks = data.get("hooks") if isinstance(data, dict) else None
+    if not isinstance(hooks, dict):
+        return False
+    for event, groups in h.settings["hooks"].items():
+        found = hooks.get(event)
+        if not isinstance(found, list):
+            return False
+        wanted = {hook["command"] for group in groups for hook in group["hooks"]}
+        present = {
+            hook.get("command")
+            for group in found
+            if isinstance(group, dict) and isinstance(group.get("hooks"), list)
+            for hook in group["hooks"]
+            if isinstance(hook, dict)
+        }
+        if not wanted <= present:
+            return False
+    return True
