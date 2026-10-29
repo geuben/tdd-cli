@@ -6,9 +6,11 @@ from __future__ import annotations
 import json
 import textwrap
 
-from tddcli import adapters
+from conftest import git, run_cli, write_plan
+from tddcli import adapters, gitutil
 from tddcli import config as config_mod
 from tddcli.ledger import Ledger
+from test_baseline_integrity import PLAN, TEST_ADD
 
 
 def _at(minute):
@@ -128,3 +130,39 @@ def test_pytest_reports_each_failure_with_the_phase_that_failed(tmp_path):
         prefix + "test_fails_in_call_and_teardown": ("call", "ValueError: call boom", True),
         prefix + "test_passes_unexpectedly": ("call", "[XPASS(strict)]", True),
     }
+
+
+SMOKE_BROKE = 'def test_smoke():\n    assert 1 == 2, "smoke broke"\n'
+
+
+def _invocations(repo, phase):
+    """Every invocation of the repo's latest run in `phase`, in order."""
+    ledger = Ledger(gitutil.repo_identity(repo))
+    run = ledger.latest_run(str(repo))
+    rows = [inv for c in ledger.cycles(run["id"]) for inv in ledger.invocations(c["id"], phase)]
+    return ledger, rows
+
+
+def test_a_green_run_records_why_its_other_failures_failed(repo):
+    (repo / "backend" / "tests" / "test_flaky.py").write_text(
+        "def test_flaky():\n    assert False\n"
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a baseline failure")
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    assert run_cli(repo, "run", "start", "--plan", plan)["ok"]
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    raise NotImplementedError\n"
+    )
+    run_cli(repo, "advance")
+    (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    (repo / "backend" / "tests" / "test_smoke.py").write_text(SMOKE_BROKE)
+    run_cli(repo, "advance")
+
+    ledger, rows = _invocations(repo, "AWAITING_IMPL")
+    inv = next(r for r in rows if json.loads(r["other_failures"]))
+    assert [
+        (r["test_id"], r["phase"], r["message"]) for r in ledger.failure_details(inv["id"])
+    ] == [("backend::tests/test_smoke.py::test_smoke", "call", "AssertionError: smoke broke")]
