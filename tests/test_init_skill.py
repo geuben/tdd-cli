@@ -149,3 +149,26 @@ def test_init_skill_writes_settings_that_wire_both_hooks(bare_repo, packaged):
         json.loads(read(bare_repo, SETTINGS) or "null"),
         out["result"].get("harness", {}).get("settings"),
     ) == (EXPECTED_SETTINGS, "written")
+
+
+def test_an_existing_settings_file_is_left_alone_and_the_stanza_handed_over(
+    tmp_path, ledger_home, packaged
+):
+    seen = []
+    for i, original in enumerate(('{"permissions": {"allow": ["Bash(ls:*)"]}}\n', "{not json\n")):
+        repo = tmp_path / f"ws{i}"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / ".claude").mkdir()
+        (repo / SETTINGS).write_text(original)
+        out = run_cli(repo, "init", "--skill", "claude-code")
+        h = out["result"].get("harness", {})
+        seen.append(
+            (
+                read(repo, SETTINGS) == original,
+                h.get("settings"),
+                h.get("settings_stanza"),
+                "settings_stanza" in out["next_action"]["detail"],
+            )
+        )
+    assert seen == [(True, "not_written", EXPECTED_SETTINGS, True)] * 2
