@@ -65,7 +65,7 @@ def _failure_detail(test: dict) -> FailureDetail:
     else:
         lines = [line for line in longrepr.splitlines() if line.strip()]
         message = lines[-1] if lines else ""
-    return FailureDetail(phase=phase, message=message, detail=longrepr)
+    return FailureDetail(phase=phase, message=message, detail=clip_failure(longrepr))
 
 
 def _strip_xdist_group(nodeid: str) -> str:
