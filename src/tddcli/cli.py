@@ -206,7 +206,19 @@ def cmd_init(args) -> Envelope:
             actor.current().write_file(
                 settings, (json.dumps(chosen.settings, indent=2) + "\n").encode()
             )
-        result["harness"] = {"name": chosen.name, "settings": "written"}
+            result["harness"] = {"name": chosen.name, "settings": "written"}
+        else:
+            # Never merged into: it is the user's file, and may already hold hooks.
+            result["harness"] = {
+                "name": chosen.name,
+                "settings": "not_written",
+                "settings_stanza": chosen.settings,
+            }
+            detail += (
+                f" {chosen.settings_path} already exists and does not wire the tdd hooks:"
+                " merge result.harness.settings_stanza into it. Without the Stop hook"
+                " nothing stops the agent ending its turn mid-run."
+            )
     return Envelope(result=result, next_action=NextAction(Verb.CONFIRM_CYCLE_APPLICABLE, detail))
 
 
