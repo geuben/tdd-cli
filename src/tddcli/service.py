@@ -163,7 +163,8 @@ class _Session:
             return {"ok": False, "error": f"{method}: {exc}"}
 
     def _foreign(self, arguments: dict) -> dict | None:
-        """A refusal when the call names a run, cycle or contract of another source.
+        """A refusal when the call names a run, cycle, contract or invocation of another
+        source.
 
         One that does not exist is refused the same way, so that a guest cannot learn
         which ids exist in other sources by probing for them.
@@ -172,6 +173,7 @@ class _Session:
             ("run_id", "run", self.ledger.run_source),
             ("cycle_id", "cycle", self._cycle_source),
             ("contract_id", "plan contract", self._contract_source),
+            ("invocation_id", "invocation", self._invocation_source),
         )
         for param, noun, source_of in owners:
             value = arguments.get(param)
@@ -214,6 +216,10 @@ class _Session:
     def _cycle_source(self, cycle_id: int) -> str | None:
         cycle = self.ledger.cycle(cycle_id)
         return None if cycle is None else self.ledger.run_source(cycle["run_id"])
+
+    def _invocation_source(self, invocation_id: int) -> str | None:
+        invocation = self.ledger.invocation(invocation_id)
+        return None if invocation is None else self.ledger.run_source(invocation["run_id"])
 
     def _contract_source(self, contract_id: int) -> str | None:
         contract = self.ledger.contract(contract_id)

@@ -425,7 +425,8 @@ LOCAL_SOURCE = "local"
 #
 # A ledger service exposes `Ledger` methods to guests by name, so every public method
 # is classified here, exactly once. A guest method that touches one run's rows names
-# that run by a parameter called exactly `run_id`, `cycle_id` or `contract_id`, which
+# that run by a parameter called exactly `run_id`, `cycle_id`, `contract_id` or
+# `invocation_id`, which
 # the service checks belongs to the guest's source; one that finds rows by worktree,
 # project or cache key is SOURCE_ROOTED, and filters by the ledger's own source.
 
@@ -461,8 +462,10 @@ GUEST_READS = frozenset(
         "cycles",
         "event_counts",
         "event_details",
+        "failure_details",
         "get_meta",
         "interventions",
+        "invocation",
         "invocations",
         "last_cycle_event_detail",
         "last_gate",
@@ -533,7 +536,6 @@ HOST_ONLY = frozenset(
         "active_claim",
         "all",
         "close",
-        "failure_details",
         "insert",
         "one",
         "run_source",
@@ -1358,6 +1360,9 @@ class Ledger:
                 detail=detail["detail"],
             )
         return invocation_id
+
+    def invocation(self, invocation_id: int) -> sqlite3.Row | None:
+        return self.one("SELECT * FROM invocation WHERE id = ?", (invocation_id,))
 
     def failure_details(self, invocation_id: int) -> list[sqlite3.Row]:
         """Why each of an invocation's other failures failed, ordered by test id."""
