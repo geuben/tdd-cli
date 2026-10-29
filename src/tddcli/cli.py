@@ -172,6 +172,14 @@ def _project_key(name: str) -> str:
 
 def cmd_init(args) -> Envelope:
     worktree = _worktree()
+    chosen = None
+    if args.skill:
+        chosen = harness.HARNESSES.get(args.skill)
+        if chosen is None:
+            return failure(
+                f"unknown harness {args.skill!r}; known: {', '.join(sorted(harness.HARNESSES))}",
+                reason="unknown_harness",
+            )
     path = worktree / config_mod.CONFIG_NAME
     if path.exists() and not args.force:
         return failure(f"{path} already exists; pass --force to overwrite")
@@ -208,8 +216,8 @@ def cmd_init(args) -> Envelope:
             "",
         ]
     actor.current().write_file(path, "\n".join(lines).encode())
-    if args.skill:
-        for scaffold in harness.HARNESSES[args.skill].files:
+    if chosen is not None:
+        for scaffold in chosen.files:
             actor.current().write_file(
                 worktree / scaffold.dest, docs_mod.shipped(scaffold.source).read_bytes()
             )
