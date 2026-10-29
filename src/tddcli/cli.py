@@ -180,6 +180,13 @@ def cmd_init(args) -> Envelope:
                 f"unknown harness {args.skill!r}; known: {', '.join(sorted(harness.HARNESSES))}",
                 reason="unknown_harness",
             )
+        for scaffold in chosen.files:
+            if not docs_mod.shipped(scaffold.source).is_file():
+                return failure(
+                    f"{scaffold.source} is missing from this installation of tdd-cli;"
+                    " nothing was written. Please report the packaging bug.",
+                    reason="missing_from_install",
+                )
     path = worktree / config_mod.CONFIG_NAME
     if path.exists() and not args.force:
         return failure(f"{path} already exists; pass --force to overwrite")
