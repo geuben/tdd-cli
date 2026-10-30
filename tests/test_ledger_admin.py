@@ -16,6 +16,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import pytest
+
 from conftest import run_cli
 from tddcli import service, wire
 
@@ -129,3 +131,22 @@ def test_ledger_serve_runs_until_terminated(tmp_path):
             proc.kill()
         shutil.rmtree(sockets, ignore_errors=True)
     assert (answered, code) == (True, 0)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root connects to a mode-000 socket")
+def test_a_forbidden_admin_socket_with_no_report_socket_is_unreachable(
+    repo, ledger_service, tmp_path
+):
+    # The same uid, refused on connect as another account is on a mode-600 socket.
+    (ledger_service.dir / "admin.sock").chmod(0)
+
+    outs = [
+        run_cli(repo, "ledger", *v)
+        for v in (
+            ("metrics",),
+            ("fleet",),
+            ("log", "--repo", "somerepo", "--run", "1", "--out", str(tmp_path / "log.md")),
+        )
+    ]
+
+    assert [o["result"].get("reason") for o in outs] == ["ledger_unreachable"] * 3
