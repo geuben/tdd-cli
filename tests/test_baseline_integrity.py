@@ -4,6 +4,7 @@ merely *looks* clean turns every pre-existing failure into a permanent regressio
 
 from __future__ import annotations
 
+import shutil
 import threading
 
 from conftest import git, run_cli, write_plan
@@ -648,3 +649,32 @@ def test_a_project_with_no_tests_is_not_refused_when_its_suite_writes_no_report(
     out = run_cli(repo, "run", "start", "--plan", plan)
 
     assert (out["ok"], out["result"]["baselines"]) == (True, {"backend": 0})
+
+
+def test_run_start_refuses_a_baseline_whose_suite_produced_no_report(repo, tmp_path):
+    """Issue #99 — a suite whose report cannot be read has produced no baseline at all,
+    whatever its failure ratio, and on either probe path."""
+    set_test_command(repo, NO_REPORT)
+    plan = write_plan(repo, PLAN)
+    seen = {}
+    for jobs in ("1", "2"):
+        r = shutil.copytree(repo, tmp_path / f"jobs{jobs}")
+        run_cli(r, "plan", "register", plan)
+        out = run_cli(
+            r, "run", "start", "--plan", plan, "--baseline-jobs", jobs, "--accept-baseline"
+        )
+        projects = out["result"].get("projects", [])
+        seen[jobs] = (
+            out["ok"],
+            out["result"].get("reason"),
+            [
+                (p.get("project"), str(p.get("defect", "")).startswith(NO_REPORT_DEFECT))
+                for p in projects
+            ],
+            "backend: the baseline run produced no report the tool could read — " + NO_REPORT_DEFECT
+            in (out.get("error") or ""),
+        )
+
+    assert seen == {
+        j: (False, "baseline_unreadable", [("backend", True)], True) for j in ("1", "2")
+    }
