@@ -39,6 +39,10 @@ class ExecAdapter(Adapter):
     def stub_hint(self) -> str:
         return "a script body that exits non-zero (e.g. `exit 1` with a message explaining what is missing)"
 
+    def target_path(self, native: str) -> str | None:
+        """An exec id is its script's path relative to the project root (R7.14)."""
+        return native
+
     # ------------------------------------------------------------------
     # Command resolution
     # ------------------------------------------------------------------
