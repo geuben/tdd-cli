@@ -431,8 +431,9 @@ def cmd_doctor(args) -> Envelope:
     check("executor identity", True, ex_detail)
 
     # Issue #99 — a notice, never a blocker: a VIRTUAL_ENV leaked from the launching
-    # harness makes a runner that honours it use another environment's packages.
-    venv = os.environ.get("VIRTUAL_ENV")
+    # harness makes a runner that honours it use another environment's packages. The
+    # agent's environment, not a split runner's: that is the one the suites run with.
+    venv = actor.current().environ().get("VIRTUAL_ENV")
     if venv:
         try:
             rel = Path(venv).resolve().relative_to(worktree.resolve())

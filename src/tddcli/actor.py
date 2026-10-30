@@ -92,6 +92,10 @@ class LocalActor:
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.symlink_to(src)
 
+    def environ(self) -> dict[str, str]:
+        """The environment the agent's commands run with."""
+        return self._env({}) or dict(os.environ)
+
     @staticmethod
     def _env(extra: dict[str, str] | None) -> dict[str, str] | None:
         """`extra` is laid over the inherited environment, never in place of it."""
