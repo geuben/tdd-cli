@@ -7,7 +7,7 @@ import re
 
 import pytest
 
-from conftest import run_cli, write_plan
+from conftest import run_cli, run_cli_text, write_plan
 from tddcli import gitutil
 from tddcli.contract import ContractError, parse
 from tddcli.ledger import Ledger
@@ -150,3 +150,27 @@ def test_malformed_annotation_key_entries_hard_fail():
     for keys, message in REJECTED:
         with pytest.raises(ContractError, match=re.escape(message)):
             parse(_plan(keys), "p.md")
+
+
+def test_the_friction_log_warns_of_a_scoped_key_no_delivered_cycle_carried(repo):
+    plan = write_plan(
+        repo,
+        _plan(
+            '["plan_wide", {name: delivered_k, applies_to: [1]},'
+            " {name: skipped_k, applies_to: [2]}]"
+        ),
+    )
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+    (repo / "backend" / "app" / "moved.py").write_text("VALUE = 1\n")
+    run_cli(repo, "annotate", "--key", "plan_wide", "--value", "x")
+    run_cli(repo, "annotate", "--key", "delivered_k", "--value", "y")
+    run_cli(repo, "advance")
+    run_cli(repo, "cycle", "skip", "--reason", "not applicable")
+
+    lines = run_cli_text(repo, "log", "render").splitlines()
+    at = lines.index("- Never reached: none")
+    assert lines[at + 1 : at + 3] == [
+        "- **Declared check never ran:** `skipped_k` (applies to cycles 2)",
+        "- Human interventions: 0",
+    ]
