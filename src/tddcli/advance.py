@@ -525,6 +525,8 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
         and prior[-1]["tree_hash"] == engine.tree_hash(json.loads(cycle["projects"]))
     )
     outcome = engine.sweep(cycle, touched, skip_own=skip_own)
+    if outcome.failures and not outcome.unbaselined:
+        outcome.failures, _ = engine.rerun_untouched(cycle, "CLOSE_SWEEP", outcome.failures)
 
     if not outcome.ok:
         if outcome.unbaselined:
