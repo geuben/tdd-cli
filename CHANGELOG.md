@@ -6,8 +6,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`tdd init --skill claude-code`** (#114). Scaffolds the agent harness from the copies
+  installed with the binary, so it matches the `tdd` that drives it:
+  `.claude/skills/tdd-drive/SKILL.md`, `.claude/hooks/tdd_stop_hook.py` and
+  `.claude/hooks/tdd_bash_hook.py`. `.claude/settings.json` is written, wiring both hooks,
+  only when it does not exist; an existing one is never edited, and is reported as
+  `harness.settings: "wired"` or `"not_written"` (with the stanza in
+  `result.harness.settings_stanza` to merge by hand). An existing `tdd.toml` is kept
+  (`config: "kept"`) unless `--force`. A harness file that differs from the shipped copy
+  refuses the command before anything is written (`harness_files_differ`, naming it in
+  `result.differs`); `--update-skill` replaces it, and `--force` does not. Other refusals:
+  `unknown_harness`, `missing_from_install` (a packaging fault) and `skill_required`
+  (`--update-skill` without `--skill`).
+- The wheel now ships `examples/claude-code-hooks/stop_hook.py` and `bash_hook.py`, which
+  `init --skill` copies out.
+- **`tdd doctor`: `driving skill version`.** When `.claude/skills/tdd-drive/SKILL.md`
+  exists, doctor compares the `metadata.verb_set_version` and `envelope_version` its
+  front-matter declares (the shipped skill now declares both) with what the binary emits.
+  A mismatch fails and names `tdd init --skill claude-code --update-skill`; a skill that
+  declares nothing passes as a notice.
+- **A bind-only socket, and `tdd ledger unbind`** (#179). An optional `[service]
+  bind_socket`, with `bind_group`, is a second operator socket, mode 660 and owned by that
+  group, that answers `bind` and `unbind` for existing sources and refuses everything else
+  with `method_not_allowed`. An orchestrator that starts each guest can now say which model
+  it runs without the admin socket. `tdd ledger bind` and `unbind` take `--socket`, and
+  without it fall back to the bind socket when the admin socket cannot be opened.
+  `tdd ledger unbind <source>` clears a binding, so the source's next runs record the
+  guest's claim again instead of the previous run's model.
+
 ### Fixed
 
+- **`tdd ledger bind --executor ""` bound an empty model** (#179), which every later run
+  recorded as operator-attested. An empty or blank executor is now refused with
+  `reason: "bad_executor"`.
 - **A collection probe that fails silently is reported, not crashed on** (#184). `tdd doctor`
   raised an `AssertionError` when a `collectable` probe failed with nothing on stdout (a
   command that is not found writes to stderr only); every adapter's probe now falls back to

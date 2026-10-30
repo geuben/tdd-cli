@@ -9,6 +9,10 @@ The other half lives in the harness, in two parts:
 - **Hooks** that enforce stop conditions the skill must never contain. Ready-made
   Claude Code hooks live in [`examples/claude-code-hooks/`](../examples/claude-code-hooks/).
 
+For Claude Code, `tdd init --skill claude-code` writes both the skill and the hooks from
+the copies installed with the binary, and `tdd doctor` checks the skill's
+`metadata.verb_set_version` (and `envelope_version`) against what the binary emits.
+
 This document is about writing the skill. A complete, runnable Claude Code skill built
 from it lives in [`examples/skills/tdd-drive/`](../examples/skills/tdd-drive/).
 
