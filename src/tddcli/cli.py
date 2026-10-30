@@ -1781,9 +1781,23 @@ def _ledger_sources(args, cfg) -> Envelope:
 
 
 def _bind_call(args, cfg, method: str, *call_args):
-    """A `bind` or `unbind`, on the socket the operator named, or else the admin socket."""
-    socket_path = Path(args.socket) if args.socket else cfg.admin_socket
-    return wire.call(socket_path, method, *call_args)
+    """A `bind` or `unbind`, on the socket the operator named, or else the admin socket.
+
+    An admin socket this account cannot open falls back to the bind socket, when there
+    is one. Only a failed connect does: a request the admin socket took is never resent.
+    """
+    if args.socket:
+        return wire.call(Path(args.socket), method, *call_args)
+    try:
+        conn = wire.Connection(cfg.admin_socket)
+    except wire.LedgerUnreachable:
+        if cfg.bind_socket is None:
+            raise
+        conn = wire.Connection(cfg.bind_socket)
+    try:
+        return conn.request(method, *call_args)
+    finally:
+        conn.close()
 
 
 def _ledger_bind(args, cfg) -> Envelope:
