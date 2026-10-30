@@ -1474,6 +1474,36 @@ def cmd_target(args) -> Envelope:
     )
 
 
+def cmd_invocation_show(args) -> Envelope:
+    """One suite invocation's recorded failures (#105), looked up across the whole
+    repository's ledger: a finished run's invocations are what an audit asks about."""
+    worktree, cfg, ledger, run = _context(require_run=False)
+    invocation = ledger.invocation(args.id)
+    if invocation is None:
+        return failure(
+            f"no invocation {args.id} in this repository's ledger", reason="unknown_invocation"
+        )
+    return Envelope(
+        result={
+            "invocation": invocation["id"],
+            "phase": invocation["phase_at"],
+            "project": invocation["project"],
+            "failures": [
+                {
+                    "test": d["test_id"],
+                    "phase": d["phase"],
+                    "message": d["message"],
+                    "detail": d["detail"],
+                }
+                for d in ledger.failure_details(invocation["id"])
+            ],
+        },
+        next_action=NextAction(
+            Verb.REFACTOR_OR_ADVANCE, "Read-only. Resume the phase in progress."
+        ),
+    )
+
+
 def cmd_log_render(args) -> Envelope:
     worktree, cfg, ledger, run = _context(require_run=False)
     if run is None:
@@ -1932,6 +1962,12 @@ def build_parser() -> argparse.ArgumentParser:
         " worktree root, not the current directory",
     )
     s.set_defaults(fn=cmd_log_render)
+
+    inv = sub.add_parser("invocation", help="one suite invocation's recorded failures")
+    inv = inv.add_subparsers(dest="invocation_command", required=True)
+    s = inv.add_parser("show")
+    s.add_argument("id", type=int)
+    s.set_defaults(fn=cmd_invocation_show)
 
     s = sub.add_parser("progress", help="human-readable plan progress")
     s.add_argument("--json", action="store_true", help="machine output instead")

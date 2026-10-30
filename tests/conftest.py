@@ -37,6 +37,16 @@ def _pinned_executor_identity(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _owner_writable_umask():
+    """The runner and service configs the fixtures write must pass the trust check
+    (not group- or world-writable). A split-mode runner may run the suite under a
+    group-writable umask; pin one that is not, whoever runs the suite."""
+    previous = os.umask(0o022)
+    yield
+    os.umask(previous)
+
+
+@pytest.fixture(autouse=True)
 def _single_user_mode(tmp_path, monkeypatch):
     """A developer machine may itself be split (`/etc/tdd-cli/runner.toml`); the suite
     must never pick that up and start forwarding to a runner."""

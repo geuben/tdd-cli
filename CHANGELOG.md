@@ -6,6 +6,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Suite failure details are kept** (#105). Every failing test an invocation records now
+  keeps why it failed: the phase (pytest: setup, call or teardown), the first line of the
+  message, and the clipped failure text, for every adapter. They live in a new
+  `failure_detail` table, one row per id in the invocation's `other_failures`. The friction
+  log lists them per invocation, and `tdd invocation show <id>` prints them. A socket-mode
+  host must run this version before its guests do: a guest's `record_invocation` now
+  carries the details, which an older service refuses.
+
 ## [0.15.0] - 2026-10-14
 
 ### Added

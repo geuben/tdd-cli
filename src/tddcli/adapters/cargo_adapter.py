@@ -67,6 +67,7 @@ from .base import (
     NOT_COLLECTED,
     PASSED,
     Adapter,
+    FailureDetail,
     GateResult,
     Verdict,
     clip_failure,
@@ -115,6 +116,19 @@ def _target_of_header(match: re.Match) -> str | None:
         # with a `name` of its own.
         return _artifact_target(artifact) or Path(path).stem
     return None  # examples/benches: not test targets
+
+
+def _failure_detail(text: str) -> FailureDetail:
+    """A failure block, with its panic or assertion line as the message."""
+    lines = text.splitlines()
+    return FailureDetail(
+        phase=None,
+        message=next(
+            (ln for ln in lines if "panicked" in ln or "assertion" in ln),
+            next((ln for ln in lines if ln.strip()), ""),
+        ),
+        detail=text,
+    )
 
 
 class CargoAdapter(Adapter):
@@ -436,6 +450,11 @@ class CargoAdapter(Adapter):
             # else: filter matched nothing → NOT_FOUND; empty full run is clean
             return verdict
 
+        for tid in failed:
+            verdict.failure_details[self.qualify(tid)] = _failure_detail(
+                failures.get(tid, "test failed")
+            )
+
         if target is None or native is None:
             return verdict
 
@@ -443,10 +462,7 @@ class CargoAdapter(Adapter):
             verdict.target_outcome = PASSED
         elif target in verdict.failed:
             verdict.target_outcome = FAILED
-            text = failures.get(native, "test failed")
-            verdict.target_failure = text
-            verdict.target_evidence = next(
-                (ln for ln in text.splitlines() if "panicked" in ln or "assertion" in ln),
-                next((ln for ln in text.splitlines() if ln.strip()), ""),
-            )
+            detail = _failure_detail(failures.get(native, "test failed"))
+            verdict.target_failure = detail.detail
+            verdict.target_evidence = detail.message
         return verdict

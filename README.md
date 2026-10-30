@@ -326,7 +326,8 @@ cycle's RED path empirically, assigns cycle kinds, and authors the contract — 
 back to the **planning** process. It reports plan fidelity (declared vs delivered vs
 skipped vs never-reached cycles, human interventions) and, per cycle: the target, suite
 runs by phase, the first-run outcome against expectation, sensitivity checks, commits,
-and integrity events. A `## Time` section says where the run's time went: the wall clock,
+and integrity events, and the failures each suite invocation saw, with the phase that
+failed and the first line of its message. A `## Time` section says where the run's time went: the wall clock,
 suite time and its share, per phase and per cycle.
 
 Every observable fact in it is projected from recorded events. The agent that did the
@@ -493,6 +494,7 @@ and is never reclassified as a pin.
 | `tdd resume [--unblock --note]` | reconstruct position; human intervention |
 | `tdd run abandon --reason <text> [--run <id>]` | end a run that will not be finished; human only |
 | `tdd log render [--out]` | project the ledger into a friction log |
+| `tdd invocation show <id>` | an invocation's recorded failures: phase, message, detail |
 | `tdd metrics` | fidelity, attempts, violations, interventions, time |
 | `tdd fleet [--json]` | all active runs across every worktree; read-only |
 

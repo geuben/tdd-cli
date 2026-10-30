@@ -13,6 +13,7 @@ in advance, never inferred from the outcome.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import time
 from dataclasses import dataclass, field
@@ -36,6 +37,12 @@ SKIPPED = "SKIPPED"
 #: A refactor cycle has no test of its own, so it opens straight into the refactor
 #: phase: the existing suite plus the close sweep are its only guard.
 OPENING_PHASE = {PIN: AWAITING_PIN, REFACTOR: AWAITING_REFACTOR}
+
+
+def _failure_rows(verdict, ids) -> dict[str, dict]:
+    """The verdict's failure details for `ids`, as plain dicts: they cross the ledger
+    socket as JSON, and dataclasses do not."""
+    return {tid: dataclasses.asdict(d) for tid, d in verdict.failure_details.items() if tid in ids}
 
 
 @dataclass
@@ -252,6 +259,7 @@ class Engine:
                 duration_ms=verdict.duration_ms,
                 retried=bool(retried),
                 tree_hash=tree,
+                failures=_failure_rows(verdict, other),
             )
             if verdict.error:
                 self.ledger.event(self.run["id"], cycle_row["id"], "tooling_defect", verdict.error)
@@ -381,6 +389,7 @@ class Engine:
                 other_failures=verdict.failed,
                 duration_ms=verdict.duration_ms,
                 tree_hash=self.tree_hash([name]),
+                failures=_failure_rows(verdict, verdict.failed),
             )
         return SweepOutcome(
             failures=failures, gates=gates, unbaselined=unbaselined, unobserved=unobserved

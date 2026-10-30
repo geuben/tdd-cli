@@ -69,6 +69,7 @@ ARGV = {
     "sensitivity": ["sensitivity", "begin"],
     "target": ["target", "x"],
     "log": ["log", "render"],
+    "invocation": ["invocation", "show", "1"],
     "runner": ["runner", "import", "x"],
     "ledger": ["ledger", "sources"],
 }
