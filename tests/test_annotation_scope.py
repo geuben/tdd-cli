@@ -6,6 +6,7 @@ import json
 
 from conftest import run_cli, write_plan
 from tddcli import gitutil
+from tddcli.contract import parse
 from tddcli.ledger import Ledger
 
 TWO_REFACTOR = """---
@@ -47,4 +48,34 @@ def test_a_contract_stored_before_scoping_still_requires_every_key_at_close(repo
     assert (out["next_action"]["verb"], out["result"]["missing_annotations"]) == (
         "annotate_cycle",
         ["k"],
+    )
+
+
+RESOLVED = """---
+cycles:
+  - n: 1
+    project: backend
+    refactor_cycle: true
+  - n: 2
+    project: frontend
+    refactor_cycle: true
+  - n: 3
+    projects: [backend, frontend]
+    contract_cycle: true
+    tests: ["backend::tests/test_a.py::test_a", "frontend::a.test.ts > a"]
+annotation_keys:
+  - plan_wide
+  - {name: a, applies_to: [2, 3]}
+  - {name: b, applies_to: 1}
+  - {name: f, projects: frontend}
+  - {name: g, projects: [backend]}
+---
+"""
+
+
+def test_annotation_keys_resolve_onto_the_cycles_they_apply_to():
+    contract = parse(RESOLVED, "p.md")
+    assert (contract.annotation_keys, [c.annotation_keys for c in contract.cycles]) == (
+        ["plan_wide", "a", "b", "f", "g"],
+        [["plan_wide", "b", "g"], ["plan_wide", "a", "f"], ["plan_wide", "a", "f", "g"]],
     )
