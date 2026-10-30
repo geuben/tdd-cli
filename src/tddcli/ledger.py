@@ -678,7 +678,7 @@ class Ledger:
     def __init__(
         self, repo_path: Path, *, path: Path | None = None, source: str | None = LOCAL_SOURCE
     ):
-        self.repo_path = repo_path
+        self.repo_path: Path | None = repo_path
         # The source this ledger reads and writes as. None is the host's unscoped view
         # of every source, built only by the ledger service and by tests.
         self.source = source
@@ -771,9 +771,11 @@ class Ledger:
     def insert(self, table: str, **cols) -> int:
         keys = ", ".join(cols)
         marks = ", ".join("?" for _ in cols)
-        return self._write(
+        rowid = self._write(
             f"INSERT INTO {table} ({keys}) VALUES ({marks})", tuple(cols.values())
         ).lastrowid
+        assert rowid is not None  # set by every successful INSERT
+        return rowid
 
     def one(self, sql: str, params: tuple = ()) -> sqlite3.Row | None:
         return self.db.execute(sql, params).fetchone()
@@ -855,7 +857,8 @@ class Ledger:
         """
         # Excludes other sources' runs rather than joining on this one's, so that an
         # invocation is never dropped for want of a run row it can be joined to.
-        scope, extra = ("", ())
+        scope = ""
+        extra: tuple[str, ...] = ()
         if self.source is not None:
             scope = " AND run_id NOT IN (SELECT id FROM run WHERE source != ?)"
             extra = (self.source,)
@@ -1154,6 +1157,7 @@ class Ledger:
     ) -> None:
         """End the run as abandoned, record who did it, and free its worktree's claims."""
         run = self.run(run_id)
+        assert run is not None
         self.update("run", run_id, ended_at=at, outcome="abandoned")
         self.insert(
             "abandonment",
