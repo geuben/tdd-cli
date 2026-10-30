@@ -56,13 +56,15 @@ def classify(
     declared: DeclaredCycle | None,
     excluded: set[str],
     ancillary: set[str] | None = None,
+    ignored: set[str] | None = None,
 ) -> Classification:
     out = Classification()
     stub_set = set(declared.stub_expected) if declared else set()
     roots = {config.project(p).root for p in cycle_projects}
 
     for rel in sorted(changed):
-        if config.is_ignored(rel):  # build output is never authored
+        # build output is never authored, whether or not git tracks it (#98)
+        if config.is_ignored(rel) or rel in (ignored or set()):
             out.ignored.append(rel)
             continue
         if rel in excluded:
