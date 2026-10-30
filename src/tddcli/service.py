@@ -347,6 +347,7 @@ class Service:
     def unbind(self, name: str) -> None:
         """Clear the source's binding: its next runs record the guest's own claim."""
         self.executors[name] = None
+        self._save()
 
     def take_lease(self, holder: _Session, conn: socket.socket) -> int:
         """Count one more suite running on this host; the worker count it should use.
