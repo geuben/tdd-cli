@@ -11,6 +11,7 @@ import contextlib
 import grp
 import os
 import shutil
+import stat
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -112,3 +113,26 @@ def test_the_bind_socket_keeps_the_admin_refusals(bind_service):
         answer(b, "bind", "vm-1", ""),
     ]
     assert answers == ["unknown_source", "unknown_source", "bad_executor"]
+
+
+def other_group() -> str:
+    """A group this account is in, other than the one a new file in /tmp is given."""
+    scratch = Path(tempfile.mkdtemp(dir="/tmp", prefix="tdd-"))
+    try:
+        probe = scratch / "probe"
+        probe.touch()
+        default = probe.stat().st_gid
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    for gid in sorted(set(os.getgroups()) | {os.getegid()}):
+        if gid != default:
+            return grp.getgrgid(gid).gr_name
+    pytest.skip("needs a group other than the default for new files in /tmp")
+
+
+def test_the_bind_socket_belongs_to_its_group(tmp_path, monkeypatch):
+    group = other_group()
+    with started_bind_service(tmp_path, monkeypatch, group) as svc:
+        st = svc.bind_socket.stat()
+
+    assert (stat.S_IMODE(st.st_mode), st.st_gid) == (0o660, grp.getgrnam(group).gr_gid)
