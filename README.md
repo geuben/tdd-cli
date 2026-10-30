@@ -494,6 +494,7 @@ and is never reclassified as a pin.
 | `tdd resume [--unblock --note]` | reconstruct position; human intervention |
 | `tdd run abandon --reason <text> [--run <id>]` | end a run that will not be finished; human only |
 | `tdd log render [--out]` | project the ledger into a friction log |
+| `tdd invocation show <id>` | an invocation's recorded failures: phase, message, detail |
 | `tdd metrics` | fidelity, attempts, violations, interventions, time |
 | `tdd fleet [--json]` | all active runs across every worktree; read-only |
 

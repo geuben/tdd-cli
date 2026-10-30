@@ -594,6 +594,7 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
 | Command | Behaviour |
 |---|---|
 | `tdd log render [--format md]` | project the ledger into a friction-log document |
+| `tdd invocation show <id>` | an invocation's recorded failures: phase, message, detail |
 | `tdd metrics <query>` | §11 |
 | `tdd verify` | re-run integrity checks over a completed run |
 

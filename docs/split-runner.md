@@ -320,8 +320,8 @@ On the host, the operator reads every source together through the admin socket:
     tdd ledger fleet                                # active runs of every source, and the host's suites
     tdd ledger log --repo <slug> --run <id> [--out FILE]
 
-Every run in them carries its `source`. Inside a guest, `tdd metrics`, `tdd fleet` and
-`tdd log render` still work, and see only that guest's source.
+Every run in them carries its `source`. Inside a guest, `tdd metrics`, `tdd fleet`,
+`tdd log render` and `tdd invocation show` still work, and see only that guest's source.
 
 **Worker leases are the host's.** A socket-mode runner takes each suite's worker lease
 from the service, which splits the host's cores across every guest's running suites. A
