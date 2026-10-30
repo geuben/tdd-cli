@@ -92,3 +92,11 @@ def test_the_bind_socket_refuses_every_other_method(bind_service, tmp_path):
 
     answers = {m: answer(bind_service.bind_socket, m, *a) for m, a in other}
     assert answers == {m: "method_not_allowed" for m, _ in other}
+
+
+def test_the_bind_socket_unbinds_a_source(bind_service):
+    vm1 = bind_service.dir / "vm-1.sock"
+    bind_service.service.add_source("vm-1", vm1, executor="m")
+    answer(bind_service.bind_socket, "unbind", "vm-1")
+
+    assert wire.call(vm1, "ping")["executor"] is None
