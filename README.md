@@ -644,6 +644,28 @@ There is no override flag for `services_unreachable`: a down stack yields no bel
 The resolution is to fix the stack or drop the project from this run. Presence of `health_command`
 is the marker that a project requires live services; no separate boolean is needed.
 
+### Untouched failures are rerun before they block
+
+When GREEN's whole-suite run or a close sweep finds a failure outside the cycle, `tdd advance`
+first reruns that one test alone, if the failure is untouched and pre-existing: absent from the
+baseline, collected at `run start`, and in a file no cycle of the plan declares (`files`,
+`stub_expected`, the file of a `test` or `modifies_tests` id, or `ancillary_files`). A test whose
+file cannot be resolved is never rerun. A rerun that passes clears the failure and is recorded as
+a `flaky_pre_existing` integrity event (see `integrity_events` in `tdd metrics`), and the phase
+proceeds. A test that fails again is reported as before, and the `fix_regression` reply carries
+`rerun_outcomes` (for example `{"backend::tests/test_x.py::test_y": ["failed", "failed"]}`) as
+evidence for the blocker.
+
+Each project sets how many reruns a failure gets with `flaky_reruns` (default 1, `0` turns reruns
+off):
+
+```toml
+[project.android]
+root = "android"
+adapter = "gradle"
+flaky_reruns = 0    # a JVM start per rerun is too slow here; report failures at once
+```
+
 ## Running a long baseline
 
 `run start` probes the reachable project set (R9.5c) before a run exists, and on a real project

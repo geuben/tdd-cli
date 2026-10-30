@@ -386,6 +386,9 @@ Requirements:
   maps to zero files is `not_found_in_sources`; one that maps to two or more is `ambiguous_id`;
   an id in a grammar that never carries a path and whose adapter has no source scan is
   `no_path_in_id`. Unresolved ids do not fail the command.
+- **R7.15** A project may declare `flaky_reruns`, a non-negative integer (default 1): how many
+  times R9.1f reruns an untouched pre-existing failure before reporting it. `0` turns reruns
+  off for that project. Any other value is refused when `tdd.toml` is loaded.
 
 ### 7.2 Plan front-matter
 

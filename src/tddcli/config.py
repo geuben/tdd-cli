@@ -381,6 +381,9 @@ def load(worktree: Path) -> Config:
         health_command = body.get("health_command")
         if health_command is not None and not isinstance(health_command, str):
             raise ConfigError(f"project {name!r}: health_command must be a string")
+        flaky_reruns = body.get("flaky_reruns", 1)
+        if isinstance(flaky_reruns, bool) or not isinstance(flaky_reruns, int) or flaky_reruns < 0:
+            raise ConfigError(f"project {name!r}: flaky_reruns must be a non-negative integer")
         projects[name] = Project(
             name=name,
             root=body["root"].rstrip("/"),
@@ -397,7 +400,7 @@ def load(worktree: Path) -> Config:
             timeout=timeout,
             baseline_max_failure_ratio=baseline_max_failure_ratio,
             health_command=health_command,
-            flaky_reruns=body.get("flaky_reruns", 1),
+            flaky_reruns=flaky_reruns,
         )
 
     artifacts: dict[str, Artifact] = {}
