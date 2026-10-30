@@ -77,7 +77,9 @@ Four things to get right:
 - **`SETENV:` is required** on the second line. The runner passes the agent's own
   environment to the agent's commands with `sudo -E`; without the tag sudo answers
   "sorry, you are not allowed to preserve the environment" and `tdd doctor` fails its
-  `runs as the agent` check.
+  `runs as the agent` check. The agent's umask travels the same way: the runner sets it
+  in each command it runs as the agent, after sudo, so the umask sudo's PAM session
+  leaves (002 under `pam_umask` on Ubuntu) never reaches the suites.
 - **`NOPASSWD` is required on both.** `tdd` always passes `-n`, so a rule that would
   prompt fails at once instead of hanging an unattended agent.
 - **Leave `env_reset` on** (it is sudo's default). It is what strips the agent's

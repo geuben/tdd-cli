@@ -16,6 +16,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   host must run this version before its guests do: a guest's `record_invocation` now
   carries the details, which an older service refuses.
 
+### Fixed
+
+- **Split mode runs the suites under the agent's umask** (#209). The client now sends its
+  umask with its environment, and the runner applies it in every command it runs as the
+  agent, after sudo. Before, the suites got whatever umask the runner's sudo hop left
+  (002 under Ubuntu's `pam_umask`), so a suite that cared about file modes failed under
+  `tdd` and passed in the agent's own shell. Mixed versions work: an older runner ignores
+  the umask, and a runner given none by an older client behaves as before.
+
 ## [0.15.0] - 2026-10-14
 
 ### Added

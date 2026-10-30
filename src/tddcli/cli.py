@@ -2031,7 +2031,9 @@ LOCAL_VERBS = {"docs", "init", "ledger"}
 
 
 def _actor_for(
-    split: runner_mod.RunnerConfig | None, agent_env: dict[str, str] | None
+    split: runner_mod.RunnerConfig | None,
+    agent_env: dict[str, str] | None,
+    agent_umask: int | None = None,
 ) -> actor.LocalActor:
     """Who acts in the agent's territory for this invocation.
 
@@ -2045,7 +2047,7 @@ def _actor_for(
     """
     if split is not None and split.role == "runner":
         agent = os.environ.get("SUDO_USER", "")
-        return actor.SudoActor(sudo=split.sudo, agent=agent, env=agent_env)
+        return actor.SudoActor(sudo=split.sudo, agent=agent, env=agent_env, umask=agent_umask)
     return actor.LocalActor()
 
 
@@ -2068,13 +2070,20 @@ def _refusal(split: runner_mod.RunnerConfig | None, args) -> Envelope | None:
     )
 
 
-def _agent_env(args) -> dict[str, str] | None:
-    """The environment the client sent. It only ever reaches processes spawned as the
-    agent, so nothing in it is trusted and nothing in it needs to be."""
+def _agent_context(args) -> tuple[dict[str, str] | None, int | None]:
+    """The environment and umask the client sent. They only ever reach processes
+    spawned as the agent, so nothing in them is trusted and nothing needs to be. A
+    umask that is not a mode is ignored, as an older client's missing one is."""
     if not args.agent_context_stdin:
-        return None
-    env = json.loads(sys.stdin.read() or "{}").get("env")
-    return {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else None
+        return None, None
+    context = json.loads(sys.stdin.read() or "{}")
+    env = context.get("env")
+    umask = context.get("umask")
+    valid = type(umask) is int and 0 <= umask <= 0o777
+    return (
+        {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else None,
+        umask if valid else None,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2094,7 +2103,7 @@ def main(argv: list[str] | None = None) -> int:
             # Parsed first, so `--help`, `--version` and a mistyped verb never cost a
             # round trip; forwarded verbatim, so the runner parses exactly what we did.
             return runner_mod.forward(split, list(sys.argv[1:] if argv is None else argv))
-        actor.install(_actor_for(split, _agent_env(args)))
+        actor.install(_actor_for(split, *_agent_context(args)))
         envelope = _refusal(split, args) or args.fn(args)
     except PermissionError as exc:
         # Only the runner reads someone else's files. Anywhere else this is a bug, and

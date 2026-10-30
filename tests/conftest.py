@@ -39,8 +39,8 @@ def _pinned_executor_identity(monkeypatch):
 @pytest.fixture(autouse=True)
 def _owner_writable_umask():
     """The runner and service configs the fixtures write must pass the trust check
-    (not group- or world-writable). A split-mode runner may run the suite under a
-    group-writable umask; pin one that is not, whoever runs the suite."""
+    (not group- or world-writable). A developer's login umask may be group-writable
+    (Ubuntu's is 002); pin one that is not, whoever runs the suite."""
     previous = os.umask(0o022)
     yield
     os.umask(previous)
@@ -64,9 +64,12 @@ def _single_user_mode(tmp_path, monkeypatch):
 #: A stand-in for sudo. It logs what it was asked, then runs the command as the same
 #: uid — everything about split mode except the uid change itself. `SUDO_DENY` names
 #: commands it refuses, which is how "the agent cannot" is reached without a second uid.
+#: Its umask 002 stands in for the PAM session a real sudo opens (`pam_umask`), which
+#: leaves a umask the agent's own shell does not have.
 SUDO_SHIM = """\
 #!/bin/sh
 echo "MARK=$MARK $@" >> "$SUDO_LOG"
+umask 002
 while [ "$1" != "--" ]; do shift; done; shift
 case " $SUDO_DENY " in *" $(basename "$1") "*) exit 1;; esac
 exec "$@"
