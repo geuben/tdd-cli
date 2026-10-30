@@ -355,7 +355,9 @@ def test_resolves_a_pytest_target_to_a_repository_path(repo):
 
 
 def test_an_exec_id_resolves_to_its_script(tmp_path):
-    toml = '[project.gates]\nroot = "gates"\nadapter = "exec"\ntest_paths = ["scripts/check-*.sh"]\n'
+    toml = (
+        '[project.gates]\nroot = "gates"\nadapter = "exec"\ntest_paths = ["scripts/check-*.sh"]\n'
+    )
     plan_text = (
         "---\ncycles:\n  - n: 1\n    project: gates\n    title: t\n"
         '    test: "scripts/check-answer.sh"\n    commit_red: x\n    commit_green: x\n---\n'

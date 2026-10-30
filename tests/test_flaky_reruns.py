@@ -143,7 +143,7 @@ def test_a_failure_in_any_file_the_plan_declares_is_not_rerun(repo, tmp_path):
         "ancillary_files": {"more": 'ancillary_files: ["backend/tests/test_legacy.py"]\n'},
         "later_cycle": {
             "more": (
-                "  - n: 2\n    project: backend\n    title: \"later\"\n"
+                '  - n: 2\n    project: backend\n    title: "later"\n'
                 '    test: "tests/test_later.py::test_later"\n'
                 '    files: ["tests/test_legacy.py"]\n'
                 '    commit_red: "test: l"\n    commit_green: "feat: l"\n'
