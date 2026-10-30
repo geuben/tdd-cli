@@ -318,7 +318,7 @@ class _Listener(socketserver.ThreadingUnixStreamServer):
             path.unlink()
         super().__init__(str(path), _Handler)
         # A socket's mode follows the umask unless it is set.
-        path.chmod(ADMIN_MODE if source is None else GUEST_MODE)
+        path.chmod(ADMIN_MODE if source is None and not report_only else GUEST_MODE)
         self.thread = threading.Thread(target=self.serve_forever, daemon=True)
         self.thread.start()
 
