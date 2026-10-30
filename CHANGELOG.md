@@ -6,6 +6,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-30
+
 ### Added
 
 - **An untouched pre-existing failure is rerun before it blocks** (#73). When GREEN's
@@ -125,6 +127,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   this it reported every exec id as `no_path_in_id`.
 - A late baseline probe records its collection's `failed_files` as an empty map, like every
   other `collection_snapshot` row, instead of an empty list (#210).
+
+### Security
+
+- The release workflow pins `pypa/gh-action-pypi-publish` v1.14.3, which handles the revoked
+  Sigstore CA used by trusted publishing and PyPI attestations (GHSA-5xjx-3w67-w9x9).
 
 ## [0.16.0] - 2026-10-30
 
