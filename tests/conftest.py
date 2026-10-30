@@ -227,6 +227,11 @@ def _init_repo(root: Path) -> None:
     subprocess.run(["git", "init", "-q", str(root)], check=True)
     git(root, "config", "user.email", "test@example.com")
     git(root, "config", "user.name", "Test")
+    # A template is copied while the suite runs, so nothing may write to it in the
+    # background: newer git follows a commit with a detached `maintenance run
+    # --auto`, whose lock file can vanish mid-copy.
+    git(root, "config", "maintenance.auto", "false")
+    git(root, "config", "gc.auto", "0")
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "initial")
 
