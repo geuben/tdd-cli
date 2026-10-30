@@ -748,7 +748,9 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   gate configuration that lives outside the project's declared roots (e.g. a top-level
   `pyproject.toml`) does not affect the tree hash and therefore does not invalidate the memo.
 - **R9.12** Before a run starts and at every cycle close, declared artifacts are checked for
-  staleness against their producer. When the tool cannot resolve staleness itself (no `regenerate`
+  staleness against their producer. At a cycle close only the artifacts the run can affect are
+  checked: those whose root producer is in the run's reachable set (R9.5c), and any whose
+  producer root the closing cycle touched (the test R9.2 uses to widen the close sweep). When the tool cannot resolve staleness itself (no `regenerate`
   command, or the regenerate hook produced no commit), it emits `stale_artifact` and blocks the
   close — this is one of the few hard gates (§12), because a stale contract produces a *green*
   wrong answer. When the tool resolves staleness by regenerating and committing, it records

@@ -397,12 +397,21 @@ class Engine:
 
     # -- artifacts -------------------------------------------------------
 
-    def check_artifacts(self, cycle_row) -> ArtifactOutcome:
+    def check_artifacts(self, cycle_row, touched: set[str] | None = None) -> ArtifactOutcome:
         """R9.12/R9.20 — the tool regenerates; the agent is informed, not asked."""
         regenerated: list[str] = []
         failed: list[dict] = []
+        scope = set(self.config.reachable_projects([p for c in self.declared for p in c.projects]))
         for art in self.config.artifacts.values():
             if not art.check and not art.regenerate:
+                continue
+            # Issue #99 — a cycle cannot have staled what the run cannot reach, unless it
+            # edited the producer anyway.
+            if (
+                cycle_row is not None
+                and self.config.producer_root(art) not in scope
+                and not self.config.artifact_touched(art, touched or set())
+            ):
                 continue
             stale, failure = self._artifact_stale(art)
             check_id = self.ledger.record_artifact_check(

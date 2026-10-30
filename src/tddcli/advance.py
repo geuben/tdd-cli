@@ -496,7 +496,7 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     if sha:
         touched = set(staged) | touched
 
-    artifact_outcome = engine.check_artifacts(cycle)
+    artifact_outcome = engine.check_artifacts(cycle, touched)
 
     if artifact_outcome.failed:
         names = ", ".join(f["artifact"] for f in artifact_outcome.failed)
