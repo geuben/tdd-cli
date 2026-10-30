@@ -183,8 +183,7 @@ def test_a_collection_probe_with_nothing_on_stdout_names_its_command_exit_and_st
     stdout alone left the check's detail blank, and the recorder's guard crashed
     doctor instead of reporting it."""
     (repo / "tdd.toml").write_text(
-        (repo / "tdd.toml").read_text()
-        + 'collect_command = "tdd-184-no-such-tool pytest"\n'
+        (repo / "tdd.toml").read_text() + 'collect_command = "tdd-184-no-such-tool pytest"\n'
         "\n"
         "[[project.backend.override]]\n"
         'pattern         = "contract/"\n'
