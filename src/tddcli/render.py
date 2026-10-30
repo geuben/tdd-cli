@@ -41,6 +41,9 @@ def friction_log(ledger: Ledger, run) -> str:
         f"- Started: {run['started_at']}  Ended: {run['ended_at'] or '—'}"
         f"  Outcome: {run['outcome'] or 'live'}"
     )
+    abandonment = ledger.abandonment(run["id"])
+    if abandonment is not None:
+        a(f"- Abandoned: {abandonment['reason']}")
     all_baseline_rows = ledger.baseline_rows(run["id"])
     run_start_baselines = {
         r["project"]: json.loads(r["failing"])
