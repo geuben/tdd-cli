@@ -181,3 +181,23 @@ def test_bind_and_unbind_use_an_explicit_socket(repo, bind_service):
         for verb in (("bind", "vm-1", "--executor", "m"), ("unbind", "vm-1"))
     ]
     assert reasons == ["ledger_unreachable", "ledger_unreachable"]
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root connects to a mode-000 socket")
+def test_bind_and_unbind_fall_back_to_the_bind_socket(repo, bind_service):
+    vm1 = bind_service.dir / "vm-1.sock"
+    bind_service.service.add_source("vm-1", vm1)
+    admin = bind_service.admin_socket
+    readings = []
+
+    admin.chmod(0)
+    run_cli(repo, "ledger", "bind", "vm-1", "--executor", "m")
+    readings.append(wire.call(vm1, "ping")["executor"])
+    run_cli(repo, "ledger", "unbind", "vm-1")
+    readings.append(wire.call(vm1, "ping")["executor"])
+    admin.chmod(0o600)
+    admin.rename(admin.with_name("admin.moved"))
+    run_cli(repo, "ledger", "bind", "vm-1", "--executor", "m2")
+    readings.append(wire.call(vm1, "ping")["executor"])
+
+    assert readings == ["m", None, "m2"]
