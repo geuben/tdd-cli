@@ -30,9 +30,7 @@ def deliver(repo, plan):
 def test_a_delivered_plan_is_refused_before_its_suite_runs(repo, tmp_path):
     counter = tmp_path / "suite-runs"
     (repo / "backend/tests/test_smoke.py").write_text(
-        "def test_smoke():\n"
-        f"    with open({str(counter)!r}, 'a') as f:\n"
-        "        f.write('x')\n"
+        f"def test_smoke():\n    with open({str(counter)!r}, 'a') as f:\n        f.write('x')\n"
     )
     plan = write_plan(repo, PLAN)
     run_cli(repo, "plan", "register", plan)
