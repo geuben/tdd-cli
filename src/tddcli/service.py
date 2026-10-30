@@ -16,6 +16,7 @@ import contextlib
 import inspect
 import json
 import os
+import shutil
 import signal
 import socket
 import socketserver
@@ -38,6 +39,8 @@ SOURCES_FILE = "sources.json"
 #: the operator forwards it through.
 ADMIN_MODE = 0o600
 GUEST_MODE = 0o660
+#: The bind socket is shared with the group the operator gives its orchestrator.
+BIND_MODE = 0o660
 
 #: A run with one of these outcomes takes no more writes from a guest.
 CLOSED_OUTCOMES = ("complete", "abandoned")
@@ -302,7 +305,14 @@ class _Listener(socketserver.ThreadingUnixStreamServer):
     daemon_threads = True
     block_on_close = False
 
-    def __init__(self, path: Path, service: Service, source: str | None, bind_only: bool = False):
+    def __init__(
+        self,
+        path: Path,
+        service: Service,
+        source: str | None,
+        bind_only: bool = False,
+        group: str | None = None,
+    ):
         self.path = path
         self.service = service
         self.source = source
@@ -312,7 +322,11 @@ class _Listener(socketserver.ThreadingUnixStreamServer):
             path.unlink()
         super().__init__(str(path), _Handler)
         # A socket's mode follows the umask unless it is set.
-        path.chmod(ADMIN_MODE if source is None else GUEST_MODE)
+        if bind_only:
+            path.chmod(BIND_MODE)
+            shutil.chown(path, group=group)
+        else:
+            path.chmod(ADMIN_MODE if source is None else GUEST_MODE)
         self.thread = threading.Thread(target=self.serve_forever, daemon=True)
         self.thread.start()
 
@@ -338,7 +352,9 @@ class Service:
         self.config.home.mkdir(parents=True, exist_ok=True)
         self.listeners[None] = _Listener(self.config.admin_socket, self, None)
         if self.config.bind_socket is not None:
-            self.bind_listener = _Listener(self.config.bind_socket, self, None, bind_only=True)
+            self.bind_listener = _Listener(
+                self.config.bind_socket, self, None, bind_only=True, group=self.config.bind_group
+            )
         for name, entry in sorted(self._saved().items()):
             self.add_source(name, Path(entry["socket"]), entry.get("executor"))
 
