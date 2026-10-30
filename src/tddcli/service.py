@@ -90,6 +90,10 @@ def load_config(path: Path | None = None) -> ServiceConfig:
         raise ServiceConfigError(f"{path}: [service] needs `admin_socket`")
     home = section.get("home")
     bind_socket = section.get("bind_socket")
+    if bool(bind_socket) != bool(section.get("bind_group")):
+        raise ServiceConfigError(f"{path}: [service] bind_socket and bind_group go together")
+    if bind_socket and Path(bind_socket) == Path(section["admin_socket"]):
+        raise ServiceConfigError(f"{path}: [service] bind_socket must not be admin_socket")
     return ServiceConfig(
         admin_socket=Path(section["admin_socket"]),
         home=Path(home) if home else Path.home() / ".local" / "share" / "tdd-cli",
