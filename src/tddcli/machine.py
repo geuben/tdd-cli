@@ -265,16 +265,43 @@ class Engine:
                 self.ledger.event(self.run["id"], cycle_row["id"], "tooling_defect", verdict.error)
         return outcomes, others, verdicts, failure_text
 
+    def _plan_paths(self, scan_cache: dict) -> set[str]:
+        """Every file the plan declares, in any cycle, as written or as R7.14 resolves it."""
+        from . import plan_paths
+
+        declared = set(self.ancillary_files)
+        for cycle in self.declared:
+            declared.update(cycle.files, cycle.stub_expected)
+            for test_id in [*cycle.tests, *cycle.modifies_tests]:
+                name, native = self._qualify(cycle, test_id).split("::", 1)
+                project = self.config.project(name)
+                adapter = adapters.build(project, self.worktree)
+                path, _ = plan_paths.locate(adapter, project, native, scan_cache)
+                if path is not None:
+                    declared.add(path)
+        return declared
+
     def rerun_untouched(
         self, cycle_row, phase: str, failures: list[str]
     ) -> tuple[list[str], dict[str, list[str]]]:
         """R9.1f — rerun each failure alone before it is reported. Returns the failures
         still failing and the rerun outcomes of those that never passed."""
+        from . import plan_paths  # plan_paths imports Engine: a module-level import is circular
+
+        scan_cache: dict = {}
+        declared = self._plan_paths(scan_cache)
         remaining: list[str] = []
         reruns: dict[str, list[str]] = {}
         for test_id in failures:
-            name = test_id.split("::", 1)[0]
-            adapter = adapters.build(self.config.project(name), self.worktree)
+            name, native = test_id.split("::", 1)
+            project = self.config.project(name)
+            adapter = adapters.build(project, self.worktree)
+            path, _ = plan_paths.locate(adapter, project, native, scan_cache)
+            if path is not None and (
+                path in declared or project.relative_to_root(path) in declared
+            ):
+                remaining.append(test_id)
+                continue
             verdict = adapter.run(test_id, target_only=True)
             outcomes = ["failed", verdict.target_outcome]
             if verdict.target_outcome != "passed":
