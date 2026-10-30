@@ -49,8 +49,9 @@ CLOSED_RUN_EXEMPT = frozenset({"add_note"})
 #: Writes that record who executed a run: the service sets the executor on them.
 STAMPED = frozenset({"start_run", "abandon_run"})
 
-#: All the bind socket answers: an orchestrator says which model a source's next runs record.
-BIND_METHODS = frozenset({"bind"})
+#: All the bind socket answers: an orchestrator sets or clears the model a source's next
+#: runs record.
+BIND_METHODS = frozenset({"bind", "unbind"})
 
 
 class ServiceConfigError(RuntimeError):
