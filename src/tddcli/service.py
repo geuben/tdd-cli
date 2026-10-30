@@ -49,6 +49,9 @@ CLOSED_RUN_EXEMPT = frozenset({"add_note"})
 #: Writes that record who executed a run: the service sets the executor on them.
 STAMPED = frozenset({"start_run", "abandon_run"})
 
+#: All the bind socket answers: an orchestrator says which model a source's next runs record.
+BIND_METHODS = frozenset({"bind"})
+
 
 class ServiceConfigError(RuntimeError):
     pass
@@ -117,9 +120,16 @@ class _Session:
     connection must not cross threads.
     """
 
-    def __init__(self, service: Service, source: str | None, conn: socket.socket):
+    def __init__(
+        self,
+        service: Service,
+        source: str | None,
+        conn: socket.socket,
+        bind_only: bool = False,
+    ):
         self.service = service
         self.source = source
+        self.bind_only = bind_only
         self.conn = conn
         self.ledger: ledger_mod.Ledger | None = None
 
@@ -127,6 +137,12 @@ class _Session:
         method = request.get("method")
         args = request.get("args") or []
         kwargs = request.get("kwargs") or {}
+        if self.bind_only:
+            if method not in BIND_METHODS:
+                return _refusal(
+                    "method_not_allowed", f"{method} is not answered on the bind socket"
+                )
+            return self.service.admin(method, args, kwargs)
         if method == "ping":
             return _ok({"source": self.source, "executor": self.service.executors.get(self.source)})
         if self.source is None:
@@ -272,7 +288,7 @@ class _Handler(socketserver.StreamRequestHandler):
 
     def handle(self) -> None:
         listener: _Listener = self.server  # type: ignore[assignment]
-        session = _Session(listener.service, listener.source, self.request)
+        session = _Session(listener.service, listener.source, self.request, listener.bind_only)
         try:
             while (request := wire.receive(self.rfile)) is not None:
                 wire.send(self.wfile, session.answer(request))
@@ -285,10 +301,11 @@ class _Listener(socketserver.ThreadingUnixStreamServer):
     daemon_threads = True
     block_on_close = False
 
-    def __init__(self, path: Path, service: Service, source: str | None):
+    def __init__(self, path: Path, service: Service, source: str | None, bind_only: bool = False):
         self.path = path
         self.service = service
         self.source = source
+        self.bind_only = bind_only
         # A socket file left by a service that died is not a listener: replace it.
         with contextlib.suppress(FileNotFoundError):
             path.unlink()
@@ -320,7 +337,7 @@ class Service:
         self.config.home.mkdir(parents=True, exist_ok=True)
         self.listeners[None] = _Listener(self.config.admin_socket, self, None)
         if self.config.bind_socket is not None:
-            self.bind_listener = _Listener(self.config.bind_socket, self, None)
+            self.bind_listener = _Listener(self.config.bind_socket, self, None, bind_only=True)
         for name, entry in sorted(self._saved().items()):
             self.add_source(name, Path(entry["socket"]), entry.get("executor"))
 
