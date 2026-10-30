@@ -95,8 +95,9 @@ def friction_log(ledger: Ledger, run) -> str:
         a(f"- **Target:** {_fmt_list(targets)}")
         a(f"- **Projects:** {_fmt_list(json.loads(cycle['projects']))}")
 
+        invocations = ledger.invocations(cycle["id"])
         by_phase = defaultdict(list)
-        for inv in ledger.invocations(cycle["id"]):
+        for inv in invocations:
             by_phase[inv["phase_at"]].append(inv)
         attempts = {p: len(v) for p, v in by_phase.items()}
         a(f"- **Suite runs by phase:** {attempts or 'none'}")
@@ -108,7 +109,7 @@ def friction_log(ledger: Ledger, run) -> str:
             verdict = "as expected" if outcome == expected else f"**{outcome}**"
             a(f"- **First run outcome:** {outcome} ({verdict})")
 
-        for inv in ledger.invocations(cycle["id"]):
+        for inv in invocations:
             details = ledger.failure_details(inv["id"])
             if details:
                 a(f"- **Failures — invocation {inv['id']} ({inv['phase_at']}, {inv['project']}):**")
