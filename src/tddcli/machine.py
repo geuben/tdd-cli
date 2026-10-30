@@ -295,10 +295,10 @@ class Engine:
         reruns: dict[str, list[str]] = {}
         for test_id in failures:
             name, native = test_id.split("::", 1)
-            if test_id not in collected.get(name, set()):
+            project = self.config.project(name)
+            if project.flaky_reruns == 0 or test_id not in collected.get(name, set()):
                 remaining.append(test_id)
                 continue
-            project = self.config.project(name)
             adapter = adapters.build(project, self.worktree)
             path, _ = plan_paths.locate(adapter, project, native, scan_cache)
             if path is None or path in declared or project.relative_to_root(path) in declared:
