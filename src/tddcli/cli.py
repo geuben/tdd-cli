@@ -1780,8 +1780,14 @@ def _ledger_sources(args, cfg) -> Envelope:
     )
 
 
+def _bind_call(args, cfg, method: str, *call_args):
+    """A `bind` or `unbind`, on the socket the operator named, or else the admin socket."""
+    socket_path = Path(args.socket) if args.socket else cfg.admin_socket
+    return wire.call(socket_path, method, *call_args)
+
+
 def _ledger_bind(args, cfg) -> Envelope:
-    bound = wire.call(cfg.admin_socket, "bind", args.name, args.executor)
+    bound = _bind_call(args, cfg, "bind", args.name, args.executor)
     return Envelope(
         result=bound,
         next_action=NextAction(
@@ -1792,7 +1798,7 @@ def _ledger_bind(args, cfg) -> Envelope:
 
 
 def _ledger_unbind(args, cfg) -> Envelope:
-    unbound = wire.call(cfg.admin_socket, "unbind", args.name)
+    unbound = _bind_call(args, cfg, "unbind", args.name)
     return Envelope(
         result=unbound,
         next_action=NextAction(
@@ -2039,9 +2045,11 @@ def build_parser() -> argparse.ArgumentParser:
     s = ledger_p.add_parser("bind", help="set the executor a source's next runs record")
     s.add_argument("name")
     s.add_argument("--executor", required=True)
+    s.add_argument("--socket", help="the socket to bind through: the admin or the bind socket")
     s.set_defaults(fn=_ledger_verb(_ledger_bind))
     s = ledger_p.add_parser("unbind", help="clear the executor a source's next runs record")
     s.add_argument("name")
+    s.add_argument("--socket", help="the socket to unbind through: the admin or the bind socket")
     s.set_defaults(fn=_ledger_verb(_ledger_unbind))
     s = ledger_p.add_parser("fleet", help="active runs of every source")
     s.set_defaults(fn=_ledger_verb(_ledger_fleet))
