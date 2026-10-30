@@ -72,10 +72,15 @@ def _worktree() -> Path:
     return gitutil.worktree_root(Path.cwd())
 
 
+def _locate() -> tuple[Path, Path]:
+    """The worktree and the repository identity that keys its ledger."""
+    return gitutil.locate(Path.cwd())
+
+
 def _context(require_run: bool = True):
-    worktree = _worktree()
+    worktree, repo = _locate()
     cfg = config_mod.load(worktree)
-    ledger = open_ledger(gitutil.repo_identity(worktree))
+    ledger = open_ledger(repo)
     run = ledger.active_run(str(worktree))
     if require_run and run is None:
         raise SystemExit(
@@ -389,7 +394,7 @@ def cmd_doctor(args) -> Envelope:
             result={"checks": checks, "projects": {}, "healthy": False, "mode": "split"},
             next_action=NextAction(Verb.RESOLVE_BLOCKER, "Resolve the failing checks above."),
         )
-    worktree = _worktree()
+    worktree, repo = _locate()
 
     check("worktree resolvable", True, str(worktree))
     try:
@@ -399,7 +404,6 @@ def cmd_doctor(args) -> Envelope:
         check("tdd.toml valid", False, str(exc))
         return Envelope(ok=False, error="configuration invalid", result={"checks": checks})
 
-    repo = gitutil.repo_identity(worktree)
     ledger = open_ledger(repo)
     remote = isinstance(ledger, RemoteLedger)
     if remote:
@@ -570,9 +574,9 @@ def cmd_doctor(args) -> Envelope:
 
 
 def cmd_plan_register(args) -> Envelope:
-    worktree = _worktree()
+    worktree, repo = _locate()
     cfg = config_mod.load(worktree)
-    ledger = open_ledger(gitutil.repo_identity(worktree))
+    ledger = open_ledger(repo)
     rel = str(Path(args.plan))
     try:
         parsed = contract_mod.register(worktree, rel, cfg)
@@ -777,9 +781,9 @@ def _probe_projects(
 
 
 def cmd_run_start(args) -> Envelope:
-    worktree = _worktree()
+    worktree, repo = _locate()
     cfg = config_mod.load(worktree)
-    ledger = open_ledger(gitutil.repo_identity(worktree))
+    ledger = open_ledger(repo)
 
     active = ledger.active_run(str(worktree))
     if active is not None:
@@ -797,8 +801,9 @@ def cmd_run_start(args) -> Envelope:
 
     # R7.11 — the plan blob is the contract; drift must surface.
     blob_changed = False
+    start_sha = None
     try:
-        current_blob, _ = gitutil.blob_sha_at_head(worktree, rel)
+        current_blob, start_sha = gitutil.blob_sha_at_head(worktree, rel)
         blob_changed = bool(
             contract_row["git_blob_sha"] and current_blob != contract_row["git_blob_sha"]
         )
@@ -806,7 +811,7 @@ def cmd_run_start(args) -> Envelope:
         pass
 
     dirty = sorted(gitutil.dirty_paths(worktree))
-    start_sha = gitutil.head(worktree)
+    start_sha = start_sha or gitutil.head(worktree)
     if dirty and not args.allow_dirty:
         return failure(
             "working tree is dirty; commit first or pass --allow-dirty"
@@ -1259,9 +1264,9 @@ def _accept_failures_into_baseline(
 
 
 def cmd_resume(args) -> Envelope:
-    worktree = _worktree()
+    worktree, repo = _locate()
     cfg = config_mod.load(worktree)
-    ledger = open_ledger(gitutil.repo_identity(worktree))
+    ledger = open_ledger(repo)
     run = ledger.active_run(str(worktree))
     accepted: dict[str, list[str]] = {}
     refused_from_baseline: dict[str, list[str]] = {}
@@ -1323,8 +1328,8 @@ def _calling_account() -> str:
 def cmd_run_abandon(args) -> Envelope:
     if not args.reason.strip():
         return failure("--reason must say why the run is abandoned", reason="reason_required")
-    worktree = _worktree()
-    ledger = open_ledger(gitutil.repo_identity(worktree))
+    worktree, repo = _locate()
+    ledger = open_ledger(repo)
     if args.run is not None:
         run = ledger.run(args.run)
         if run is None:
@@ -1610,8 +1615,7 @@ def cmd_fleet(args) -> Envelope:
     baselines and currently executing suites. Deliberately does not use
     `_context`: no tdd.toml, active run, or existing ledger is required, and the
     ledger is opened read-only so live agents cannot be perturbed."""
-    worktree = _worktree()
-    repo = gitutil.repo_identity(worktree)
+    worktree, repo = _locate()
     split = runner_mod.load()
     if split is not None and split.role == "runner" and split.ledger_socket is not None:
         # The ledger is on the host: read this source's view of it through the socket.
