@@ -127,7 +127,11 @@ def test_the_report_socket_answers_as_the_admin_socket_does(report_service):
     host_ledger(report_service.home, TWO_RUNS)
 
     def view(sock):
-        m, f, log = (answer(sock, "metrics"), answer(sock, "fleet"), answer(sock, "log", "somerepo", 1))
+        m, f, log = (
+            answer(sock, "metrics"),
+            answer(sock, "fleet"),
+            answer(sock, "log", "somerepo", 1),
+        )
         if not isinstance(m, str):
             m = [(r["run"], r["source"], r["outcome"]) for r in m["repos"]["somerepo"]["runs"]]
         if not isinstance(f, str):
