@@ -36,6 +36,8 @@ class RunnerConfig:
     ledger_home: Path | None = None
     #: A ledger service's socket: the ledger is kept on the host, never here.
     ledger_socket: Path | None = None
+    #: A guest's own worker budget: it caps the share the ledger service leases it.
+    core_budget: int | None = None
     executors: dict[str, str] = field(default_factory=dict)
 
 
@@ -120,5 +122,6 @@ def load() -> RunnerConfig | None:
         sudo=section.get("sudo", DEFAULT_SUDO),
         ledger_home=Path(ledger_home) if ledger_home else None,
         ledger_socket=Path(ledger_socket) if ledger_socket else None,
+        core_budget=section.get("core_budget"),
         executors=dict(raw.get("executor") or {}),
     )

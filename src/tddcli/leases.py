@@ -31,8 +31,12 @@ import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .envelope import heartbeat
+
+if TYPE_CHECKING:
+    from .runner import RunnerConfig
 
 LEASE_DIR_ENV = "TDD_LEASE_DIR"
 CORE_BUDGET_ENV = "TDD_CORE_BUDGET"
@@ -94,11 +98,11 @@ def snapshot() -> dict:
     """Observe the budget without participating in it — counts live leases but
     sweeps nothing and takes nothing, so a fleet view never perturbs the split.
     In a guest, the budget is the host's: the ledger service counts it."""
-    socket_path = _ledger_socket()
-    if socket_path is not None:
+    guest = _guest()
+    if guest is not None:
         from . import remote
 
-        return remote.lease_snapshot(socket_path)
+        return remote.lease_snapshot(guest.ledger_socket)
     directory = lease_dir()
     total = _total_cores()
     live = 0
@@ -158,8 +162,8 @@ def named_lease(name: str) -> Iterator[None]:
             lock_path.unlink()
 
 
-def _ledger_socket() -> Path | None:
-    """The ledger service's socket, when this process is a runner in a guest.
+def _guest() -> RunnerConfig | None:
+    """This runner's config, when it is a runner in a guest (it has `ledger_socket`).
 
     Such a runner shares the host's cores with every other guest's, so the budget is
     the service's to split, not a lease directory's on this guest.
@@ -167,20 +171,21 @@ def _ledger_socket() -> Path | None:
     from . import runner
 
     split = runner.load()
-    if split is None or split.role != "runner":
+    if split is None or split.role != "runner" or split.ledger_socket is None:
         return None
-    return split.ledger_socket
+    return split
 
 
 @contextlib.contextmanager
 def worker_lease(total_cores: int | None = None) -> Iterator[int]:
     """Hold a lease for one suite invocation; yields the worker count to use."""
-    socket_path = _ledger_socket()
-    if socket_path is not None:
+    guest = _guest()
+    if guest is not None:
         from . import remote
 
-        with remote.worker_lease(socket_path) as workers:
-            yield min(workers, len(os.sched_getaffinity(0)))
+        budget = guest.core_budget or len(os.sched_getaffinity(0))
+        with remote.worker_lease(guest.ledger_socket) as workers:
+            yield min(workers, budget)
         return
     directory = lease_dir()
     directory.mkdir(parents=True, exist_ok=True)
