@@ -101,5 +101,5 @@ Three unchanged retries produce `resolve_blocker`; do not try to outlast it.
 
 After any interruption (crash, compaction, inherited worktree): `tdd status`, then
 re-enter the loop at step 2. Never reconstruct position from conversation memory —
-the ledger's answer is the only true one. `tdd resume` handles a run interrupted by a
-human intervention.
+the ledger's answer is the only true one. `tdd resume` handles a run that was unblocked or
+otherwise changed from outside the session.

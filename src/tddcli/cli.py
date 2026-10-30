@@ -1388,7 +1388,7 @@ def cmd_resume(args) -> Envelope:
         if blocked is None:
             return failure("no blocked run to unblock in this worktree")
         if not args.note:
-            return failure("--unblock requires --note describing the intervention")
+            return failure("--unblock requires --note describing the unblock")
         ledger.reopen_run(blocked["id"], args.note)
         run = ledger.run(blocked["id"])
         if args.accept_failures:

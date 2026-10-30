@@ -280,9 +280,10 @@ A run that will not be finished — stopped on purpose, or blocked for good — 
 live run, else its most recent blocked run. It sets the run's `outcome` to `abandoned`,
 records the reason and who abandoned it (the account, and the executor identity as `run
 start` resolves it; on a split runner the account is the calling agent's `SUDO_USER`),
-records a `human_intervention`, and releases the worktree's baseline and advance claims.
+and releases the worktree's baseline and advance claims.
 `tdd fleet` stops listing the run, `tdd metrics` reports it as `abandoned` with an
-`abandoned: {reason, by}` entry, and a new run can start at the same worktree path.
+`abandoned: {reason, by}` entry, and a new run can start at the same worktree path. The
+friction log names the reason on an `Abandoned:` line in its header.
 
 When the worktree is gone, abandon by id from any worktree of the repo: `tdd run abandon
 --run <id> --reason "<why>"`. `--run` is accepted only for a run whose worktree no longer
@@ -325,7 +326,7 @@ cycle's RED path empirically, assigns cycle kinds, and authors the contract — 
 
 `tdd log render` projects the ledger into a markdown friction log — the feedback channel
 back to the **planning** process. It reports plan fidelity (declared vs delivered vs
-skipped vs never-reached cycles, human interventions) and, per cycle: the target, suite
+skipped vs never-reached cycles, and unblocks with their notes) and, per cycle: the target, suite
 runs by phase, the first-run outcome against expectation, sensitivity checks, commits,
 and integrity events, and the failures each suite invocation saw, with the phase that
 failed and the first line of its message. A `## Time` section says where the run's time went: the wall clock,
@@ -354,7 +355,7 @@ rendered, never written. Judgement enters in exactly two ways:
   narrative as the agent's opinion.
 
 `tdd metrics` is the quantitative companion: attempts per cycle, RED-first violation
-rate, fidelity, blockers, interventions, and suite time per phase against the run's wall
+rate, fidelity, blockers, unblocks, and suite time per phase against the run's wall
 clock. Cross-plan aggregates are deliberately labelled
 non-comparable — cycle difficulty varies too much — so compare runs of the same contract
 only (e.g. the same plan executed by two models).
@@ -492,11 +493,11 @@ and is never reclassified as a pin.
 | `tdd annotate --key --value` | attach judgement to the current cycle |
 | `tdd note "<text>"` | attach a free-text narrative note to the current cycle or run |
 | `tdd blocker --kind --detail` | typed blocker; releases the stop hook |
-| `tdd resume [--unblock --note]` | reconstruct position; human intervention |
-| `tdd run abandon --reason <text> [--run <id>]` | end a run that will not be finished; human only |
+| `tdd resume [--unblock --note]` | reconstruct position; `--unblock` reopens a blocked run and records an unblock |
+| `tdd run abandon --reason <text> [--run <id>]` | end a run that will not be finished; for whoever supervises the run |
 | `tdd log render [--out]` | project the ledger into a friction log |
 | `tdd invocation show <id>` | an invocation's recorded failures: phase, message, detail |
-| `tdd metrics` | fidelity, attempts, violations, interventions, time |
+| `tdd metrics` | fidelity, attempts, violations, unblocks, time |
 | `tdd fleet [--json]` | all active runs across every worktree; read-only |
 
 ## Scoped baseline capture (R9.5c)

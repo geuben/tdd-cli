@@ -45,6 +45,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   `tdd ledger unbind <source>` clears a binding, so the source's next runs record the
   guest's claim again instead of the previous run's model.
 
+### Changed
+
+- **Unblocks, not human interventions** (#186). The friction log's "Human interventions: N" is
+  now "Unblocks: N", and `tdd metrics`' `human_interventions` key is now `unblocks` (breaking
+  for JSON readers; there is no alias). tdd-cli cannot tell who ran `resume --unblock`, so it no
+  longer says a person did. `tdd run abandon` no longer counts as one. It stops writing a
+  `human_intervention` row, the rows it wrote before are left out of the count, and the
+  friction log names the reason on a new `Abandoned:` header line. The ledger schema is
+  unchanged.
+
 ### Fixed
 
 - **`tdd ledger bind --executor ""` bound an empty model** (#179), which every later run
