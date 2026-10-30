@@ -6,6 +6,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **A read-only report socket for dashboards** (#185). `[service] report_socket` opens a
+  socket (mode 660) that answers `metrics`, `fleet` and `log` with the admin socket's
+  results, opens every ledger read-only, and refuses every other request with
+  `method_not_allowed`. `tdd ledger metrics`, `fleet` and `log` fall back to it when the
+  admin socket cannot be opened. With no setting, nothing changes.
+- **`tdd ledger metrics --since <time>`** (#185): only the runs still open or ended at or
+  after an ISO 8601 time with a UTC offset; any other time is refused with `bad_since`.
+- **`time.cycles` in every run of `tdd metrics` and `tdd ledger metrics`** (#185): each
+  cycle's `opened_at`, `closed_at`, wall clock, suite time and suite runs.
+
 ## [0.16.0] - 2026-10-30
 
 ### Added
