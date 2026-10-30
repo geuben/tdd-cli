@@ -266,3 +266,41 @@ def test_the_hooks_readme_shows_the_stanza_init_writes():
     text = (REPO_ROOT / "examples/claude-code-hooks/README.md").read_text()
     block = text.split("```json\n", 1)[1].split("```", 1)[0]
     assert json.loads(block) == harness.HARNESSES["claude-code"].settings
+
+
+def test_plain_init_still_refuses_an_existing_tdd_toml(bare_repo):
+    (bare_repo / "tdd.toml").write_text("# mine\n")
+    out = run_cli(bare_repo, "init")
+    assert (out["ok"], read(bare_repo, "tdd.toml")) == (False, "# mine\n")
+
+
+@pytest.mark.parametrize(
+    "settings, wired",
+    [
+        (EXPECTED_SETTINGS, True),
+        (
+            {
+                "hooks": {
+                    "Stop": [
+                        {"hooks": [{"type": "command", "command": "mine"}]},
+                        *EXPECTED_SETTINGS["hooks"]["Stop"],
+                    ],
+                    "PreToolUse": EXPECTED_SETTINGS["hooks"]["PreToolUse"],
+                }
+            },
+            True,
+        ),
+        ({"hooks": {"Stop": EXPECTED_SETTINGS["hooks"]["Stop"], "PreToolUse": []}}, False),
+        ({"hooks": {"Stop": EXPECTED_SETTINGS["hooks"]["Stop"]}}, False),
+        ({"hooks": {"Stop": "nope", "PreToolUse": {}}}, False),
+        ({"hooks": {"Stop": 1, "PreToolUse": 2}}, False),
+        ({"hooks": {"Stop": [{"hooks": "nope"}, "x"], "PreToolUse": [{}]}}, False),
+        ({"hooks": {"Stop": [{"hooks": 5}, {"hooks": ["x"]}], "PreToolUse": []}}, False),
+        ({"hooks": []}, False),
+        ([], False),
+    ],
+)
+def test_wired_means_every_stanza_command_is_present(settings, wired):
+    from tddcli import harness
+
+    assert harness.wires(harness.HARNESSES["claude-code"], json.dumps(settings)) is wired
