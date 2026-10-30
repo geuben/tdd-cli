@@ -2040,7 +2040,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("name")
     s.add_argument("--executor", required=True)
     s.set_defaults(fn=_ledger_verb(_ledger_bind))
-    s = ledger_p.add_parser("unbind", help="clear a source's executor: its next runs record the claim")
+    s = ledger_p.add_parser("unbind", help="clear the executor a source's next runs record")
     s.add_argument("name")
     s.set_defaults(fn=_ledger_verb(_ledger_unbind))
     s = ledger_p.add_parser("fleet", help="active runs of every source")
