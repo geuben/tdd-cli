@@ -462,3 +462,21 @@ def test_a_cycle_close_checks_an_outside_artifact_only_when_the_cycle_touched_it
         ]
 
     assert seen == {"untouched": [], "touched": [("stale_artifact", "client")]}
+
+
+def test_run_start_reports_outside_stale_artifacts_once_as_inherited(repo):
+    """Issue #99 — staleness the run inherited is one run-level event, not a stale_artifact."""
+    _add_svc(
+        repo,
+        OUTSIDE_CHECK_TOML + "\n[artifact.spec]\n"
+        'path        = "svc/spec.json"\n'
+        'produced_by = "svc"\n'
+        'check       = "false"\n',
+    )
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+
+    assert _artifact_events(repo, out["run"]["id"]) == [
+        ("artifact_stale_inherited", None, '["client", "spec"]')
+    ]
