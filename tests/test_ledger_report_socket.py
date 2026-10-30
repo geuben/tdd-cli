@@ -139,3 +139,24 @@ def test_the_report_socket_answers_as_the_admin_socket_does(report_service):
         return m, f, log
 
     assert view(report_service.report) == view(report_service.admin)
+
+
+def test_the_report_socket_refuses_every_other_method(report_service, tmp_path):
+    other = [
+        ("ping", ()),
+        ("sources", ()),
+        ("add_source", ("vm-x", str(report_service.dir / "vm-x.sock"))),
+        ("remove_source", ("vm-1",)),
+        ("bind", ("vm-1", "m")),
+        ("import", (str(tmp_path / "x.sqlite3"), "legacy")),
+        ("open", (str(tmp_path),)),
+        ("lease", ()),
+        ("lease_snapshot", ()),
+        ("run", (1,)),
+        ("start_run", ()),
+        ("insert", ("run",)),
+    ]
+
+    answers = {m: answer(report_service.report, m, *a) for m, a in other}
+
+    assert answers == {m: "method_not_allowed" for m, _ in other}
