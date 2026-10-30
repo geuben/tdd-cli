@@ -16,6 +16,8 @@ Two invariants close that loop:
 
 from __future__ import annotations
 
+import re
+
 from conftest import git, run_cli
 
 
@@ -174,3 +176,29 @@ def test_test_paths_omission_says_what_to_add(repo):
     declared = _check(run_cli(repo, "doctor"), "test_paths declared")
     assert declared["ok"] is False
     assert "test_paths" in declared["detail"]
+
+
+def test_a_collection_probe_with_nothing_on_stdout_names_its_command_exit_and_stderr(repo):
+    """Issue 184: a probe whose command is not found writes to stderr only. Keeping
+    stdout alone left the check's detail blank, and the recorder's guard crashed
+    doctor instead of reporting it."""
+    (repo / "tdd.toml").write_text(
+        (repo / "tdd.toml").read_text()
+        + 'collect_command = "tdd-184-no-such-tool pytest"\n'
+        "\n"
+        "[[project.backend.override]]\n"
+        'pattern         = "contract/"\n'
+        'test_command    = "pytest contract"\n'
+        'collect_command = "tdd-184-other-tool pytest"\n'
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a collect command that is not installed")
+
+    detail = _check(run_cli(repo, "doctor"), "collectable")["detail"]
+
+    assert re.fullmatch(
+        r"`tdd-184-no-such-tool pytest --collect-only -q` exited 127: [^\n]*not found"
+        r"\n\n"
+        r"`tdd-184-other-tool pytest --collect-only -q` exited 127: [^\n]*not found",
+        detail,
+    ), detail
