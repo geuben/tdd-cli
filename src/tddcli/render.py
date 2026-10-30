@@ -393,7 +393,7 @@ def metrics(ledger: Ledger, worktree: str | None) -> dict:
                 "impl_attempts_max": max(impl_attempts, default=0),
                 "cycles_by_project": dict(by_project),
                 "blockers": {b["kind"]: b["n"] for b in blockers},
-                "human_interventions": len(ledger.interventions(run["id"])),
+                "unblocks": len(ledger.interventions(run["id"])),
                 "time": _time_json(_time_summary(ledger, run)),
                 "integrity_events": {r["kind"]: r["n"] for r in ledger.event_counts(run["id"])},
             }
