@@ -22,7 +22,8 @@ def _unblocks(ledger: Ledger, run_id: int) -> list:
     rows = ledger.interventions(run_id)
     if abandonment is None:
         return rows
-    return [r for r in rows if r["note"] != f"abandoned: {abandonment['reason']}"]
+    note = f"abandoned: {abandonment['reason']}"
+    return [r for r in rows if (r["note"], r["at"]) != (note, abandonment["at"])]
 
 
 def friction_log(ledger: Ledger, run) -> str:
