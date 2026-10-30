@@ -343,6 +343,10 @@ runs by phase, the first-run outcome against expectation, sensitivity checks, co
 and integrity events, and the failures each suite invocation saw, with the phase that
 failed and the first line of its message. A `## Time` section says where the run's time went: the wall clock,
 suite time and its share, per phase and per cycle.
+Plan fidelity also warns, one line per key, of a declared check that never ran: an
+`annotation_keys` entry none of whose cycles was delivered (skipped and never-reached
+cycles do not count), e.g. ``- **Declared check never ran:** `artifact_verify` (applies to
+cycles 12, 19)``.
 
 Every observable fact in it is projected from recorded events. The agent that did the
 work cannot compose it — that is what makes it worth reading, and why the log is

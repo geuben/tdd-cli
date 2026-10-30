@@ -6,6 +6,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Annotation keys can be scoped to the cycles they apply to** (#76). An `annotation_keys`
+  entry may now be a mapping, `{name: k, applies_to: [12, 19]}` or
+  `{name: k, projects: [device-suite]}`, and the close gate demands it only on those cycles,
+  so the rest no longer fill the friction log with `n/a`. Malformed entries fail
+  registration. Plain string keys behave as before, and a contract registered by an older
+  `tdd` keeps requiring every key on every cycle. The friction log's Plan fidelity section
+  now warns of a declared check that never ran: a key none of whose cycles was delivered.
+
 ## [0.16.0] - 2026-10-30
 
 ### Added
