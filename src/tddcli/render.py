@@ -108,6 +108,14 @@ def friction_log(ledger: Ledger, run) -> str:
             verdict = "as expected" if outcome == expected else f"**{outcome}**"
             a(f"- **First run outcome:** {outcome} ({verdict})")
 
+        for inv in ledger.invocations(cycle["id"]):
+            details = ledger.failure_details(inv["id"])
+            if details:
+                a(f"- **Failures — invocation {inv['id']} ({inv['phase_at']}, {inv['project']}):**")
+                for d in details:
+                    phase = f" [{d['phase']}]" if d["phase"] else ""
+                    a(f"  - `{d['test_id']}`{phase}: {d['message']}")
+
         sens = ledger.completed_sensitivity(cycle["id"])
         if sens:
             a("- **Sensitivity check:** verified, restore byte-identical")
