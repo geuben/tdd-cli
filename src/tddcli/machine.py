@@ -277,6 +277,15 @@ class Engine:
             verdict = adapter.run(test_id, target_only=True)
             if verdict.target_outcome != "passed":
                 remaining.append(test_id)
+                continue
+            self.ledger.event(
+                self.run["id"],
+                cycle_row["id"],
+                "flaky_pre_existing",
+                json.dumps(
+                    {"test": test_id, "phase": phase, "outcomes": ["failed", verdict.target_outcome]}
+                ),
+            )
         return remaining, {}
 
     def sweep(self, cycle_row, touched: set[str], skip_own: bool = False) -> SweepOutcome:
