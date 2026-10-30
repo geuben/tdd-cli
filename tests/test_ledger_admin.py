@@ -112,6 +112,16 @@ def test_unbind_refuses_an_unknown_source(repo, ledger_service):
     assert out["result"].get("reason") == "unknown_source"
 
 
+def test_bind_refuses_an_empty_executor(repo, ledger_service):
+    ledger_service.service.add_source("vm-1", ledger_service.dir / "vm-1.sock", executor="m")
+
+    reasons = [
+        run_cli(repo, "ledger", "bind", "vm-1", "--executor", e)["result"].get("reason")
+        for e in ("", "   ")
+    ]
+    assert reasons == ["bad_executor", "bad_executor"]
+
+
 def test_socket_modes(ledger_service):
     guest = ledger_service.dir / "vm-1.sock"
     ledger_service.service.add_source("vm-1", guest, executor=None)
