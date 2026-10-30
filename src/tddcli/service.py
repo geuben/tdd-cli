@@ -276,8 +276,17 @@ def _well_formed_repo(repo) -> bool:
 
 
 def _since(raw) -> datetime | None:
-    """A `metrics` request's `since`, as a time."""
-    return None if raw is None else datetime.fromisoformat(raw)
+    """A `metrics` request's `since`, as a time; ValueError unless it carries an offset.
+
+    A naive time is refused rather than taken as UTC: the host's own offset would shift
+    it silently, and it cannot be compared with the ledger's times, which all carry one.
+    """
+    if raw is None:
+        return None
+    since = datetime.fromisoformat(raw) if isinstance(raw, str) else None
+    if since is None or since.tzinfo is None:
+        raise ValueError(raw)
+    return since
 
 
 def _view(repo: str, path: Path, readonly: bool) -> ledger_mod.Ledger | None:
@@ -502,12 +511,25 @@ class Service:
                 view.close()
         return {"repos": out}
 
+    def _metrics(self, args: list, kwargs: dict, *, readonly: bool) -> dict:
+        """A `metrics` request, on either socket: refused when its `since` is not a time."""
+        raw = kwargs.get("since")
+        try:
+            since = _since(raw)
+        except ValueError:
+            return _refusal(
+                "bad_since",
+                "since takes an ISO 8601 time with a UTC offset, such as"
+                f" 2026-09-01T10:20:00+00:00: {raw}",
+            )
+        return _ok(self.metrics(*args, since=since, readonly=readonly))
+
     def report(self, method: str, args: list, kwargs: dict) -> dict:
         """A dashboard's request, from the report socket: the admin socket's reads alone."""
         if method not in REPORT_METHODS:
             return _refusal("method_not_allowed", f"{method} is not answered on the report socket")
         if method == "metrics":
-            return _ok(self.metrics(*args, since=_since(kwargs.get("since")), readonly=True))
+            return self._metrics(args, kwargs, readonly=True)
         if method == "fleet":
             return _ok(self.fleet())
         return self.log(*args, readonly=True)
@@ -515,7 +537,7 @@ class Service:
     def admin(self, method: str, args: list, kwargs: dict) -> dict:
         """An operator's request, from the admin socket."""
         if method == "metrics":
-            return _ok(self.metrics(*args, since=_since(kwargs.get("since"))))
+            return self._metrics(args, kwargs, readonly=False)
         if method == "fleet":
             return _ok(self.fleet())
         if method == "log":
