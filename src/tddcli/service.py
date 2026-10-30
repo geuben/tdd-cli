@@ -5,7 +5,8 @@ is where the suites run. Its ledger must not be: it would vanish with the guest,
 guest root could rewrite it. So the runner keeps none, and reads and writes the host's
 through a socket the host forwards into the guest.
 
-The service listens on one socket per source, plus an admin socket for the operator.
+The service listens on one socket per source, plus an admin socket for the operator,
+and optionally a report socket that answers the operator's reads and nothing else.
 A connection's source is the listener it arrived on, never anything the client sends:
 the protocol has no source field at all.
 """
@@ -35,7 +36,8 @@ CONFIG_ENV = "TDD_LEDGER_SERVICE_CONFIG"
 SOURCES_FILE = "sources.json"
 
 #: The admin socket is the service account's alone; a guest's is shared with the group
-#: the operator forwards it through.
+#: the operator forwards it through, and so is the report socket, which the operator
+#: keeps to one account with an ACL on its directory.
 ADMIN_MODE = 0o600
 GUEST_MODE = 0o660
 
