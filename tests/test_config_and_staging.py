@@ -358,3 +358,18 @@ def test_a_wildcard_test_path_classifies_edits_as_tests_not_implementation(cfg):
         "ws/crates/dd-bridge/tests/main.rs",
     ]
     assert out.implementation == ["ws/crates/dd-bridge/src/adapter/config.rs"]
+
+
+def test_flaky_reruns_must_be_a_non_negative_integer(tmp_path):
+    messages = []
+    for value in ("-1", "1.5", '"1"', "true"):
+        (tmp_path / "tdd.toml").write_text(
+            '[project.backend]\nroot = "backend"\nadapter = "pytest"\ntest_paths = ["tests/"]\n'
+            + f"flaky_reruns = {value}\n"
+        )
+        try:
+            config_mod.load(tmp_path)
+            messages.append(None)
+        except config_mod.ConfigError as exc:
+            messages.append(str(exc))
+    assert messages == ["project 'backend': flaky_reruns must be a non-negative integer"] * 4
