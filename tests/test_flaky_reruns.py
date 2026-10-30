@@ -13,6 +13,7 @@ import shutil
 
 from conftest import git, run_cli, write_plan
 from tddcli import gitutil
+from tddcli.adapters.pytest_adapter import PytestAdapter
 from tddcli.ledger import Ledger
 
 ID = "backend::tests/test_legacy.py::test_legacy"
@@ -159,4 +160,14 @@ def test_a_failure_in_a_test_the_run_added_is_not_rerun(repo, tmp_path):
     assert (out["next_action"]["verb"], out["result"]["other_failures"]) == (
         "fix_regression",
         ["backend::tests/test_new.py::test_new"],
+    )
+
+
+def test_a_failure_whose_file_cannot_be_resolved_is_not_rerun(repo, tmp_path, monkeypatch):
+    _to_green(repo, tmp_path / "count", "n == 2")
+    monkeypatch.setattr(PytestAdapter, "target_path", lambda self, native: None)
+    out = run_cli(repo, "advance")
+    assert (out["next_action"]["verb"], out["result"]["other_failures"]) == (
+        "fix_regression",
+        [ID],
     )
