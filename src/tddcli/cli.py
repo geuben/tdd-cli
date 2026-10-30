@@ -495,7 +495,11 @@ def cmd_doctor(args) -> Envelope:
         # place a `ModuleNotFoundError` like the real `pyyaml` incident surfaces.
         adapter = adapters.build(project, worktree)
         gate = adapter.collectable()
-        check("collectable", gate.ok, gate.output, project=name)
+        detail = gate.output
+        provenance = actor.current().provenance()
+        if not gate.ok and provenance:
+            detail = f"{detail}\n{provenance}"
+        check("collectable", gate.ok, detail, project=name)
 
         # R7.13's premise — "files the default runner config cannot reach" — is
         # a config property nothing else enforces. Probe it at preflight so the
