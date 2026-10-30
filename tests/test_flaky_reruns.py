@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import stat
 
 from conftest import git, run_cli, write_plan
 from tddcli import gitutil
@@ -68,6 +69,12 @@ def _to_green(
     run_cli(repo, "advance")  # RED
     calc.write_text("def add(a, b):\n    return a + b\n")
     return run_id
+
+
+def _sh(path, body):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/bash\n" + body + "\n")
+    path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
 
 def _flaky_events(repo, run_id):
@@ -196,3 +203,31 @@ def test_flaky_reruns_zero_replies_exactly_as_before(repo, tmp_path):
         "fix_regression",
         {"other_failures": [ID]},
     )
+
+
+def test_green_on_an_exec_project_passes_when_an_untouched_script_passes_on_rerun(repo, tmp_path):
+    counter = tmp_path / "exec-count"
+    (repo / "tdd.toml").write_text(
+        '[project.gates]\nroot = "gates"\nadapter = "exec"\n'
+        'test_paths = ["scripts/check-*.sh"]\nlint = []\ntypecheck = []\n'
+    )
+    (repo / "gates" / "lib").mkdir(parents=True)
+    _sh(
+        repo / "gates" / "scripts" / "check-legacy.sh",
+        f"n=$(( $(cat {counter} 2>/dev/null || echo 0) + 1 )); echo $n > {counter}; test $n -ne 2",
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "exec gates")
+    plan = write_plan(
+        repo,
+        "---\ncycles:\n  - n: 1\n    project: gates\n    title: t\n"
+        '    test: "scripts/check-answer.sh"\n    files: ["lib/answer.txt"]\n'
+        '    commit_red: "test: t"\n    commit_green: "feat: t"\n---\n',
+    )
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+    _sh(repo / "gates" / "scripts" / "check-answer.sh", 'test "$(cat lib/answer.txt)" = 42')
+    run_cli(repo, "advance")  # RED
+    (repo / "gates" / "lib" / "answer.txt").write_text("42\n")
+    out = run_cli(repo, "advance")
+    assert out["next_action"]["verb"] == "refactor_or_advance"
