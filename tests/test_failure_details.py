@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import textwrap
+from pathlib import Path
 from unittest.mock import patch
 
 from conftest import git, run_cli, write_plan
@@ -397,3 +398,25 @@ def test_invocation_show_prints_the_stored_failure_details(repo):
         [("backend::tests/test_smoke.py::test_smoke", "call", "AssertionError: smoke broke", True)],
         False,
     )
+
+
+def test_a_pytest_failure_with_no_phase_report_is_still_recorded(tmp_path, monkeypatch):
+    """A report that names a failing test but carries none of its phases (an
+    interrupted worker) still records the failure, with nothing invented for it."""
+    (tmp_path / "tdd.toml").write_text(
+        '[project.backend]\nroot = "backend"\nadapter = "pytest"\n'
+        'test_paths = ["tests/"]\ntest_command = "pytest tests"\n'
+    )
+    adapter = adapters.build(config_mod.load(tmp_path).project("backend"), tmp_path)
+
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
+        path = command.split("--json-report-file=", 1)[1].split(" --", 1)[0]
+        Path(path.strip("'\"")).write_text(
+            json.dumps({"tests": [{"nodeid": "tests/test_x.py::test_x", "outcome": "failed"}]})
+        )
+        return 1, "", ""
+
+    monkeypatch.setattr(adapters.base, "run_command", fake)
+    assert adapter.run(None).failure_details == {
+        "backend::tests/test_x.py::test_x": FailureDetail(phase=None, message="", detail="")
+    }
