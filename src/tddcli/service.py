@@ -344,6 +344,10 @@ class Service:
         self.executors[name] = executor
         self._save()
 
+    def unbind(self, name: str) -> None:
+        """Clear the source's binding: its next runs record the guest's own claim."""
+        self.executors[name] = None
+
     def take_lease(self, holder: _Session, conn: socket.socket) -> int:
         """Count one more suite running on this host; the worker count it should use.
 
@@ -467,6 +471,10 @@ class Service:
                 return _refusal("unknown_source", f"no source named {name!r}")
             self.bind(name, executor)
             return _ok({"name": name, "executor": executor})
+        if method == "unbind":
+            (name,) = args
+            self.unbind(name)
+            return _ok({"name": name, "executor": None})
         if method == "remove_source":
             (name,) = args
             if name not in self.executors:

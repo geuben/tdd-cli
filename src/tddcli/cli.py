@@ -1791,6 +1791,16 @@ def _ledger_bind(args, cfg) -> Envelope:
     )
 
 
+def _ledger_unbind(args, cfg) -> Envelope:
+    unbound = wire.call(cfg.admin_socket, "unbind", args.name)
+    return Envelope(
+        result=unbound,
+        next_action=NextAction(
+            Verb.COMPLETE, f"Source {args.name}'s next runs record the guest's own claim."
+        ),
+    )
+
+
 def _ledger_remove_source(args, cfg) -> Envelope:
     removed = wire.call(cfg.admin_socket, "remove_source", args.name)
     return Envelope(
@@ -2030,6 +2040,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("name")
     s.add_argument("--executor", required=True)
     s.set_defaults(fn=_ledger_verb(_ledger_bind))
+    s = ledger_p.add_parser("unbind", help="clear a source's executor: its next runs record the claim")
+    s.add_argument("name")
+    s.set_defaults(fn=_ledger_verb(_ledger_unbind))
     s = ledger_p.add_parser("fleet", help="active runs of every source")
     s.set_defaults(fn=_ledger_verb(_ledger_fleet))
     s = ledger_p.add_parser("metrics", help="metrics over every source's runs")
