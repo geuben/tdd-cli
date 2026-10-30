@@ -28,6 +28,7 @@ from .base import (
     _overlap_error,
     _suite_overlap,
     clip_failure,
+    command_failure,
     run_command,
 )
 
@@ -267,11 +268,12 @@ class VitestAdapter(Adapter):
         suite — against a live backend — just to enumerate it.
         """
         chunks = []
+        command = self._collect_cmd()
         code, out, err = run_command(
-            self._collect_cmd(), self.root, extra_env=self._suite_env(None), label="doctor"
+            command, self.root, extra_env=self._suite_env(None), label="doctor"
         )
         if code != 0:
-            chunks.append((err or out).strip())
+            chunks.append((err or out).strip() or command_failure(command, code))
         for ov in self.project.overrides:
             if not ov.collect_command:
                 chunks.append(
@@ -284,7 +286,7 @@ class VitestAdapter(Adapter):
                 ov.collect_command, self.root, extra_env=self._suite_env(ov), label="doctor"
             )
             if code != 0:
-                chunks.append((err or out).strip())
+                chunks.append((err or out).strip() or command_failure(ov.collect_command, code))
         return GateResult(ok=not chunks, output="\n\n".join(chunks)[:2000])
 
     def override_isolation(self) -> GateResult:
