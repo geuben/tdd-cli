@@ -1475,12 +1475,33 @@ def cmd_target(args) -> Envelope:
 
 
 def cmd_invocation_show(args) -> Envelope:
+    """One suite invocation's recorded failures (#105), looked up across the whole
+    repository's ledger: a finished run's invocations are what an audit asks about."""
     worktree, cfg, ledger, run = _context(require_run=False)
-    if ledger.invocation(args.id) is None:
+    invocation = ledger.invocation(args.id)
+    if invocation is None:
         return failure(
             f"no invocation {args.id} in this repository's ledger", reason="unknown_invocation"
         )
-    return failure("tdd invocation show is not implemented", reason="not_implemented")
+    return Envelope(
+        result={
+            "invocation": invocation["id"],
+            "phase": invocation["phase_at"],
+            "project": invocation["project"],
+            "failures": [
+                {
+                    "test": d["test_id"],
+                    "phase": d["phase"],
+                    "message": d["message"],
+                    "detail": d["detail"],
+                }
+                for d in ledger.failure_details(invocation["id"])
+            ],
+        },
+        next_action=NextAction(
+            Verb.REFACTOR_OR_ADVANCE, "Read-only. Resume the phase in progress."
+        ),
+    )
 
 
 def cmd_log_render(args) -> Envelope:
