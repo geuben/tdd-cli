@@ -77,3 +77,11 @@ def test_green_passes_when_an_untouched_failure_passes_on_rerun(repo, tmp_path):
     _to_green(repo, tmp_path / "count", "n == 2")
     out = run_cli(repo, "advance")
     assert out["next_action"]["verb"] == "refactor_or_advance"
+
+
+def test_a_cleared_failure_is_recorded_as_flaky_pre_existing_with_both_outcomes(repo, tmp_path):
+    run_id = _to_green(repo, tmp_path / "count", "n == 2")
+    run_cli(repo, "advance")
+    assert _flaky_events(repo, run_id) == [
+        {"test": ID, "phase": "AWAITING_IMPL", "outcomes": ["failed", "passed"]}
+    ]
