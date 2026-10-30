@@ -223,10 +223,36 @@ def ledger_home(tmp_path, monkeypatch):
     return home
 
 
-@pytest.fixture
-def repo(tmp_path, ledger_home):
-    """A git repo with one Python project, wired for the pytest adapter."""
-    root = tmp_path / "workspace"
+def _init_repo(root: Path) -> None:
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    git(root, "config", "user.email", "test@example.com")
+    git(root, "config", "user.name", "Test")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "initial")
+
+
+@pytest.fixture(scope="session")
+def _repo_templates(tmp_path_factory):
+    """Each fixture repo is built and committed once per worker, then copied per test.
+
+    Building one is five git processes; copying one is none, and nearly every test
+    that drives the CLI starts from a fresh repo. A copy is the same repo — same
+    commit, same index — so nothing a test observes changes.
+    """
+    built: dict[str, Path] = {}
+
+    def template(name: str, build) -> Path:
+        if name not in built:
+            root = tmp_path_factory.mktemp(f"template-{name}") / "workspace"
+            build(root)
+            _init_repo(root)
+            built[name] = root
+        return built[name]
+
+    return template
+
+
+def _build_repo(root: Path) -> None:
     (root / "backend" / "tests").mkdir(parents=True)
     (root / "backend" / "app").mkdir(parents=True)
 
@@ -249,22 +275,19 @@ def repo(tmp_path, ledger_home):
         ".pytest_cache/\n__pycache__/\n*.pyc\n.coverage\njsonreport*.json\n"
     )
 
-    subprocess.run(["git", "init", "-q", str(root)], check=True)
-    git(root, "config", "user.email", "test@example.com")
-    git(root, "config", "user.name", "Test")
-    git(root, "add", "-A")
-    git(root, "commit", "-q", "-m", "initial")
+
+@pytest.fixture
+def repo(tmp_path, ledger_home, _repo_templates):
+    """A git repo with one Python project, wired for the pytest adapter."""
+    root = tmp_path / "workspace"
+    shutil.copytree(_repo_templates("repo", _build_repo), root, symlinks=True)
     return root
 
 
 FAKE_VITEST = Path(__file__).parent / "fake_vitest.py"
 
 
-@pytest.fixture
-def repo_vitest(tmp_path, ledger_home):
-    """A git repo with one vitest project, `frontend`, driven by `fake_vitest.py`:
-    a named vitest project (`[core]`) whose runner is a Python script."""
-    root = tmp_path / "workspace"
+def _build_repo_vitest(root: Path) -> None:
     (root / "frontend" / "src").mkdir(parents=True)
     fake = f"{shlex.quote(sys.executable)} {shlex.quote(str(FAKE_VITEST))}"
     (root / "tdd.toml").write_text(
@@ -279,11 +302,13 @@ def repo_vitest(tmp_path, ledger_home):
     )
     (root / "frontend" / "src" / "smoke.test.ts").write_text("case: smoke > works = pass\n")
 
-    subprocess.run(["git", "init", "-q", str(root)], check=True)
-    git(root, "config", "user.email", "test@example.com")
-    git(root, "config", "user.name", "Test")
-    git(root, "add", "-A")
-    git(root, "commit", "-q", "-m", "initial")
+
+@pytest.fixture
+def repo_vitest(tmp_path, ledger_home, _repo_templates):
+    """A git repo with one vitest project, `frontend`, driven by `fake_vitest.py`:
+    a named vitest project (`[core]`) whose runner is a Python script."""
+    root = tmp_path / "workspace"
+    shutil.copytree(_repo_templates("repo_vitest", _build_repo_vitest), root, symlinks=True)
     return root
 
 
