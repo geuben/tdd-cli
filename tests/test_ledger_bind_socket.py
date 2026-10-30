@@ -136,3 +136,25 @@ def test_the_bind_socket_belongs_to_its_group(tmp_path, monkeypatch):
         st = svc.bind_socket.stat()
 
     assert (stat.S_IMODE(st.st_mode), st.st_gid) == (0o660, grp.getgrnam(group).gr_gid)
+
+
+def refused(tmp_path, body: str) -> bool:
+    """Whether the service refuses a config with this added to its `[service]`."""
+    path = Path(tempfile.mkdtemp(dir=tmp_path)) / "ledger.toml"
+    path.write_text('[service]\nadmin_socket = "/tmp/tdd-179-admin.sock"\n' + body)
+    try:
+        service.load_config(path)
+    except service.ServiceConfigError:
+        return True
+    return False
+
+
+def test_a_half_or_clashing_bind_config_is_refused(tmp_path):
+    g = grp.getgrgid(os.getegid()).gr_name
+    cases = [
+        'bind_socket = "/tmp/tdd-179-bind.sock"\n',
+        f'bind_group = "{g}"\n',
+        f'bind_socket = "/tmp/tdd-179-admin.sock"\nbind_group = "{g}"\n',
+    ]
+
+    assert [refused(tmp_path, body) for body in cases] == [True, True, True]
