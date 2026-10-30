@@ -85,3 +85,13 @@ def test_a_cleared_failure_is_recorded_as_flaky_pre_existing_with_both_outcomes(
     assert _flaky_events(repo, run_id) == [
         {"test": ID, "phase": "AWAITING_IMPL", "outcomes": ["failed", "passed"]}
     ]
+
+
+def test_a_green_failure_that_fails_again_carries_its_rerun_outcomes(repo, tmp_path):
+    _to_green(repo, tmp_path / "count", "n >= 2")
+    out = run_cli(repo, "advance")
+    assert (
+        out["next_action"]["verb"],
+        out["result"]["other_failures"],
+        out["result"].get("rerun_outcomes"),
+    ) == ("fix_regression", [ID], {ID: ["failed", "failed"]})
