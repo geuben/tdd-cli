@@ -91,6 +91,17 @@ def test_abandoning_records_no_unblock(repo):
     assert notes == []
 
 
+def test_the_friction_log_names_the_abandonment_reason(repo):
+    plan = register(repo)
+    start(repo, plan)
+
+    run_cli(repo, "run", "abandon", "--reason", "superseded by #145")
+    run_cli(repo, "log", "render", "--out", str(repo / "friction.md"))
+
+    text = (repo / "friction.md").read_text()
+    assert "  Outcome: abandoned\n- Abandoned: superseded by #145\n" in text
+
+
 def test_fleet_stops_listing_an_abandoned_run(repo):
     plan = register(repo)
     start(repo, plan)
