@@ -57,3 +57,16 @@ def test_a_delivered_plan_is_refused_before_its_suite_runs(repo, tmp_path):
         "ended_at": ledger(repo).run(first)["ended_at"],
         "suite_ran": False,
     }
+
+
+def test_a_blocked_or_abandoned_run_does_not_deliver_its_plan(repo):
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+    run_cli(repo, "run", "abandon", "--reason", "x")
+    after_abandon = run_cli(repo, "run", "start", "--plan", plan)
+    run_cli(repo, "blocker", "--kind", "plan_defect", "--detail", "x")
+
+    after_block = run_cli(repo, "run", "start", "--plan", plan)
+
+    assert [after_abandon["ok"], after_block["ok"]] == [True, True]
