@@ -6,6 +6,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Paths git's ignore rules match, including tracked ones such as a committed `.gradle/`,
+  are no longer staged, flagged `undeclared_file_touched` or held by the run-close gate**
+  (#98). A tracked one inside the cycle's project no longer fails GREEN's commit. Any left
+  dirty are named once at run close in a new informational `ignored_paths_dirty` event.
+
 ## [0.16.0] - 2026-10-30
 
 ### Added

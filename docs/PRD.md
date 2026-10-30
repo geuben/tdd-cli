@@ -204,7 +204,8 @@ an auditor compares them against reality.
 ### IntegrityEvent
 Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mismatch`,
 `off_protocol_invocation`, `stale_artifact`, `plan_blob_changed`, `executor_unknown`,
-`artifact_regenerate_failed`, `baseline_late_probe`, `baseline_late_probe_unobserved`.
+`artifact_regenerate_failed`, `baseline_late_probe`, `baseline_late_probe_unobserved`,
+`ignored_paths_dirty`.
 
 ### Blocker
 Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `context_exhausted`,

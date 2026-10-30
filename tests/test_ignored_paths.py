@@ -105,8 +105,7 @@ def test_dirty_ignored_paths_are_reported_once_at_run_close(repo):
     _drive_one_cycle(repo, rel, "v2\n")
 
     (repo / "backend" / "tests" / "test_sub.py").write_text(
-        "from app.sub import sub\n\n\ndef test_subtract_two_numbers():\n"
-        "    assert sub(5, 3) == 2\n"
+        "from app.sub import sub\n\n\ndef test_subtract_two_numbers():\n    assert sub(5, 3) == 2\n"
     )
     (repo / "backend" / "app" / "sub.py").write_text(
         "def sub(a, b):\n    raise NotImplementedError\n"
