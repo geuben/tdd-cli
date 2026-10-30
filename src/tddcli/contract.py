@@ -216,8 +216,9 @@ def _check_annotation_scope(entry: dict, cycles: list[DeclaredCycle]) -> None:
     if "applies_to" in entry and "projects" in entry:
         raise ContractError(f"annotation key {name!r}: applies_to and projects are exclusive")
     field_name = "applies_to" if "applies_to" in entry else "projects"
-    scope = _scope_list(entry.get(field_name))
-    if not scope or scope == [None]:
+    raw = entry.get(field_name)
+    scope = [] if raw is None else _scope_list(raw)
+    if not scope:
         raise ContractError(
             f"annotation key {name!r} names no scope: give applies_to or projects,"
             " or use the plain string form"
@@ -227,22 +228,24 @@ def _check_annotation_scope(entry: dict, cycles: list[DeclaredCycle]) -> None:
             raise ContractError(
                 f"annotation key {name!r}: applies_to must be a cycle ordinal or a list of them"
             )
-    elif not all(isinstance(v, str) for v in scope):
-        raise ContractError(
-            f"annotation key {name!r}: projects must be a project name or a list of them"
-        )
-    ordinals = {c.ordinal for c in cycles}
-    projects = {p for c in cycles for p in c.projects}
-    for v in scope:
-        if field_name == "applies_to" and v not in ordinals:
+        declared = {c.ordinal for c in cycles}
+        for v in scope:
+            if v not in declared:
+                raise ContractError(
+                    f"annotation key {name!r}: applies_to names cycle {v},"
+                    " which the plan does not declare"
+                )
+    else:
+        if not all(isinstance(v, str) for v in scope):
             raise ContractError(
-                f"annotation key {name!r}: applies_to names cycle {v},"
-                " which the plan does not declare"
+                f"annotation key {name!r}: projects must be a project name or a list of them"
             )
-        if field_name == "projects" and v not in projects:
-            raise ContractError(
-                f"annotation key {name!r}: projects names {v!r}, which no declared cycle uses"
-            )
+        used = {p for c in cycles for p in c.projects}
+        for v in scope:
+            if v not in used:
+                raise ContractError(
+                    f"annotation key {name!r}: projects names {v!r}, which no declared cycle uses"
+                )
 
 
 def _resolve_annotation_keys(entries, cycles: list[DeclaredCycle]) -> list[str]:
