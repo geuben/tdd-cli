@@ -6,6 +6,7 @@ import json
 import subprocess
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -19,7 +20,7 @@ SKILL = ".claude/skills/tdd-drive/SKILL.md"
 STOP_HOOK = ".claude/hooks/tdd_stop_hook.py"
 BASH_HOOK = ".claude/hooks/tdd_bash_hook.py"
 SETTINGS = ".claude/settings.json"
-EXPECTED_SETTINGS = {
+EXPECTED_SETTINGS: dict[str, Any] = {
     "hooks": {
         "Stop": [
             {

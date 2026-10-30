@@ -73,7 +73,9 @@ def fixture_ledger(tmp_path, unblocks, abandoned=None) -> tuple[Ledger, sqlite3.
         ledger.insert(
             "human_intervention", run_id=run_id, note=f"abandoned: {reason}", at=_at(minute)
         )
-    return ledger, ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
+    run = ledger.one("SELECT * FROM run WHERE id = ?", (run_id,))
+    assert run is not None
+    return ledger, run
 
 
 def fidelity(text):
