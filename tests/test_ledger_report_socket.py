@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -176,3 +177,7 @@ def test_the_report_socket_reads_ledgers_it_cannot_write(report_service):
     ]
 
     assert reads == [True, True, True]
+
+
+def test_the_report_socket_is_mode_660(report_service):
+    assert stat.S_IMODE(report_service.report.stat().st_mode) == 0o660
