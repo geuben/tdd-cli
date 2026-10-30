@@ -10,6 +10,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
+import yaml
+
+from .contract import split_front_matter
+
 
 @dataclass(frozen=True)
 class Scaffold:
@@ -27,6 +31,8 @@ class Harness:
     settings_path: str
     #: What that file holds when init writes it: the wiring for `files`' hooks.
     settings: dict = field(hash=False)
+    #: The dest of the driving skill, whose declared versions `tdd doctor` checks.
+    skill: str
 
 
 def _hook(script: str) -> dict:
@@ -51,6 +57,7 @@ HARNESSES: dict[str, Harness] = {
                 ],
             }
         },
+        ".claude/skills/tdd-drive/SKILL.md",
     ),
 }
 
@@ -83,3 +90,19 @@ def wires(h: Harness, text: str) -> bool:
         if not wanted <= present:
             return False
     return True
+
+
+def declared_versions(text: str) -> dict | None:
+    """The `metadata` mapping a skill's front-matter declares, or None when it has none.
+
+    Unusable front-matter — absent, not YAML, not a mapping — declares nothing.
+    """
+    raw = split_front_matter(text)
+    if raw is None:
+        return None
+    try:
+        front = yaml.safe_load(raw)
+    except yaml.YAMLError:
+        return None
+    metadata = front.get("metadata") if isinstance(front, dict) else None
+    return metadata if isinstance(metadata, dict) else None

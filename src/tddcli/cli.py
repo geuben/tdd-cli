@@ -45,7 +45,15 @@ from . import service as service_mod
 from . import target_lint as target_lint_mod
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
-from .envelope import Envelope, NextAction, Verb, failure, heartbeat
+from .envelope import (
+    ENVELOPE_VERSION,
+    VERB_SET_VERSION,
+    Envelope,
+    NextAction,
+    Verb,
+    failure,
+    heartbeat,
+)
 from .ledger import Ledger, LedgerVersionError, ledger_path, now, open_ledger
 from .machine import CLOSED, SKIPPED, Engine
 from .remote import RemoteLedger
@@ -297,6 +305,25 @@ def _write_config(worktree: Path, path: Path) -> tuple[dict, str]:
     return result, detail
 
 
+def _skill_version(h: harness.Harness, text: str) -> tuple[bool, str]:
+    """A declared mismatch fails; a skill that declares nothing passes, as a notice."""
+    remedy = f"`tdd init --skill {h.name} --update-skill`"
+    declared = harness.declared_versions(text)
+    if declared is None:
+        return True, (
+            f"{h.skill} declares no verb_set_version, so drift cannot be checked;"
+            f" {remedy} replaces it with this version's copy"
+        )
+    verb_set, envelope = declared.get("verb_set_version"), declared.get("envelope_version")
+    if str(verb_set) == str(VERB_SET_VERSION) and str(envelope) == str(ENVELOPE_VERSION):
+        return True, f"verb_set_version {verb_set}, envelope_version {envelope}"
+    return False, (
+        f"{h.skill} was written for verb_set_version {verb_set}, envelope_version {envelope};"
+        f" this tdd emits {VERB_SET_VERSION}, {ENVELOPE_VERSION}. Run {remedy} and re-apply"
+        " any local additions."
+    )
+
+
 LEGACY_ARTIFACTS = (".pytest_report.json", ".tdd-state.json")
 SKIP_DIRS = {"node_modules", ".venv", "venv", "__pycache__", ".git"}
 
@@ -474,6 +501,11 @@ def cmd_doctor(args) -> Envelope:
     if ex.source == "unknown":
         ex_detail += f" — {ex.reason}"
     check("executor identity", True, ex_detail)
+
+    for h in harness.HARNESSES.values():
+        skill = worktree / h.skill
+        if skill.is_file():
+            check("driving skill version", *_skill_version(h, skill.read_text(errors="replace")))
 
     projects: dict[str, dict] = {}
     for name, project in cfg.projects.items():
