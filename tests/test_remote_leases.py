@@ -70,3 +70,13 @@ def test_guest_fleet_reports_the_hosts_lease_count(
         out = run_cli(repo, "fleet", "--json")
 
     assert out["result"]["suites"]["active"] == 1
+
+
+def test_core_budget_does_not_cap_a_runner_that_keeps_its_own_ledger(
+    split_runner, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("TDD_LEASE_DIR", str(tmp_path / "leases"))
+    split_runner.config.write_text(split_runner.config.read_text() + "core_budget = 2\n")
+
+    with leases.worker_lease() as workers:
+        assert workers == 12
