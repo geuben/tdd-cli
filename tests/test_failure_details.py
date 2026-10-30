@@ -8,7 +8,7 @@ import textwrap
 from unittest.mock import patch
 
 from conftest import git, run_cli, write_plan
-from tddcli import adapters, gitutil
+from tddcli import adapters, gitutil, render
 from tddcli import config as config_mod
 from tddcli.adapters.base import FailureDetail
 from tddcli.adapters.cargo_adapter import CargoAdapter
@@ -317,3 +317,54 @@ def test_exec_reports_each_failing_script_with_its_last_output_line(tmp_path):
             detail="INFO: starting deployment\nFAIL: expected exit 0, got 1",
         )
     }
+
+
+def test_the_friction_log_lists_each_invocations_failures(tmp_path, ledger_home):
+    ledger = Ledger(tmp_path / "somerepo")
+    run_id = _run(ledger)
+    cycle_id = ledger.insert(
+        "cycle",
+        run_id=run_id,
+        ordinal=1,
+        kind="standard",
+        projects='["p"]',
+        declared_tests="[]",
+        target_tests="[]",
+        phase="CLOSED",
+        head_at_open="0" * 40,
+        opened_at=_at(0),
+        closed_at=_at(4),
+    )
+    ledger.record_invocation(
+        run_id,
+        cycle_id,
+        phase_at="CLOSE_SWEEP",
+        project="p",
+        adapter="pytest",
+        target_test=None,
+        target_outcome=None,
+        target_failure="",
+        total_passed=0,
+        total_failed=2,
+        other_failures=["p::tests/test_a.py::test_a", "p::tests/test_b.py::test_b"],
+        duration_ms=1,
+        tree_hash=None,
+        failures={
+            "p::tests/test_a.py::test_a": {
+                "phase": "teardown",
+                "message": "RuntimeError: session teardown boom",
+                "detail": "x",
+            },
+            "p::tests/test_b.py::test_b": {
+                "phase": None,
+                "message": "FAIL: expected exit 0",
+                "detail": "y",
+            },
+        },
+    )
+    block = [
+        "- **Failures — invocation 1 (CLOSE_SWEEP, p):**",
+        "  - `p::tests/test_a.py::test_a` [teardown]: RuntimeError: session teardown boom",
+        "  - `p::tests/test_b.py::test_b`: FAIL: expected exit 0",
+    ]
+    assert "\n".join(block) in render.friction_log(ledger, ledger.run(run_id))
