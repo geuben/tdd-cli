@@ -176,6 +176,13 @@ def _guest() -> RunnerConfig | None:
     return split
 
 
+def _usable_cpus() -> int:
+    """The CPUs this process may run on: its affinity, where the platform has one."""
+    if hasattr(os, "sched_getaffinity"):
+        return len(os.sched_getaffinity(0))
+    return os.cpu_count() or 1
+
+
 @contextlib.contextmanager
 def worker_lease(total_cores: int | None = None) -> Iterator[int]:
     """Hold a lease for one suite invocation; yields the worker count to use."""
@@ -183,7 +190,7 @@ def worker_lease(total_cores: int | None = None) -> Iterator[int]:
     if guest is not None:
         from . import remote
 
-        budget = guest.core_budget or len(os.sched_getaffinity(0))
+        budget = guest.core_budget or _usable_cpus()
         with remote.worker_lease(guest.ledger_socket) as workers:
             yield min(workers, budget)
         return
