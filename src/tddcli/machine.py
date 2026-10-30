@@ -401,6 +401,7 @@ class Engine:
         """R9.12/R9.20 — the tool regenerates; the agent is informed, not asked."""
         regenerated: list[str] = []
         failed: list[dict] = []
+        inherited: list[str] = []
         scope = set(self.config.reachable_projects([p for c in self.declared for p in c.projects]))
         for art in self.config.artifacts.values():
             if not art.check and not art.regenerate:
@@ -476,12 +477,19 @@ class Engine:
                     resolved = True
                 regenerated.append(art.name)
             if not resolved:
+                if cycle_row is None and self.config.producer_root(art) not in scope:
+                    inherited.append(art.name)
+                    continue
                 self.ledger.event(
                     self.run["id"],
                     cycle_row["id"] if cycle_row else None,
                     "stale_artifact",
                     art.name,
                 )
+        if inherited:
+            self.ledger.event(
+                self.run["id"], None, "artifact_stale_inherited", json.dumps(sorted(inherited))
+            )
         return ArtifactOutcome(regenerated=regenerated, failed=failed)
 
     def _artifact_stale(self, art) -> tuple[bool, dict | None]:

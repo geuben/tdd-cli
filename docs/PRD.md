@@ -203,8 +203,9 @@ an auditor compares them against reality.
 
 ### IntegrityEvent
 Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mismatch`,
-`off_protocol_invocation`, `stale_artifact`, `plan_blob_changed`, `executor_unknown`,
-`artifact_regenerate_failed`, `baseline_late_probe`, `baseline_late_probe_unobserved`.
+`off_protocol_invocation`, `stale_artifact`, `artifact_stale_inherited`, `plan_blob_changed`,
+`executor_unknown`, `artifact_regenerate_failed`, `baseline_late_probe`,
+`baseline_late_probe_unobserved`.
 
 ### Blocker
 Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `context_exhausted`,
@@ -750,7 +751,11 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
 - **R9.12** Before a run starts and at every cycle close, declared artifacts are checked for
   staleness against their producer. At a cycle close only the artifacts the run can affect are
   checked: those whose root producer is in the run's reachable set (R9.5c), and any whose
-  producer root the closing cycle touched (the test R9.2 uses to widen the close sweep). When the tool cannot resolve staleness itself (no `regenerate`
+  producer root the closing cycle touched (the test R9.2 uses to widen the close sweep). Any
+  other artifact's staleness was inherited from the branch point. `run start` still checks it,
+  regenerates it, and refuses when its hook fails. If it stays stale, `run start` records one
+  `artifact_stale_inherited` integrity event instead of `stale_artifact`. Its detail is a JSON
+  array of those artifact names, and no cycle checks them again (issue #99). When the tool cannot resolve staleness itself (no `regenerate`
   command, or the regenerate hook produced no commit), it emits `stale_artifact` and blocks the
   close — this is one of the few hard gates (§12), because a stale contract produces a *green*
   wrong answer. When the tool resolves staleness by regenerating and committing, it records
