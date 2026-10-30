@@ -610,6 +610,15 @@ baseline_max_failure_ratio = 0.8    # allow up to 80% failing at baseline
 
 The value must be in `(0, 1]`. Without it, the repo-wide default of 0.5 applies.
 
+### Unreadable baseline (R9.5j)
+
+`run start` refuses a baseline whose suite produced no report the tool could read (no JSON
+report written, or one the adapter could not parse), whatever its failure ratio and even with
+`--accept-baseline`. The refusal carries `reason: "baseline_unreadable"` and a `projects` array of
+`{project, defect}`, where `defect` is the text a cycle would record as `tooling_defect`. Fix the
+environment and retry: `tdd doctor` notes a foreign `VIRTUAL_ENV` inherited from whatever launched
+the shell, and the project's reporter (`pytest-json-report` for pytest) must be installed.
+
 ### Standing-failure delta
 
 When a non-empty baseline is captured, `run start` emits a `baseline_standing_delta` integrity

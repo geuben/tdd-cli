@@ -731,6 +731,12 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   `reason: "services_unreachable"` and a `projects` array carrying `{project, exit_code, output}`
   per failing project. There is no override: a down stack yields no believable baseline. The
   health probe runs before the claim so a down stack never touches the ledger.
+- **R9.5j** `run start` refuses a baseline whose suite produced no report the tool could read (the
+  adapter's `Verdict.error`, which a cycle records as `tooling_defect`). The refusal returns
+  `reason: "baseline_unreadable"` and a `projects` array carrying `{project, defect}`. It runs
+  before R9.5a's checks and R9.5g's ratio gate, and `--accept-baseline` does not override it. A
+  project with no tests and no collection errors is exempt, as in R9.5a. Nothing is written to
+  the ledger (issue #99).
 
 ### 9.3 Contract cycles
 - **R9.8** A cycle may declare multiple target tests, spanning multiple projects, **only** if the

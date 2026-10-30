@@ -906,6 +906,26 @@ def cmd_run_start(args) -> Envelope:
             )
         except RuntimeError as exc:
             return failure(str(exc))
+        # R9.5j — a report the tool could not read observed nothing, so no ratio applies.
+        # A project with no suite yet is exempt, as in R9.5a.
+        unreadable = [
+            {"project": n, "defect": v.error}
+            for n, (v, c) in probes.items()
+            if n not in reused and v.error and (c.tests or c.failed_files)
+        ]
+        if unreadable:
+            return failure(
+                "\n".join(
+                    f"{u['project']}: the baseline run produced no report the tool could read"
+                    f" — {u['defect']}"
+                    for u in unreadable
+                )
+                + "\nA baseline that cannot be read observed nothing, whatever its failure count,"
+                " so --accept-baseline does not apply. Fix the environment (`tdd doctor` notes"
+                " a foreign VIRTUAL_ENV) and retry.",
+                reason="baseline_unreadable",
+                projects=unreadable,
+            )
         for name, (verdict, collection) in probes.items():
             if name in reused:
                 continue
