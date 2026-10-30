@@ -57,6 +57,17 @@ def test_the_client_sends_its_environment_on_stdin(repo, split_client, monkeypat
     assert json.loads(split_client.stdin.read_text())["env"]["AGENT_ONLY"] == "yes"
 
 
+def test_the_client_sends_its_umask_and_keeps_it(repo, split_client):
+    """sudo, or the PAM session it opens, may leave a different umask behind, so the
+    agent's travels with its environment. Reading it must not change it."""
+    os.umask(0o027)
+
+    _invoke(repo, "status")
+
+    sent = json.loads(split_client.stdin.read_text()).get("umask")
+    assert (sent, os.umask(0o027)) == (0o027, 0o027)
+
+
 #: The smallest argv that parses, for every verb that needs more than its own name.
 #: Keyed by verb so an entry for one that does not exist yet is simply unused.
 ARGV = {
@@ -69,6 +80,7 @@ ARGV = {
     "sensitivity": ["sensitivity", "begin"],
     "target": ["target", "x"],
     "log": ["log", "render"],
+    "invocation": ["invocation", "show", "1"],
     "runner": ["runner", "import", "x"],
     "ledger": ["ledger", "sources"],
 }

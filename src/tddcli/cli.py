@@ -409,30 +409,45 @@ def _cleanliness_detail(blocking: list[str], unrelated: list[str]) -> str:
     return ""
 
 
+def _drop_to_the_agent(split: runner_mod.RunnerConfig) -> tuple[bool, str]:
+    """Whether the runner can act as the agent, and if not, what fixes it.
+
+    Probed before anything else doctor asks of the actor: everything else goes through
+    the same sudo hop, and a refused hop would otherwise surface as whichever of them
+    ran first. From `/`, so it cannot fail for a reason in the worktree.
+    """
+    agent = os.environ.get("SUDO_USER", "")
+    asked = actor.current().run_argv(["id", "-u"], cwd=Path("/"))
+    try:
+        dropped = int(asked.stdout.strip()) == pwd.getpwnam(agent).pw_uid
+    except (ValueError, KeyError):
+        dropped = False
+    if dropped:
+        return True, ""
+    said = asked.stderr.strip()
+    return False, (
+        f"the runner could not run `id -u` as {agent!r}. Add to sudoers:"
+        f" `{split.user} ALL=({agent}) NOPASSWD:SETENV: ALL`"
+        + (f" (sudo said: {said})" if said else "")
+    )
+
+
 def _split_checks(
-    check: Callable, split: runner_mod.RunnerConfig, ledger_file: Path | None
+    check: Callable,
+    split: runner_mod.RunnerConfig,
+    ledger_file: Path | None,
+    dropped: tuple[bool, str],
 ) -> None:
     """What split mode rests on, probed live and as the agent.
 
     Each probe goes through the installed actor, so on a real machine it is answered
     by the real sudo and the real accounts: that is the one place the uid change
-    itself is ever verified. `ledger_file` is None when the ledger is on the host's
-    ledger service: there is then no file here for the agent to reach.
+    itself is ever verified. `dropped` is `_drop_to_the_agent`'s answer, asked before
+    anything else. `ledger_file` is None when the ledger is on the host's ledger
+    service: there is then no file here for the agent to reach.
     """
     agent = os.environ.get("SUDO_USER", "")
-    asked = actor.current().run_argv(["id", "-u"])
-    try:
-        dropped = int(asked.stdout.strip()) == pwd.getpwnam(agent).pw_uid
-    except (ValueError, KeyError):
-        dropped = False
-    check(
-        "runs as the agent",
-        dropped,
-        ""
-        if dropped
-        else f"the runner could not run `id -u` as {agent!r}. Add to sudoers:"
-        f" `{split.user} ALL=({agent}) NOPASSWD:SETENV: ALL`",
-    )
+    check("runs as the agent", *dropped)
 
     if ledger_file is not None:
         readable = actor.current().run_argv(["test", "-r", str(ledger_file)]).returncode == 0
@@ -459,8 +474,18 @@ def _split_checks(
 
 
 def cmd_doctor(args) -> Envelope:
-    worktree = _worktree()
     checks, check = _doctor_checklist()
+    split = runner_mod.load()
+    dropped = (True, "") if split is None else _drop_to_the_agent(split)
+    if not dropped[0]:
+        check("runs as the agent", *dropped)
+        return Envelope(
+            ok=False,
+            error="the runner cannot act as the agent",
+            result={"checks": checks, "projects": {}, "healthy": False, "mode": "split"},
+            next_action=NextAction(Verb.RESOLVE_BLOCKER, "Resolve the failing checks above."),
+        )
+    worktree = _worktree()
 
     check("worktree resolvable", True, str(worktree))
     try:
@@ -481,7 +506,6 @@ def cmd_doctor(args) -> Envelope:
     check(
         "ledger outside worktree", not str(ledger.path).startswith(str(worktree)), str(ledger.path)
     )
-    split = runner_mod.load()
     mode = "single" if split is None else "split"
     if split is None:
         # A notice, never a blocker: single-user installs must keep working. What it
@@ -494,7 +518,7 @@ def cmd_doctor(args) -> Envelope:
             " cannot reach.",
         )
     else:
-        _split_checks(check, split, None if remote else ledger.path)
+        _split_checks(check, split, None if remote else ledger.path, dropped)
 
     ex = identity.resolve(worktree)
     ex_detail = f"{ex.source}: {ex.model}"
@@ -1575,6 +1599,36 @@ def cmd_target(args) -> Envelope:
     )
 
 
+def cmd_invocation_show(args) -> Envelope:
+    """One suite invocation's recorded failures (#105), looked up across the whole
+    repository's ledger: a finished run's invocations are what an audit asks about."""
+    worktree, cfg, ledger, run = _context(require_run=False)
+    invocation = ledger.invocation(args.id)
+    if invocation is None:
+        return failure(
+            f"no invocation {args.id} in this repository's ledger", reason="unknown_invocation"
+        )
+    return Envelope(
+        result={
+            "invocation": invocation["id"],
+            "phase": invocation["phase_at"],
+            "project": invocation["project"],
+            "failures": [
+                {
+                    "test": d["test_id"],
+                    "phase": d["phase"],
+                    "message": d["message"],
+                    "detail": d["detail"],
+                }
+                for d in ledger.failure_details(invocation["id"])
+            ],
+        },
+        next_action=NextAction(
+            Verb.REFACTOR_OR_ADVANCE, "Read-only. Resume the phase in progress."
+        ),
+    )
+
+
 def cmd_log_render(args) -> Envelope:
     worktree, cfg, ledger, run = _context(require_run=False)
     if run is None:
@@ -1827,13 +1881,43 @@ def _ledger_sources(args, cfg) -> Envelope:
     )
 
 
+def _bind_call(args, cfg, method: str, *call_args):
+    """A `bind` or `unbind`, on the socket the operator named, or else the admin socket.
+
+    An admin socket this account cannot open falls back to the bind socket, when there
+    is one. Only a failed connect does: a request the admin socket took is never resent.
+    """
+    if args.socket:
+        return wire.call(Path(args.socket), method, *call_args)
+    try:
+        conn = wire.Connection(cfg.admin_socket)
+    except wire.LedgerUnreachable:
+        if cfg.bind_socket is None:
+            raise
+        conn = wire.Connection(cfg.bind_socket)
+    try:
+        return conn.request(method, *call_args)
+    finally:
+        conn.close()
+
+
 def _ledger_bind(args, cfg) -> Envelope:
-    bound = wire.call(cfg.admin_socket, "bind", args.name, args.executor)
+    bound = _bind_call(args, cfg, "bind", args.name, args.executor)
     return Envelope(
         result=bound,
         next_action=NextAction(
             Verb.COMPLETE,
             f"Source {args.name}'s next runs record {args.executor}, as said by the operator.",
+        ),
+    )
+
+
+def _ledger_unbind(args, cfg) -> Envelope:
+    unbound = _bind_call(args, cfg, "unbind", args.name)
+    return Envelope(
+        result=unbound,
+        next_action=NextAction(
+            Verb.COMPLETE, f"Source {args.name}'s next runs record the guest's own claim."
         ),
     )
 
@@ -2040,6 +2124,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.set_defaults(fn=cmd_log_render)
 
+    inv = sub.add_parser("invocation", help="one suite invocation's recorded failures")
+    inv = inv.add_subparsers(dest="invocation_command", required=True)
+    s = inv.add_parser("show")
+    s.add_argument("id", type=int)
+    s.set_defaults(fn=cmd_invocation_show)
+
     s = sub.add_parser("progress", help="human-readable plan progress")
     s.add_argument("--json", action="store_true", help="machine output instead")
     s.set_defaults(fn=cmd_progress)
@@ -2076,7 +2166,12 @@ def build_parser() -> argparse.ArgumentParser:
     s = ledger_p.add_parser("bind", help="set the executor a source's next runs record")
     s.add_argument("name")
     s.add_argument("--executor", required=True)
+    s.add_argument("--socket", help="the socket to bind through: the admin or the bind socket")
     s.set_defaults(fn=_ledger_verb(_ledger_bind))
+    s = ledger_p.add_parser("unbind", help="clear the executor a source's next runs record")
+    s.add_argument("name")
+    s.add_argument("--socket", help="the socket to unbind through: the admin or the bind socket")
+    s.set_defaults(fn=_ledger_verb(_ledger_unbind))
     s = ledger_p.add_parser("fleet", help="active runs of every source")
     s.set_defaults(fn=_ledger_verb(_ledger_fleet))
     s = ledger_p.add_parser("metrics", help="metrics over every source's runs")
@@ -2103,7 +2198,9 @@ LOCAL_VERBS = {"docs", "init", "ledger"}
 
 
 def _actor_for(
-    split: runner_mod.RunnerConfig | None, agent_env: dict[str, str] | None
+    split: runner_mod.RunnerConfig | None,
+    agent_env: dict[str, str] | None,
+    agent_umask: int | None = None,
 ) -> actor.LocalActor:
     """Who acts in the agent's territory for this invocation.
 
@@ -2117,7 +2214,7 @@ def _actor_for(
     """
     if split is not None and split.role == "runner":
         agent = os.environ.get("SUDO_USER", "")
-        return actor.SudoActor(sudo=split.sudo, agent=agent, env=agent_env)
+        return actor.SudoActor(sudo=split.sudo, agent=agent, env=agent_env, umask=agent_umask)
     return actor.LocalActor()
 
 
@@ -2140,13 +2237,20 @@ def _refusal(split: runner_mod.RunnerConfig | None, args) -> Envelope | None:
     )
 
 
-def _agent_env(args) -> dict[str, str] | None:
-    """The environment the client sent. It only ever reaches processes spawned as the
-    agent, so nothing in it is trusted and nothing in it needs to be."""
+def _agent_context(args) -> tuple[dict[str, str] | None, int | None]:
+    """The environment and umask the client sent. They only ever reach processes
+    spawned as the agent, so nothing in them is trusted and nothing needs to be. A
+    umask that is not a mode is ignored, as an older client's missing one is."""
     if not args.agent_context_stdin:
-        return None
-    env = json.loads(sys.stdin.read() or "{}").get("env")
-    return {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else None
+        return None, None
+    context = json.loads(sys.stdin.read() or "{}")
+    env = context.get("env")
+    umask = context.get("umask")
+    valid = type(umask) is int and 0 <= umask <= 0o777
+    return (
+        {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else None,
+        umask if valid else None,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2166,7 +2270,7 @@ def main(argv: list[str] | None = None) -> int:
             # Parsed first, so `--help`, `--version` and a mistyped verb never cost a
             # round trip; forwarded verbatim, so the runner parses exactly what we did.
             return runner_mod.forward(split, list(sys.argv[1:] if argv is None else argv))
-        actor.install(_actor_for(split, _agent_env(args)))
+        actor.install(_actor_for(split, *_agent_context(args)))
         envelope = _refusal(split, args) or args.fn(args)
     except PermissionError as exc:
         # Only the runner reads someone else's files. Anywhere else this is a bug, and

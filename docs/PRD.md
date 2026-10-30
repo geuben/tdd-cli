@@ -167,6 +167,18 @@ One execution of one project's test suite. **Never overwritten; append-only.**
 
 Invocation count per cycle is `COUNT(*)`, segmented by phase — never a stored counter.
 
+### FailureDetail
+Why one of an invocation's failures failed (#105). One row per id in the invocation's
+`other_failures`, written with the invocation.
+
+| Field | Notes |
+|---|---|
+| `id`, `invocation_id` | |
+| `test_id` | the qualified test id |
+| `phase` | the phase that failed (pytest: `setup` / `call` / `teardown`); NULL when the runner reports no phases |
+| `message` | the first line of the failure message |
+| `detail` | the failure text, clipped like `target_failure_excerpt` |
+
 ### Annotation
 Free-form agent judgement, keyed, plus arbitrary keys the plan declares for itself (R7.5).
 
@@ -582,6 +594,7 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
 | Command | Behaviour |
 |---|---|
 | `tdd log render [--format md]` | project the ledger into a friction-log document |
+| `tdd invocation show <id>` | an invocation's recorded failures: phase, message, detail |
 | `tdd metrics <query>` | §11 |
 | `tdd verify` | re-run integrity checks over a completed run |
 

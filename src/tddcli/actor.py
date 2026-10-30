@@ -101,16 +101,21 @@ class LocalActor:
 class SudoActor(LocalActor):
     """Acts as the agent, from a runner that is a different uid."""
 
-    def __init__(self, sudo: str, agent: str, env: dict[str, str] | None):
+    def __init__(self, sudo: str, agent: str, env: dict[str, str] | None, umask: int | None = None):
         self.sudo = sudo
         self.agent = agent
         self.agent_env = env
+        self.umask = umask
 
     def run_argv(self, argv, *, cwd=None, env=None, timeout=None, input=None):
         # `-n`: a sudo that prompts would hang an unattended agent. With the agent's
         # environment in hand, `-E` passes exactly that; with none, sudo resets to the
         # agent's own, and `-H` stops macOS leaving `HOME` at the runner's.
         keep = "-H" if self.agent_env is None else "-E"
+        if self.umask is not None:
+            # Set after sudo, so whatever sudo or its PAM session left is overridden.
+            # `sh` is `$0`; without it the command's first word would be.
+            argv = ["/bin/sh", "-c", f'umask {self.umask:04o} && exec "$@"', "sh", *argv]
         wrapped = [self.sudo, "-n", keep, "-u", self.agent, "--", *argv]
         return super().run_argv(wrapped, cwd=cwd, env=env, timeout=timeout, input=input)
 

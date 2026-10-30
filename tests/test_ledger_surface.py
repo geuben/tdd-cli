@@ -64,7 +64,7 @@ def test_no_module_but_the_ledger_speaks_sql():
 
 
 #: A method that touches one run's rows names that run by one of these parameters.
-OWNERSHIP = {"run_id", "cycle_id", "contract_id"}
+OWNERSHIP = {"run_id", "cycle_id", "contract_id", "invocation_id"}
 
 
 def test_every_ledger_method_is_classified_and_scoped():

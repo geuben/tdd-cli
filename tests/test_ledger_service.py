@@ -19,6 +19,7 @@ import pytest
 from conftest import current_user, guest_config, run_cli, run_cli_text, write_plan
 from tddcli import gitutil, service, wire
 from tddcli import ledger as ledger_mod
+from test_baseline_integrity import reach_refactor
 
 MINIMAL_PLAN = """\
 ---
@@ -124,6 +125,42 @@ def test_a_guest_naming_another_sources_cycle_is_refused(repo, split_guest, ledg
     assert refused.value.refusal == "foreign_run"
 
 
+def test_a_guest_naming_another_sources_invocation_is_refused(repo, split_guest, ledger_service):
+    ledger_service.service.add_source("vm-2", ledger_service.dir / "vm-2.sock", executor=None)
+    start_run(repo)
+    run_cli(repo, "advance")
+    host = ledger_mod.open_readonly(host_file(ledger_service, repo), source=None)
+    cycle = host.open_cycle(host.active_runs()[0]["id"])
+    invocation_id = host.invocations(cycle["id"])[0]["id"]
+    assert (
+        refusal_of(
+            ledger_service.dir / "vm-2.sock",
+            str(gitutil.repo_identity(repo)),
+            "failure_details",
+            invocation_id,
+        )
+        == "foreign_run"
+    )
+
+
+def test_a_guest_shows_its_own_invocations_failures(repo, split_guest, ledger_service):
+    reach_refactor(repo)
+    (repo / "backend" / "tests" / "test_smoke.py").write_text(
+        'def test_smoke():\n    assert 1 == 2, "smoke broke"\n'
+    )
+    run_cli(repo, "advance")
+    host = ledger_mod.open_readonly(host_file(ledger_service, repo), source=None)
+    run = host.active_runs()[0]
+    sweeps = [
+        inv for c in host.cycles(run["id"]) for inv in host.invocations(c["id"], "CLOSE_SWEEP")
+    ]
+    sweep_id = sweeps[-1]["id"]
+    assert [
+        (f["test"], f["phase"], f["message"])
+        for f in run_cli(repo, "invocation", "show", str(sweep_id))["result"]["failures"]
+    ] == [("backend::tests/test_smoke.py::test_smoke", "call", "AssertionError: smoke broke")]
+
+
 def refusal_of(socket_path, repo_path: str, method: str, *args, **kwargs) -> str:
     """What the service says to `method` on a fresh connection: its refusal, or accepted."""
     conn = wire.Connection(socket_path)
@@ -210,6 +247,19 @@ def test_an_unbound_source_downgrades_a_guest_operator_claim(repo, split_guest, 
         split_guest.socket,
         extra=f'[executor]\n"{current_user()}" = "guest-says"\n',
     )
+
+    run = host_run(ledger_service, repo, start_run(repo)["run"]["id"])
+    assert (run["executor_model"], run["executor_source"]) == ("guest-says", "claimed")
+
+
+def test_unbind_returns_a_source_to_the_guests_claim(repo, split_guest, ledger_service):
+    ledger_service.service.add_source("vm-b", ledger_service.dir / "vm-b.sock", executor="model-x")
+    guest_config(
+        split_guest.runner,
+        ledger_service.dir / "vm-b.sock",
+        extra=f'[executor]\n"{current_user()}" = "guest-says"\n',
+    )
+    run_cli(repo, "ledger", "unbind", "vm-b")
 
     run = host_run(ledger_service, repo, start_run(repo)["run"]["id"])
     assert (run["executor_model"], run["executor_source"]) == ("guest-says", "claimed")

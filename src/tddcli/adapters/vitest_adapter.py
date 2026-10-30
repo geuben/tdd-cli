@@ -22,6 +22,7 @@ from .base import (
     PASSED,
     Adapter,
     Collection,
+    FailureDetail,
     GateResult,
     Verdict,
     _overlap_error,
@@ -29,6 +30,17 @@ from .base import (
     clip_failure,
     run_command,
 )
+
+
+def _failure_detail(assertion: dict) -> FailureDetail:
+    """A failed assertion's first message line, and its first three messages, clipped."""
+    messages = assertion.get("failureMessages", [])
+    first = messages[0] if messages else ""
+    return FailureDetail(
+        phase=None,
+        message=next((ln for ln in first.splitlines() if ln.strip()), ""),
+        detail="\n".join(clip_failure(m, 600) for m in messages[:3]),
+    )
 
 
 def _extract_json(raw: str) -> dict | None:
@@ -175,6 +187,7 @@ class VitestAdapter(Adapter):
                     verdict.passed.append(qualified)
                 elif t["status"] == "failed":
                     verdict.failed.append(qualified)
+                    verdict.failure_details[qualified] = _failure_detail(t)
 
         if target is None:
             verdict.target_outcome = NOT_FOUND
@@ -195,14 +208,9 @@ class VitestAdapter(Adapter):
                         self.normalise_id(self._id_for(suite.get("name", ""), t["fullName"]))
                         == ntarget
                     ):
-                        messages = t.get("failureMessages", [])
-                        verdict.target_failure = "\n".join(
-                            clip_failure(m, 600) for m in messages[:3]
-                        )
-                        first_msg = messages[0] if messages else ""
-                        verdict.target_evidence = next(
-                            (ln for ln in first_msg.splitlines() if ln.strip()), ""
-                        )
+                        detail = _failure_detail(t)
+                        verdict.target_failure = detail.detail
+                        verdict.target_evidence = detail.message
             return verdict
 
         target_file = self.strip(target).split(" > ", 1)[0]

@@ -77,7 +77,9 @@ Four things to get right:
 - **`SETENV:` is required** on the second line. The runner passes the agent's own
   environment to the agent's commands with `sudo -E`; without the tag sudo answers
   "sorry, you are not allowed to preserve the environment" and `tdd doctor` fails its
-  `runs as the agent` check.
+  `runs as the agent` check. The agent's umask travels the same way: the runner sets it
+  in each command it runs as the agent, after sudo, so the umask sudo's PAM session
+  leaves (002 under `pam_umask` on Ubuntu) never reaches the suites.
 - **`NOPASSWD` is required on both.** `tdd` always passes `-n`, so a rule that would
   prompt fails at once instead of hanging an unattended agent.
 - **Leave `env_reset` on** (it is sudo's default). It is what strips the agent's
@@ -245,6 +247,7 @@ The operator adds a source for each guest, from the host:
 
     tdd ledger add-source vm-1 --socket /run/tdd-cli/vm-1.sock --executor claude-fable-5-1
     tdd ledger bind vm-1 --executor claude-opus-5-5     # the model for its next runs
+    tdd ledger unbind vm-1                               # its next runs record the guest's claim again
     tdd ledger sources                                   # every source, socket and binding
     tdd ledger remove-source vm-1                        # closes the socket; its runs stay
 
@@ -254,6 +257,40 @@ mode 660: give its group to whatever forwards it into the guest, and nothing els
 
 `tdd ledger` verbs are always answered on the machine you run them on, never forwarded to
 a runner. With no service config they fail with `reason: "no_service"`.
+
+### A bind-only socket for an orchestrator
+
+The process that knows which model a guest runs is usually the one that starts it: a VM or
+container orchestrator under its own account. It needs `bind` and `unbind`, and nothing
+else the admin socket answers. Give it a bind socket:
+
+    [service]
+    admin_socket = "/run/tdd-cli/admin.sock"
+    bind_socket  = "/run/tdd-cli/bind.sock"
+    bind_group   = "guest-starters"
+
+- **The two keys go together.** A config with one and not the other is refused, and so is
+  a `bind_socket` that is the `admin_socket`. A `bind_group` that is not a group on the
+  host is refused when the config loads.
+- **The socket is mode 660 and belongs to `bind_group`.** The service account must be a
+  member of that group: if it is not, `tdd ledger serve` fails to start. Put the
+  orchestrator's account in the group, and nothing else. The admin socket stays mode 600.
+- **It answers `bind` and `unbind` alone**, for a source that already exists. Every other
+  method, `ping` included, is refused with `refusal: "method_not_allowed"`. An unknown
+  source is `unknown_source` and an empty executor is `bad_executor`, as on the admin
+  socket. It takes no identity from the request: its authority is its mode and group.
+- **Which socket the CLI uses.** `tdd ledger bind` and `tdd ledger unbind` take
+  `--socket PATH` and use that socket alone. Without it they connect to `admin_socket`,
+  and when that connect fails (no permission, no socket) and a `bind_socket` is
+  configured, they send the request there instead. A request the admin socket took is
+  never resent. Every other `tdd ledger` verb uses the admin socket only.
+- **The orchestrator still reads `ledger.toml`.** Every `tdd ledger` verb loads the service
+  config first, held to the runner's trust rule: owned by root or by the reading account,
+  not group- or world-writable. So the file must be owned by root and readable by the
+  orchestrator's account. One owned by the service account is refused for every other
+  account. `--socket` does not skip the config.
+- **A binding belongs to the source, not to a run.** A run abandoned after its source was
+  rebound for the next run is stamped with the binding in force when it is abandoned.
 
 ### Forwarding the socket into the guest
 
@@ -288,9 +325,9 @@ falls back to a ledger of its own.
 
 The service enforces this for every request, so a modified client cannot get around it:
 
-- **A guest reads and writes only its own source's runs.** A run, cycle or plan contract
-  of another source is refused with `refusal: "foreign_run"`, and so is one that does not
-  exist, so a guest cannot probe for other sources' ids. Claims and the baseline cache
+- **A guest reads and writes only its own source's runs.** A run, cycle, plan contract or
+  suite invocation of another source is refused with `refusal: "foreign_run"`, and so is
+  one that does not exist, so a guest cannot probe for other sources' ids. Claims and the baseline cache
   are per source: one guest can neither block another's `run start` at the same path nor
   hand it a forged cached baseline.
 - **A closed run stays closed.** Writes to a `complete` or `abandoned` run are refused with
@@ -310,7 +347,9 @@ them, which is no worse than a forged test report on a single machine.
 edit, so it is a claim. When the operator binds an executor to a source, the service
 records that model with `executor_source: "operator"` on every run the source starts or
 abandons, whatever the guest sent. With no binding, a guest that says `operator` is
-recorded as `claimed`.
+recorded as `claimed`. `tdd ledger unbind <source>` clears a binding, so the source's next
+runs record the guest's claim again; `bind` refuses an empty or blank executor with
+`reason: "bad_executor"`.
 
 ### One history per host
 
@@ -320,8 +359,8 @@ On the host, the operator reads every source together through the admin socket:
     tdd ledger fleet                                # active runs of every source, and the host's suites
     tdd ledger log --repo <slug> --run <id> [--out FILE]
 
-Every run in them carries its `source`. Inside a guest, `tdd metrics`, `tdd fleet` and
-`tdd log render` still work, and see only that guest's source.
+Every run in them carries its `source`. Inside a guest, `tdd metrics`, `tdd fleet`,
+`tdd log render` and `tdd invocation show` still work, and see only that guest's source.
 
 **Worker leases are the host's.** A socket-mode runner takes each suite's worker lease
 from the service, which splits the host's cores across every guest's running suites. A

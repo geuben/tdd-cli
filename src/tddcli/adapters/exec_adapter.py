@@ -25,6 +25,7 @@ from .base import (
     PASSED,
     Adapter,
     Collection,
+    FailureDetail,
     GateResult,
     Verdict,
     clip_failure,
@@ -166,12 +167,16 @@ class ExecAdapter(Adapter):
                     verdict.target_outcome = PASSED
             else:
                 verdict.failed.append(qualified)
+                detail = FailureDetail(
+                    phase=None,
+                    message=next((ln for ln in reversed(combined.splitlines()) if ln.strip()), ""),
+                    detail=clip_failure(combined),
+                )
+                verdict.failure_details[qualified] = detail
                 if target == qualified:
                     verdict.target_outcome = FAILED
-                    verdict.target_failure = clip_failure(combined)
-                    verdict.target_evidence = next(
-                        (ln for ln in reversed(combined.splitlines()) if ln.strip()), ""
-                    )
+                    verdict.target_failure = detail.detail
+                    verdict.target_evidence = detail.message
 
         verdict.duration_ms = int((time.monotonic() - started) * 1000)
         return verdict

@@ -50,6 +50,7 @@ from .base import (
     PASSED,
     Adapter,
     Collection,
+    FailureDetail,
     GateResult,
     Verdict,
     clip_failure,
@@ -273,11 +274,16 @@ class XCTestAdapter(Adapter):
 
         for m in _CASE_RE.finditer(combined):
             bundle, class_, method, outcome = m.groups()
-            qualified = self.qualify(f"{bundle}/{class_}/{method}")
+            native = f"{bundle}/{class_}/{method}"
+            qualified = self.qualify(native)
             if outcome == "passed":
                 verdict.passed.append(qualified)
             else:
                 verdict.failed.append(qualified)
+                window = self._failure_for(combined, native)
+                verdict.failure_details[qualified] = FailureDetail(
+                    phase=None, message=self._evidence_line(window), detail=window
+                )
 
         if target is None:
             return verdict
@@ -286,9 +292,9 @@ class XCTestAdapter(Adapter):
             verdict.target_outcome = PASSED
         elif target in verdict.failed:
             verdict.target_outcome = FAILED
-            window = self._failure_for(combined, self.strip(target))
-            verdict.target_failure = window
-            verdict.target_evidence = self._evidence_line(window)
+            detail = verdict.failure_details[target]
+            verdict.target_failure = detail.detail
+            verdict.target_evidence = detail.message
         # else NOT_FOUND (default)
 
         return verdict

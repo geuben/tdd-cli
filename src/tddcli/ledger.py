@@ -228,6 +228,16 @@ CREATE TABLE IF NOT EXISTS invocation (
     started_at TEXT NOT NULL
 );
 
+-- Why each of an invocation's other_failures failed (#105). Written with the invocation.
+CREATE TABLE IF NOT EXISTS failure_detail (
+    id INTEGER PRIMARY KEY,
+    invocation_id INTEGER NOT NULL REFERENCES invocation(id),
+    test_id TEXT NOT NULL,
+    phase TEXT,                         -- NULL: the runner reports no phases
+    message TEXT NOT NULL,
+    detail TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS gate_result (
     id INTEGER PRIMARY KEY,
     run_id INTEGER NOT NULL REFERENCES run(id),
@@ -415,9 +425,10 @@ LOCAL_SOURCE = "local"
 #
 # A ledger service exposes `Ledger` methods to guests by name, so every public method
 # is classified here, exactly once. A guest method that touches one run's rows names
-# that run by a parameter called exactly `run_id`, `cycle_id` or `contract_id`, which
-# the service checks belongs to the guest's source; one that finds rows by worktree,
-# project or cache key is SOURCE_ROOTED, and filters by the ledger's own source.
+# that run by a parameter called exactly `run_id`, `cycle_id`, `contract_id` or
+# `invocation_id`, which the service checks belongs to the guest's source; one that
+# finds rows by worktree, project or cache key is SOURCE_ROOTED, and filters by the
+# ledger's own source.
 
 #: Reads a guest may make.
 GUEST_READS = frozenset(
@@ -451,8 +462,10 @@ GUEST_READS = frozenset(
         "cycles",
         "event_counts",
         "event_details",
+        "failure_details",
         "get_meta",
         "interventions",
+        "invocation",
         "invocations",
         "last_cycle_event_detail",
         "last_gate",
@@ -1316,8 +1329,9 @@ class Ledger:
         duration_ms: int,
         retried: bool = False,
         tree_hash: str | None,
+        failures: dict[str, dict] | None = None,
     ) -> int:
-        return self.insert(
+        invocation_id = self.insert(
             "invocation",
             run_id=run_id,
             cycle_id=cycle_id,
@@ -1335,6 +1349,27 @@ class Ledger:
             retried=int(retried),
             tree_hash=tree_hash,
             started_at=now(),
+        )
+        for test_id, detail in (failures or {}).items():
+            self.insert(
+                "failure_detail",
+                invocation_id=invocation_id,
+                test_id=test_id,
+                phase=detail["phase"],
+                message=detail["message"],
+                detail=detail["detail"],
+            )
+        return invocation_id
+
+    def invocation(self, invocation_id: int) -> sqlite3.Row | None:
+        return self.one("SELECT * FROM invocation WHERE id = ?", (invocation_id,))
+
+    def failure_details(self, invocation_id: int) -> list[sqlite3.Row]:
+        """Why each of an invocation's other failures failed, ordered by test id."""
+        return self.all(
+            "SELECT test_id, phase, message, detail FROM failure_detail"
+            " WHERE invocation_id = ? ORDER BY test_id",
+            (invocation_id,),
         )
 
     def last_gate(self, run_id: int, project: str, kind: str) -> sqlite3.Row | None:

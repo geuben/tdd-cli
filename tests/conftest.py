@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import pwd
@@ -37,6 +38,16 @@ def _pinned_executor_identity(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _owner_writable_umask():
+    """The runner and service configs the fixtures write must pass the trust check
+    (not group- or world-writable). A developer's login umask may be group-writable
+    (Ubuntu's is 002); pin one that is not, whoever runs the suite."""
+    previous = os.umask(0o022)
+    yield
+    os.umask(previous)
+
+
+@pytest.fixture(autouse=True)
 def _single_user_mode(tmp_path, monkeypatch):
     """A developer machine may itself be split (`/etc/tdd-cli/runner.toml`); the suite
     must never pick that up and start forwarding to a runner."""
@@ -51,14 +62,35 @@ def _single_user_mode(tmp_path, monkeypatch):
     actor.install(actor.LocalActor())
 
 
+ABSENT = object()
+
+
+def agent_context(monkeypatch, umask: object = ABSENT, **env: str) -> None:
+    """What a client writes to the runner's stdin, for the next `--agent-context-stdin`
+    invocation: the agent's environment and, from a client that sends one, its umask.
+    `env` is laid over this process's environment."""
+    context: dict[str, object] = {"env": {**os.environ, **env}}
+    if umask is not ABSENT:
+        context["umask"] = umask
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(context)))
+
+
 #: A stand-in for sudo. It logs what it was asked, then runs the command as the same
-#: uid — everything about split mode except the uid change itself. `SUDO_DENY` names
-#: commands it refuses, which is how "the agent cannot" is reached without a second uid.
+#: uid — everything about split mode except the uid change itself. With a `refuse` file
+#: beside it, it refuses every command, as a real sudo does when the sudoers line for
+#: the hop is missing: that is how "the runner cannot become the agent" is reached
+#: without a second uid. It never looks at the command, so it knows nothing of how the
+#: runner wraps one. Its umask 002 stands in for the PAM session a real sudo opens
+#: (`pam_umask`), which leaves a umask the agent's own shell does not have.
 SUDO_SHIM = """\
 #!/bin/sh
 echo "MARK=$MARK $@" >> "$SUDO_LOG"
+if [ -e "$(dirname "$0")/refuse" ]; then
+  echo "sudo: a password is required" >&2
+  exit 1
+fi
+umask 002
 while [ "$1" != "--" ]; do shift; done; shift
-case " $SUDO_DENY " in *" $(basename "$1") "*) exit 1;; esac
 exec "$@"
 """
 
@@ -76,7 +108,12 @@ def sudo_shim(tmp_path, monkeypatch):
     log = tmp_path / "sudo.log"
     log.write_text("")
     monkeypatch.setenv("SUDO_LOG", str(log))
-    return SimpleNamespace(path=shim, log=log, lines=lambda: log.read_text().splitlines())
+    return SimpleNamespace(
+        path=shim,
+        log=log,
+        lines=lambda: log.read_text().splitlines(),
+        refuse=lambda: (shim.parent / "refuse").touch(),
+    )
 
 
 @pytest.fixture
@@ -186,10 +223,41 @@ def ledger_home(tmp_path, monkeypatch):
     return home
 
 
-@pytest.fixture
-def repo(tmp_path, ledger_home):
-    """A git repo with one Python project, wired for the pytest adapter."""
-    root = tmp_path / "workspace"
+def _init_repo(root: Path) -> None:
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    git(root, "config", "user.email", "test@example.com")
+    git(root, "config", "user.name", "Test")
+    # A template is copied while the suite runs, so nothing may write to it in the
+    # background: newer git follows a commit with a detached `maintenance run
+    # --auto`, whose lock file can vanish mid-copy.
+    git(root, "config", "maintenance.auto", "false")
+    git(root, "config", "gc.auto", "0")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "initial")
+
+
+@pytest.fixture(scope="session")
+def _repo_templates(tmp_path_factory):
+    """Each fixture repo is built and committed once per worker, then copied per test.
+
+    Building one is five git processes; copying one is none, and nearly every test
+    that drives the CLI starts from a fresh repo. A copy is the same repo — same
+    commit, same index — so nothing a test observes changes.
+    """
+    built: dict[str, Path] = {}
+
+    def template(name: str, build) -> Path:
+        if name not in built:
+            root = tmp_path_factory.mktemp(f"template-{name}") / "workspace"
+            build(root)
+            _init_repo(root)
+            built[name] = root
+        return built[name]
+
+    return template
+
+
+def _build_repo(root: Path) -> None:
     (root / "backend" / "tests").mkdir(parents=True)
     (root / "backend" / "app").mkdir(parents=True)
 
@@ -212,22 +280,19 @@ def repo(tmp_path, ledger_home):
         ".pytest_cache/\n__pycache__/\n*.pyc\n.coverage\njsonreport*.json\n"
     )
 
-    subprocess.run(["git", "init", "-q", str(root)], check=True)
-    git(root, "config", "user.email", "test@example.com")
-    git(root, "config", "user.name", "Test")
-    git(root, "add", "-A")
-    git(root, "commit", "-q", "-m", "initial")
+
+@pytest.fixture
+def repo(tmp_path, ledger_home, _repo_templates):
+    """A git repo with one Python project, wired for the pytest adapter."""
+    root = tmp_path / "workspace"
+    shutil.copytree(_repo_templates("repo", _build_repo), root, symlinks=True)
     return root
 
 
 FAKE_VITEST = Path(__file__).parent / "fake_vitest.py"
 
 
-@pytest.fixture
-def repo_vitest(tmp_path, ledger_home):
-    """A git repo with one vitest project, `frontend`, driven by `fake_vitest.py`:
-    a named vitest project (`[core]`) whose runner is a Python script."""
-    root = tmp_path / "workspace"
+def _build_repo_vitest(root: Path) -> None:
     (root / "frontend" / "src").mkdir(parents=True)
     fake = f"{shlex.quote(sys.executable)} {shlex.quote(str(FAKE_VITEST))}"
     (root / "tdd.toml").write_text(
@@ -242,11 +307,13 @@ def repo_vitest(tmp_path, ledger_home):
     )
     (root / "frontend" / "src" / "smoke.test.ts").write_text("case: smoke > works = pass\n")
 
-    subprocess.run(["git", "init", "-q", str(root)], check=True)
-    git(root, "config", "user.email", "test@example.com")
-    git(root, "config", "user.name", "Test")
-    git(root, "add", "-A")
-    git(root, "commit", "-q", "-m", "initial")
+
+@pytest.fixture
+def repo_vitest(tmp_path, ledger_home, _repo_templates):
+    """A git repo with one vitest project, `frontend`, driven by `fake_vitest.py`:
+    a named vitest project (`[core]`) whose runner is a Python script."""
+    root = tmp_path / "workspace"
+    shutil.copytree(_repo_templates("repo_vitest", _build_repo_vitest), root, symlinks=True)
     return root
 
 

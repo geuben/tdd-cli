@@ -27,6 +27,47 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   front-matter declares (the shipped skill now declares both) with what the binary emits.
   A mismatch fails and names `tdd init --skill claude-code --update-skill`; a skill that
   declares nothing passes as a notice.
+- **A bind-only socket, and `tdd ledger unbind`** (#179). An optional `[service]
+  bind_socket`, with `bind_group`, is a second operator socket, mode 660 and owned by that
+  group, that answers `bind` and `unbind` for existing sources and refuses everything else
+  with `method_not_allowed`. An orchestrator that starts each guest can now say which model
+  it runs without the admin socket. `tdd ledger bind` and `unbind` take `--socket`, and
+  without it fall back to the bind socket when the admin socket cannot be opened.
+  `tdd ledger unbind <source>` clears a binding, so the source's next runs record the
+  guest's claim again instead of the previous run's model.
+
+### Fixed
+
+- **`tdd ledger bind --executor ""` bound an empty model** (#179), which every later run
+  recorded as operator-attested. An empty or blank executor is now refused with
+  `reason: "bad_executor"`.
+
+## [0.16.0] - 2026-10-30
+
+### Added
+
+- **Suite failure details are kept** (#105). Every failing test an invocation records now
+  keeps why it failed: the phase (pytest: setup, call or teardown), the first line of the
+  message, and the clipped failure text, for every adapter. They live in a new
+  `failure_detail` table, one row per id in the invocation's `other_failures`. The friction
+  log lists them per invocation, and `tdd invocation show <id>` prints them. A socket-mode
+  host must run this version before its guests do: a guest's `record_invocation` now
+  carries the details, which an older service refuses.
+
+### Fixed
+
+- **Split mode runs the suites under the agent's umask** (#209). The client now sends its
+  umask with its environment, and the runner applies it in every command it runs as the
+  agent, after sudo. Before, the suites got whatever umask the runner's sudo hop left
+  (002 under Ubuntu's `pam_umask`), so a suite that cared about file modes failed under
+  `tdd` and passed in the agent's own shell. Mixed versions work: an older runner ignores
+  the umask, and a runner given none by an older client behaves as before.
+- **`tdd doctor` on a split runner names a refused sudo hop** (#211). It now checks that
+  the runner can act as the agent before anything else it runs as the agent. When sudo
+  refuses (a missing or wrong sudoers line), doctor answers with only the `runs as the
+  agent` check, which quotes the sudoers line to add and what sudo said. Before, it failed
+  on resolving the worktree with `git rev-parse --show-toplevel failed`, and the hint was
+  never shown.
 
 ## [0.15.0] - 2026-10-14
 

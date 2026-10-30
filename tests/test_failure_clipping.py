@@ -70,3 +70,39 @@ def test_pytest_target_failure_keeps_the_error_at_the_tail(tmp_path, monkeypatch
     verdict = adapter.run("backend::tests/test_db.py::test_connects")
     assert verdict.target_failure.endswith("ConnectionRefusedError: [Errno 61]")
     assert len(verdict.target_failure) <= 1520
+
+
+def test_pytest_failure_detail_keeps_the_error_at_the_tail(tmp_path, monkeypatch):
+    adapter = _pytest_adapter(tmp_path)
+    longrepr = ("connector frame\n" * 300) + "ConnectionRefusedError: [Errno 61]"
+
+    def fake(command, cwd, timeout=1800, extra_env=None, label=None):
+        marker = "--json-report-file="
+        path = command.split(marker, 1)[1].split(" --", 1)[0]
+        Path(path.strip("'\"")).write_text(
+            json.dumps(
+                {
+                    "tests": [
+                        {
+                            "nodeid": "tests/test_db.py::test_connects",
+                            "outcome": "failed",
+                            "setup": {"outcome": "passed"},
+                            "call": {
+                                "outcome": "failed",
+                                "crash": {"message": "ConnectionRefusedError: [Errno 61]"},
+                                "longrepr": longrepr,
+                            },
+                        }
+                    ],
+                }
+            )
+        )
+        return 1, "", ""
+
+    monkeypatch.setattr(adapters.base, "run_command", fake)
+    verdict = adapter.run(None)
+    d = verdict.failure_details["backend::tests/test_db.py::test_connects"]
+    assert (d.detail.endswith("ConnectionRefusedError: [Errno 61]"), len(d.detail) <= 1520) == (
+        True,
+        True,
+    )
