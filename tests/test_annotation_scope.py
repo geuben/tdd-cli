@@ -79,3 +79,20 @@ def test_annotation_keys_resolve_onto_the_cycles_they_apply_to():
         ["plan_wide", "a", "b", "f", "g"],
         [["plan_wide", "b", "g"], ["plan_wide", "a", "f"], ["plan_wide", "a", "f", "g"]],
     )
+
+
+def test_a_scoped_key_is_required_only_on_the_cycles_it_applies_to(repo):
+    plan = write_plan(repo, _plan('["plan_wide", {name: k, applies_to: [2]}]'))
+    run_cli(repo, "plan", "register", plan)
+    run_cli(repo, "run", "start", "--plan", plan)
+    (repo / "backend" / "app" / "moved.py").write_text("VALUE = 1\n")
+
+    first = run_cli(repo, "advance")
+    run_cli(repo, "annotate", "--key", "plan_wide", "--value", "x")
+    closed = run_cli(repo, "advance")
+    second = run_cli(repo, "advance")
+    assert (
+        first["result"]["missing_annotations"],
+        closed["run"]["cycle"],
+        second["result"]["missing_annotations"],
+    ) == (["plan_wide"], 2, ["plan_wide", "k"])
