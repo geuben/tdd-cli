@@ -67,6 +67,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   collected" refusal now quotes the first failed file's reason the same way. In split mode,
   both messages say the command ran through the runner, as the agent, which is where a PATH
   or environment difference from the agent's own shell comes from.
+- **A guest runner caps its worker lease at its own budget** (#190). In socket mode the
+  ledger service sizes each lease from the host's cores, so a guest smaller than its host
+  ran a host-sized `-n` (a 6-core, 4 GB VM on a 10-core host ran `pytest -n 10`, and the OOM
+  killer took its workers). The guest now uses `min(the service's share, its own budget)`,
+  where its budget is `core_budget` in `[runner]` of its runner.toml, or else the CPUs it
+  may run on. A `core_budget` that is not a positive integer is refused. A runner that
+  keeps its own ledger ignores it, and `tdd fleet` still shows the host's split.
 
 ## [0.16.0] - 2026-10-30
 

@@ -312,6 +312,7 @@ The guest's `runner.toml` names the forwarded socket instead of a ledger home:
     user          = "tdd-runner"
     command       = "/opt/tdd-cli/bin/tdd"
     ledger_socket = "/run/tdd-cli/ledger.sock"   # instead of ledger_home
+    # core_budget = 4   # caps this guest's worker lease; defaults to the CPUs the runner may use
 
 Naming both `ledger_socket` and `ledger_home` is refused. In the guest, `tdd doctor`'s
 `ledger reachable` check pings the service and names the source it reached:
@@ -417,6 +418,17 @@ from the service, which splits the host's cores across every guest's running sui
 lease ends when its connection closes, which is also what a dead VM does, and one older
 than the stale limit is not counted. Named leases stay in the guest: they guard
 resources the guest's suites run against.
+
+The guest caps that share at its own budget: a suite gets `min(the service's share, the
+guest's budget)` workers. The guest's budget is `core_budget` in its runner.toml's
+`[runner]`, otherwise the CPUs the runner may run on (`len(os.sched_getaffinity(0))`), or
+`os.cpu_count()` where the platform has no affinity. So a 6-core, 4 GB guest on a 10-core
+host no longer runs `-n 10`. `core_budget` replaces the affinity rather than adding to it,
+and it only ever lowers the share. Runner.toml is root's, so the operator sets it and the
+agent cannot; `TDD_CORE_BUDGET` is never read in a guest. A `core_budget` that is not a
+positive integer is refused. Only a runner with `ledger_socket` reads it: a runner that
+keeps its own ledger splits its own cores as before. `tdd fleet` still shows the host's
+split.
 
 ### Existing ledgers
 
