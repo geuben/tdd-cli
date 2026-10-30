@@ -174,3 +174,39 @@ def test_test_paths_omission_says_what_to_add(repo):
     declared = _check(run_cli(repo, "doctor"), "test_paths declared")
     assert declared["ok"] is False
     assert "test_paths" in declared["detail"]
+
+
+def test_doctor_notes_a_virtual_env_outside_every_project_root(repo, tmp_path, monkeypatch):
+    """Issue #99 — a VIRTUAL_ENV leaked from the launching harness made uv run the suite in
+    another repo's venv, without the reporter. Doctor names it before any suite runs."""
+    inside = repo / "backend" / ".venv"
+    outside = tmp_path / "some-other-repo" / ".venv"
+    seen = {}
+    for case, venv in (("unset", None), ("inside", inside), ("outside", outside)):
+        if venv is None:
+            monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+        else:
+            monkeypatch.setenv("VIRTUAL_ENV", str(venv))
+        out = run_cli(repo, "doctor")
+        seen[case] = [c for c in out["result"]["checks"] if c["check"] == "VIRTUAL_ENV"]
+
+    assert seen == {
+        "unset": [],
+        "inside": [
+            {
+                "check": "VIRTUAL_ENV",
+                "ok": True,
+                "detail": f"VIRTUAL_ENV={inside} is inside project backend's root",
+            }
+        ],
+        "outside": [
+            {
+                "check": "VIRTUAL_ENV",
+                "ok": True,
+                "detail": f"VIRTUAL_ENV={outside} is outside every project root in tdd.toml, so it"
+                " was inherited from whatever launched this shell. A suite runner that honours"
+                " VIRTUAL_ENV runs in that environment instead of the project's own, where the"
+                " reporter or the dependencies may be missing. Unset it before `tdd run start`.",
+            }
+        ],
+    }
