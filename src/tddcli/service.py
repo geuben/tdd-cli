@@ -46,6 +46,9 @@ CLOSED_OUTCOMES = ("complete", "abandoned")
 #: and is how an executor leaves its closing narrative.
 CLOSED_RUN_EXEMPT = frozenset({"add_note"})
 
+#: The only requests the report socket answers: reads, for an operator's dashboard.
+REPORT_METHODS = frozenset({"metrics", "fleet", "log"})
+
 #: Writes that record who executed a run: the service sets the executor on them.
 STAMPED = frozenset({"start_run", "abandon_run"})
 
@@ -114,16 +117,26 @@ class _Session:
     connection must not cross threads.
     """
 
-    def __init__(self, service: Service, source: str | None, conn: socket.socket):
+    def __init__(
+        self,
+        service: Service,
+        source: str | None,
+        conn: socket.socket,
+        report_only: bool = False,
+    ):
         self.service = service
         self.source = source
         self.conn = conn
+        self.report_only = report_only
         self.ledger: ledger_mod.Ledger | None = None
 
     def answer(self, request: dict) -> dict:
         method = request.get("method")
         args = request.get("args") or []
         kwargs = request.get("kwargs") or {}
+        if self.report_only:
+            # The report socket: reads, and not even `ping` besides.
+            return self.service.report(method, args, kwargs)
         if method == "ping":
             return _ok({"source": self.source, "executor": self.service.executors.get(self.source)})
         if self.source is None:
@@ -269,7 +282,9 @@ class _Handler(socketserver.StreamRequestHandler):
 
     def handle(self) -> None:
         listener: _Listener = self.server  # type: ignore[assignment]
-        session = _Session(listener.service, listener.source, self.request)
+        session = _Session(
+            listener.service, listener.source, self.request, report_only=listener.report_only
+        )
         try:
             while (request := wire.receive(self.rfile)) is not None:
                 wire.send(self.wfile, session.answer(request))
@@ -282,10 +297,11 @@ class _Listener(socketserver.ThreadingUnixStreamServer):
     daemon_threads = True
     block_on_close = False
 
-    def __init__(self, path: Path, service: Service, source: str | None):
+    def __init__(self, path: Path, service: Service, source: str | None, report_only: bool = False):
         self.path = path
         self.service = service
         self.source = source
+        self.report_only = report_only
         # A socket file left by a service that died is not a listener: replace it.
         with contextlib.suppress(FileNotFoundError):
             path.unlink()
@@ -317,7 +333,9 @@ class Service:
         self.config.home.mkdir(parents=True, exist_ok=True)
         self.listeners[None] = _Listener(self.config.admin_socket, self, None)
         if self.config.report_socket is not None:
-            self.report_listener = _Listener(self.config.report_socket, self, None)
+            self.report_listener = _Listener(
+                self.config.report_socket, self, None, report_only=True
+            )
         for name, entry in sorted(self._saved().items()):
             self.add_source(name, Path(entry["socket"]), entry.get("executor"))
 
@@ -457,6 +475,12 @@ class Service:
             finally:
                 view.close()
         return {"repos": out}
+
+    def report(self, method: str, args: list, kwargs: dict) -> dict:
+        """A dashboard's request, from the report socket: the admin socket's reads alone."""
+        if method not in REPORT_METHODS:
+            return _refusal("method_not_allowed", f"{method} is not answered on the report socket")
+        return self.admin(method, args, kwargs)
 
     def admin(self, method: str, args: list, kwargs: dict) -> dict:
         """An operator's request, from the admin socket."""
