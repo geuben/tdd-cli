@@ -54,6 +54,8 @@ packages = ["src/tddcli"]
 "examples/skills/tdd-drive/SKILL.md" = "tddcli/_docs/examples/skills/tdd-drive/SKILL.md"
 "examples/skills/tdd-handoff/SKILL.md" = "tddcli/_docs/examples/skills/tdd-handoff/SKILL.md"
 "examples/claude-code-hooks/README.md" = "tddcli/_docs/examples/claude-code-hooks/README.md"
+"examples/claude-code-hooks/stop_hook.py" = "tddcli/_docs/examples/claude-code-hooks/stop_hook.py"
+"examples/claude-code-hooks/bash_hook.py" = "tddcli/_docs/examples/claude-code-hooks/bash_hook.py"
 "README.md" = "tddcli/_docs/README.md"
 
 [tool.hatch.build.targets.sdist]

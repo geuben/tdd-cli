@@ -510,7 +510,7 @@ commands emit `confirm_cycle_applicable` instead — the recovery action is `tdd
 ### 8.1 Setup
 | Command | Behaviour |
 |---|---|
-| `tdd init` | scaffold `tdd.toml` from detected projects, for human review |
+| `tdd init [--skill <harness> [--update-skill]]` | scaffold `tdd.toml` from detected projects, for human review; `--skill claude-code` also writes the driving skill, its hooks and (when absent) `.claude/settings.json` from the installed copies, and `--update-skill` replaces harness files that differ |
 | `tdd doctor` | preflight: registry valid, adapters runnable, reporters installed, worktree resolvable, no stale report artifacts, tree clean enough. `ok` mirrors `healthy` (cycle 17) — a failing check is a non-zero exit, not `ok: true` with `healthy: false` buried in `result` |
 
 **"Clean enough"** is scoped, not absolute: `worktree clean` fails only on dirt a run

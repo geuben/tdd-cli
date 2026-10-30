@@ -8,6 +8,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`tdd init --skill claude-code`** (#114). Scaffolds the agent harness from the copies
+  installed with the binary, so it matches the `tdd` that drives it:
+  `.claude/skills/tdd-drive/SKILL.md`, `.claude/hooks/tdd_stop_hook.py` and
+  `.claude/hooks/tdd_bash_hook.py`. `.claude/settings.json` is written, wiring both hooks,
+  only when it does not exist; an existing one is never edited, and is reported as
+  `harness.settings: "wired"` or `"not_written"` (with the stanza in
+  `result.harness.settings_stanza` to merge by hand). An existing `tdd.toml` is kept
+  (`config: "kept"`) unless `--force`. A harness file that differs from the shipped copy
+  refuses the command before anything is written (`harness_files_differ`, naming it in
+  `result.differs`); `--update-skill` replaces it, and `--force` does not. Other refusals:
+  `unknown_harness`, `missing_from_install` (a packaging fault) and `skill_required`
+  (`--update-skill` without `--skill`).
+- The wheel now ships `examples/claude-code-hooks/stop_hook.py` and `bash_hook.py`, which
+  `init --skill` copies out.
+- **`tdd doctor`: `driving skill version`.** When `.claude/skills/tdd-drive/SKILL.md`
+  exists, doctor compares the `metadata.verb_set_version` and `envelope_version` its
+  front-matter declares (the shipped skill now declares both) with what the binary emits.
+  A mismatch fails and names `tdd init --skill claude-code --update-skill`; a skill that
+  declares nothing passes as a notice.
 - **A bind-only socket, and `tdd ledger unbind`** (#179). An optional `[service]
   bind_socket`, with `bind_group`, is a second operator socket, mode 660 and owned by that
   group, that answers `bind` and `unbind` for existing sources and refuses everything else
