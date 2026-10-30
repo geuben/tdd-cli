@@ -542,12 +542,15 @@ one has no move left but to re-run doctor and read the same output again.
 | `tdd note "<text>"` | attach a free-text narrative note to the current cycle or (post-run) to the run |
 | `tdd blocker --kind <k> --detail <text>` | record a typed blocker; set run `outcome = blocked`, releasing the stop hook (H1) |
 | `tdd resume` | reconstruct position from the ledger and emit `next_action` |
-| `tdd resume --unblock --note <text>` | **human only.** Reopen a blocked run, recording a `human_intervention` event with the note |
-| `tdd run abandon --reason <text> [--run <id>]` | **human only.** End a live or blocked run that will not be finished: `outcome = abandoned`, an `abandonment` row (reason, account, executor), a `human_intervention` event, and the worktree's claims released. `--run` only for a run whose worktree is gone or is the caller's own |
+| `tdd resume --unblock --note <text>` | For whoever supervises the run. Reopen a blocked run, recording an unblock (a `human_intervention` row) with the note. tdd-cli cannot tell who ran it (R8.3). |
+| `tdd run abandon --reason <text> [--run <id>]` | For whoever supervises the run; tdd-cli cannot tell who ran it (R8.3). End a live or blocked run that will not be finished: `outcome = abandoned`, an `abandonment` row (reason, account, executor), and the worktree's claims released. `--run` only for a run whose worktree is gone or is the caller's own |
 
 - **R8.7** A blocked run is not live. H1 must permit the agent to stop, or a blocker traps it.
-- **R8.8** `human_intervention` events are the input to interventions-per-run, the primary
-  autonomy metric.
+- **R8.8** `resume --unblock` rows in `human_intervention` are the input to unblocks per
+  run, a friction signal: each is a run that stopped and was let go on. No command takes an
+  executor identity (R8.3), so the count cannot say who unblocked a run. Who intervened is
+  counted outside tdd-cli (geuben/dispatch#217). An abandonment is not an unblock: the rows
+  `run abandon` wrote before #186 are left out of the count.
 - **R8.9** In `AWAITING_TEST`, `advance` resolves the target by diffing `collect()` against the
   run's start, and never offers a test that another cycle of the run targets: an earlier cycle's
   test is new since the start too, and adopting it would hand one test to two cycles (#163). The
