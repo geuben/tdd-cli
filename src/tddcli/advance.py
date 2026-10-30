@@ -430,6 +430,9 @@ def _handle_impl(engine: Engine, cycle, retried: bool) -> Envelope:
     outcomes, others, _, failure = engine.run_projects(
         projects, targets, cycle, AWAITING_IMPL, retried
     )
+    reruns: dict[str, list[str]] = {}
+    if others:
+        others, reruns = engine.rerun_untouched(cycle, AWAITING_IMPL, others)
 
     if others:
         return _reply(
@@ -438,6 +441,7 @@ def _handle_impl(engine: Engine, cycle, retried: bool) -> Envelope:
             Verb.FIX_REGRESSION,
             f"The implementation broke {len(others)} test(s) elsewhere.",
             other_failures=others,
+            **({"rerun_outcomes": reruns} if reruns else {}),
         )
     if not all(o == PASSED for o in outcomes.values()):
         return _reply(
@@ -522,6 +526,11 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
         and prior[-1]["tree_hash"] == engine.tree_hash(json.loads(cycle["projects"]))
     )
     outcome = engine.sweep(cycle, touched, skip_own=skip_own)
+    sweep_reruns: dict[str, list[str]] = {}
+    if outcome.failures and not outcome.unbaselined:
+        outcome.failures, sweep_reruns = engine.rerun_untouched(
+            cycle, "CLOSE_SWEEP", outcome.failures
+        )
 
     if not outcome.ok:
         if outcome.unbaselined:
@@ -565,6 +574,7 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
                 f"Close sweep found {len(outcome.failures)} failing test(s).",
                 failures=outcome.failures,
                 commit=sha,
+                **({"rerun_outcomes": sweep_reruns} if sweep_reruns else {}),
             )
         gates = [{"project": p, "kind": k, "output": o} for p, k, o in outcome.gates]
         return _reply(

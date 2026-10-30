@@ -414,7 +414,11 @@ Field rules:
 - **`annotation_keys`** — the judgement fields this plan wants recorded per cycle.
   Required before each cycle closes, so use them for the things the plan says to
   "record in the friction log". Do not add generic ones — `plan_defect` and
-  `friction_note` are already reserved.
+  `friction_note` are already reserved. A plain string is demanded on every cycle;
+  a key that only some cycles concern must be scoped —
+  `{name: artifact_verify, applies_to: [12, 19]}` or
+  `{name: device_log, projects: [device-suite]}` — or the executor fills every
+  other cycle with `n/a`, and the cycle where the check mattered drowns in it.
 
 **Then validate mechanically. This is a gate, not a suggestion:**
 

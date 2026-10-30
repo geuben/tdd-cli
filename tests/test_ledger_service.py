@@ -109,6 +109,24 @@ def test_a_guest_naming_another_sources_run_is_refused(repo, split_guest, ledger
     }
 
 
+def test_a_plan_delivered_under_one_source_does_not_refuse_another(
+    repo, split_guest, ledger_service
+):
+    start_run(repo)
+    run_cli(repo, "cycle", "skip", "--reason", "delivered")
+    ledger_service.service.add_source("vm-2", ledger_service.dir / "vm-2.sock", executor=None)
+    same = run_cli(repo, "run", "start", "--plan", "tasks/plan.md")
+    guest_config(split_guest.runner, ledger_service.dir / "vm-2.sock")
+    run_cli(repo, "plan", "register", "tasks/plan.md")
+
+    other = run_cli(repo, "run", "start", "--plan", "tasks/plan.md")
+
+    assert {"same_source": same["result"].get("reason"), "other_source": other["ok"]} == {
+        "same_source": "plan_already_delivered",
+        "other_source": True,
+    }
+
+
 def test_a_guest_naming_another_sources_cycle_is_refused(repo, split_guest, ledger_service):
     ledger_service.service.add_source("vm-2", ledger_service.dir / "vm-2.sock", executor=None)
     start_run(repo)
@@ -247,6 +265,19 @@ def test_an_unbound_source_downgrades_a_guest_operator_claim(repo, split_guest, 
         split_guest.socket,
         extra=f'[executor]\n"{current_user()}" = "guest-says"\n',
     )
+
+    run = host_run(ledger_service, repo, start_run(repo)["run"]["id"])
+    assert (run["executor_model"], run["executor_source"]) == ("guest-says", "claimed")
+
+
+def test_unbind_returns_a_source_to_the_guests_claim(repo, split_guest, ledger_service):
+    ledger_service.service.add_source("vm-b", ledger_service.dir / "vm-b.sock", executor="model-x")
+    guest_config(
+        split_guest.runner,
+        ledger_service.dir / "vm-b.sock",
+        extra=f'[executor]\n"{current_user()}" = "guest-says"\n',
+    )
+    run_cli(repo, "ledger", "unbind", "vm-b")
 
     run = host_run(ledger_service, repo, start_run(repo)["run"]["id"])
     assert (run["executor_model"], run["executor_source"]) == ("guest-says", "claimed")

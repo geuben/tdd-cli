@@ -460,6 +460,7 @@ GUEST_READS = frozenset(
         "cycle_notes",
         "cycle_times",
         "cycles",
+        "delivered_run",
         "event_counts",
         "event_details",
         "failure_details",
@@ -558,6 +559,7 @@ SOURCE_ROOTED = frozenset(
         "claim_advance",
         "claim_row",
         "contract_by_blob",
+        "delivered_run",
         "get_meta",
         "latest_blocked_run",
         "latest_contract",
@@ -1045,6 +1047,16 @@ class Ledger:
             (plan_path, *extra),
         )
 
+    def delivered_run(self, plan_path: str) -> sqlite3.Row | None:
+        """The earliest completed run of any contract registered under `plan_path`."""
+        scope, extra = self._scoped("run.source")
+        return self.one(
+            "SELECT run.* FROM run JOIN plan_contract ON plan_contract.id = run.plan_contract_id"
+            f" WHERE plan_contract.plan_path = ? AND run.outcome = 'complete'{scope}"
+            " ORDER BY run.id LIMIT 1",
+            (plan_path, *extra),
+        )
+
     def register_contract(
         self,
         *,
@@ -1126,7 +1138,7 @@ class Ledger:
         self.update("run", run_id, ended_at=now(), outcome=outcome)
 
     def reopen_run(self, run_id: int, note: str) -> None:
-        """`resume --unblock`: the run is live again, and a human said why."""
+        """`resume --unblock`: the run is live again, and whoever unblocked it said why."""
         self.update("run", run_id, ended_at=None, outcome=None)
         self.insert("human_intervention", run_id=run_id, note=note, at=now())
 
@@ -1152,7 +1164,6 @@ class Ledger:
             executor_source=executor_source,
             at=at,
         )
-        self.insert("human_intervention", run_id=run_id, note=f"abandoned: {reason}", at=at)
         self.release_claim(run["worktree_path"])
         self.release_advance_claim(run["worktree_path"])
 

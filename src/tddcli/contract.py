@@ -40,6 +40,7 @@ class DeclaredCycle:
     modifies_tests: list[str] = field(default_factory=list)
     commit_messages: dict[str, str] = field(default_factory=dict)
     meta: dict = field(default_factory=dict)
+    annotation_keys: list[str] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -53,6 +54,7 @@ class DeclaredCycle:
             "modifies_tests": self.modifies_tests,
             "commit_messages": self.commit_messages,
             "meta": self.meta,
+            "annotation_keys": self.annotation_keys,
         }
 
     @staticmethod
@@ -68,6 +70,7 @@ class DeclaredCycle:
             modifies_tests=d.get("modifies_tests", []),
             commit_messages=d.get("commit_messages", {}),
             meta=d.get("meta", {}),
+            annotation_keys=d.get("annotation_keys"),
         )
 
 
@@ -190,6 +193,84 @@ def parse_cycle(raw: dict, config: Config | None) -> DeclaredCycle:
     )
 
 
+def required_annotation_keys(cycle_keys: list[str] | None, contract_keys: list[str]) -> list[str]:
+    """The keys a cycle must carry before it closes. A cycle stored before scoping existed
+    (``None``) requires every key the contract declares."""
+    return list(contract_keys) if cycle_keys is None else list(cycle_keys)
+
+
+def _scope_list(value) -> list:
+    return value if isinstance(value, list) else [value]
+
+
+def _in_scope(entry: str | dict, cycle: DeclaredCycle) -> bool:
+    if isinstance(entry, str):
+        return True
+    if "applies_to" in entry:
+        return cycle.ordinal in _scope_list(entry["applies_to"])
+    return any(p in _scope_list(entry.get("projects")) for p in cycle.projects)
+
+
+def _check_annotation_scope(entry: dict, cycles: list[DeclaredCycle]) -> None:
+    name = entry["name"]
+    if "applies_to" in entry and "projects" in entry:
+        raise ContractError(f"annotation key {name!r}: applies_to and projects are exclusive")
+    field_name = "applies_to" if "applies_to" in entry else "projects"
+    raw = entry.get(field_name)
+    scope = [] if raw is None else _scope_list(raw)
+    if not scope:
+        raise ContractError(
+            f"annotation key {name!r} names no scope: give applies_to or projects,"
+            " or use the plain string form"
+        )
+    if field_name == "applies_to":
+        if not all(isinstance(v, int) and not isinstance(v, bool) for v in scope):
+            raise ContractError(
+                f"annotation key {name!r}: applies_to must be a cycle ordinal or a list of them"
+            )
+        declared = {c.ordinal for c in cycles}
+        for v in scope:
+            if v not in declared:
+                raise ContractError(
+                    f"annotation key {name!r}: applies_to names cycle {v},"
+                    " which the plan does not declare"
+                )
+    else:
+        if not all(isinstance(v, str) for v in scope):
+            raise ContractError(
+                f"annotation key {name!r}: projects must be a project name or a list of them"
+            )
+        used = {p for c in cycles for p in c.projects}
+        for v in scope:
+            if v not in used:
+                raise ContractError(
+                    f"annotation key {name!r}: projects names {v!r}, which no declared cycle uses"
+                )
+
+
+def _resolve_annotation_keys(entries, cycles: list[DeclaredCycle]) -> list[str]:
+    """Set each cycle's required keys; return the names in declaration order."""
+    if not isinstance(entries, list) or not all(isinstance(e, str | dict) for e in entries):
+        raise ContractError("annotation_keys must be a list of strings or mappings")
+    for e in entries:
+        if isinstance(e, dict) and not (isinstance(e.get("name"), str) and e["name"]):
+            raise ContractError("every annotation key mapping needs a string `name`")
+    seen: set[str] = set()
+    for e in entries:
+        name = e if isinstance(e, str) else e["name"]
+        if name in seen:
+            raise ContractError(f"annotation key {name!r} is declared twice")
+        seen.add(name)
+    for e in entries:
+        if isinstance(e, dict):
+            _check_annotation_scope(e, cycles)
+    for c in cycles:
+        c.annotation_keys = [
+            e if isinstance(e, str) else e["name"] for e in entries if _in_scope(e, c)
+        ]
+    return [e if isinstance(e, str) else e["name"] for e in entries]
+
+
 def parse(text: str, plan_path: str, config: Config | None = None) -> PlanContract:
     """Absent front-matter is legitimate (R7.9); malformed front-matter is a defect (R7.10)."""
     block = split_front_matter(text)
@@ -214,9 +295,7 @@ def parse(text: str, plan_path: str, config: Config | None = None) -> PlanContra
         raise ContractError(f"duplicate cycle ordinals: {ordinals}")
     cycles.sort(key=lambda c: c.ordinal)
 
-    keys = data.get("annotation_keys", [])
-    if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys):
-        raise ContractError("annotation_keys must be a list of strings")
+    keys = _resolve_annotation_keys(data.get("annotation_keys", []), cycles)
 
     anc = data.get("ancillary_files", [])
     if not isinstance(anc, list) or not all(isinstance(p, str) for p in anc):

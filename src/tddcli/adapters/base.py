@@ -93,6 +93,16 @@ def clip_failure(text: str, limit: int = 1500) -> str:
     return f"{text[:head]}\n… [clipped] …\n{text[-tail:]}"
 
 
+def command_failure(command: str, code: int, text: str = "") -> str:
+    """Describe a failed command so a person can paste it to reproduce. A command
+    that is not found writes to stderr only; a detail built from stdout alone was
+    blank, which hid the error entirely (issue 184)."""
+    text = text.strip()
+    if not text:
+        return f"`{command}` exited {code} with no output"
+    return f"`{command}` exited {code}: {clip_failure(text, 800)}"
+
+
 #: Opt-in per-command timing. Off by default: the per-file collect loop would emit
 #: one line per test file on every invocation, drowning the heartbeats that exist
 #: to make a slow baseline legible.

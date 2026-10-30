@@ -205,7 +205,9 @@ an auditor compares them against reality.
 Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mismatch`,
 `off_protocol_invocation`, `stale_artifact`, `plan_blob_changed`, `executor_unknown`,
 `artifact_regenerate_failed`, `baseline_late_probe`, `baseline_late_probe_unobserved`,
-`ignored_paths_dirty`.
+`flaky_pre_existing`, `ignored_paths_dirty`.
+
+`flaky_pre_existing` is an untouched pre-existing failure that passed when rerun alone (R9.1f).
 
 ### Blocker
 Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `context_exhausted`,
@@ -254,7 +256,8 @@ Outcomes that are not simple advancement:
 - **Target not collected** (import error, missing module) → distinguished from `not_found`
   (identifier matches nothing). Not-collected is a legitimate RED in `AWAITING_TEST` if the plan
   declares a stub step; otherwise `next_action` directs stub creation. Never routes to a human.
-- **New failures elsewhere** → phase holds, `next_action` names the regressed tests.
+- **New failures elsewhere** → phase holds, `next_action` names the regressed tests. An untouched
+  pre-existing failure is rerun alone first; one that passes does not hold the phase (R9.1f).
 - **Nothing changed since the last invocation** → refused with `no_change_since_last_run`, to stop
   loops that re-run an unmodified tree. `tdd advance --retry` proceeds anyway: re-running a suite
   is legitimate (flaky tests, environmental failures). Retries are counted, and after three
@@ -383,6 +386,9 @@ Requirements:
   maps to zero files is `not_found_in_sources`; one that maps to two or more is `ambiguous_id`;
   an id in a grammar that never carries a path and whose adapter has no source scan is
   `no_path_in_id`. Unresolved ids do not fail the command.
+- **R7.15** A project may declare `flaky_reruns`, a non-negative integer (default 1): how many
+  times R9.1f reruns an untouched pre-existing failure before reporting it. `0` turns reruns
+  off for that project. Any other value is refused when `tdd.toml` is loaded.
 
 ### 7.2 Plan front-matter
 
@@ -422,7 +428,23 @@ annotation_keys: ["literal_detail_handlers_kept"]
 - **R7.4** `modifies_tests` authorises changes to named existing tests, suppressing the
   test-weakening integrity event for exactly those.
 - **R7.5** `annotation_keys` lets a plan define its own judgement fields, which `log render`
-  emits per cycle.
+  emits per cycle. A cycle cannot close until it carries every key that applies to it. An
+  entry is either a plain string, required on every declared cycle, or a mapping that scopes
+  the key to some cycles: `{name: k, applies_to: [12, 19]}` by cycle ordinal, or
+  `{name: k, projects: [device-suite]}` by project. Scalars are accepted for either
+  (`applies_to: 12`). `applies_to` and `projects` are exclusive on one entry. A contract
+  cycle is in a `projects` scope when any of its projects is listed. Registration hard-fails
+  (R7.10) on an entry that is neither a string nor a mapping, a mapping without a string
+  `name`, a name declared twice, a mapping giving both scopes or neither (or an empty one),
+  an `applies_to` member that is not an integer, a `projects` member that is not a string,
+  an ordinal the plan does not declare, and a project no declared cycle uses. A contract
+  registered before scoping existed keeps requiring every key on every cycle.
+- **R7.5a** A declared check that never ran is surfaced, not hidden. For every name in
+  `annotation_keys`, in declaration order, its scope is the declared cycles that require it
+  (every cycle, for a plain key). When no cycle in that scope was delivered (skipped and
+  never-reached cycles count as not executed), the friction log's Plan fidelity section
+  carries, after `Never reached`, the line
+  ``- **Declared check never ran:** `<key>` (applies to cycles <n>, <n>)``, ordinals ascending.
 - **R7.9** **Absent** front-matter is legitimate (pre-existing plans, exploratory work). The
   contract is recorded as `undeclared`, plan-fidelity metrics are unavailable, and `run start`
   requires a human-supplied `--allow-undeclared`.
@@ -511,7 +533,7 @@ commands emit `confirm_cycle_applicable` instead — the recovery action is `tdd
 ### 8.1 Setup
 | Command | Behaviour |
 |---|---|
-| `tdd init` | scaffold `tdd.toml` from detected projects, for human review |
+| `tdd init [--skill <harness> [--update-skill]]` | scaffold `tdd.toml` from detected projects, for human review; `--skill claude-code` also writes the driving skill, its hooks and (when absent) `.claude/settings.json` from the installed copies, and `--update-skill` replaces harness files that differ |
 | `tdd doctor` | preflight: registry valid, adapters runnable, reporters installed, worktree resolvable, no stale report artifacts, tree clean enough. `ok` mirrors `healthy` (cycle 17) — a failing check is a non-zero exit, not `ok: true` with `healthy: false` buried in `result` |
 
 **"Clean enough"** is scoped, not absolute: `worktree clean` fails only on dirt a run
@@ -531,7 +553,7 @@ one has no move left but to re-run doctor and read the same output again.
 |---|---|
 | `tdd plan register <path>` | parse front-matter, resolve plan blob at HEAD, lint declared targets (grammar + root-prefix rules), store contract. Refuses with `reason: "target_lint"` and a `findings` list when any target can't match a collected id — e.g. pytest target missing `::`, vitest missing ` > `, gradle/xctest wrong separator, or target path that duplicates the project's `root`. Recovery: fix the spelling (the finding often carries a `suggestion`), or for a genuinely nested root path, create the directory first (the filesystem-existence check then exempts it). |
 | `tdd plan paths <path>` | resolve every test id in the plan (from `test:` and `modifies_tests:` fields) to a repository-relative file path. Prints a human table by default; `--json` returns the envelope. Ids that cannot be resolved (no path in id grammar, id absent from scanned sources, or ambiguous across multiple files) appear in an `unresolved` list with a `reason`; the command still exits successfully so callers can act on partial results. |
-| `tdd run start --plan <path\|id>` | re-lints the stored contract's declared targets against the *current* `tdd.toml` (catching root/adapter drift since registration) before claiming the worktree — refuses with `reason: "target_lint"` if findings appear; then creates run, captures executor identity from environment, captures per-project baselines, verifies artifact freshness, opens cycle 1 |
+| `tdd run start --plan <path\|id>` | re-lints the stored contract's declared targets against the *current* `tdd.toml` (catching root/adapter drift since registration) before claiming the worktree — refuses with `reason: "target_lint"` if findings appear; refuses with `reason: "plan_already_delivered"`, `prior_run_id` (the earliest such run) and `ended_at` if a completed run of any contract registered under the same plan path exists in this source's ledger, before anything is claimed or run (blocked, abandoned and refused runs do not count; there is no override: to deliver the plan again, register a copy under a new path); then creates run, captures executor identity from environment, captures per-project baselines, verifies artifact freshness, opens cycle 1 |
 
 ### 8.3 The loop
 | Command | Behaviour |
@@ -543,12 +565,15 @@ one has no move left but to re-run doctor and read the same output again.
 | `tdd note "<text>"` | attach a free-text narrative note to the current cycle or (post-run) to the run |
 | `tdd blocker --kind <k> --detail <text>` | record a typed blocker; set run `outcome = blocked`, releasing the stop hook (H1) |
 | `tdd resume` | reconstruct position from the ledger and emit `next_action` |
-| `tdd resume --unblock --note <text>` | **human only.** Reopen a blocked run, recording a `human_intervention` event with the note |
-| `tdd run abandon --reason <text> [--run <id>]` | **human only.** End a live or blocked run that will not be finished: `outcome = abandoned`, an `abandonment` row (reason, account, executor), a `human_intervention` event, and the worktree's claims released. `--run` only for a run whose worktree is gone or is the caller's own |
+| `tdd resume --unblock --note <text>` | For whoever supervises the run. Reopen a blocked run, recording an unblock (a `human_intervention` row) with the note. tdd-cli cannot tell who ran it (R8.3). |
+| `tdd run abandon --reason <text> [--run <id>]` | For whoever supervises the run; tdd-cli cannot tell who ran it (R8.3). End a live or blocked run that will not be finished: `outcome = abandoned`, an `abandonment` row (reason, account, executor), and the worktree's claims released. `--run` only for a run whose worktree is gone or is the caller's own |
 
 - **R8.7** A blocked run is not live. H1 must permit the agent to stop, or a blocker traps it.
-- **R8.8** `human_intervention` events are the input to interventions-per-run, the primary
-  autonomy metric.
+- **R8.8** `resume --unblock` rows in `human_intervention` are the input to unblocks per
+  run, a friction signal: each is a run that stopped and was let go on. No command takes an
+  executor identity (R8.3), so the count cannot say who unblocked a run. Who intervened is
+  counted outside tdd-cli (geuben/dispatch#217). An abandonment is not an unblock: the rows
+  `run abandon` wrote before #186 are left out of the count.
 - **R8.9** In `AWAITING_TEST`, `advance` resolves the target by diffing `collect()` against the
   run's start, and never offers a test that another cycle of the run targets: an earlier cycle's
   test is new since the start too, and adopting it would hand one test to two cycles (#163). The
@@ -632,6 +657,17 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   whole-suite run is the attempt's last invocation, which is the one the close sweep's skip
   compares against (§6.1). A target that fails while something else also broke is reported first;
   the other breakage is reported once the target passes. Decided in #149.
+- **R9.1f** Before `advance` replies `fix_regression` for a failure in GREEN's whole-suite run
+  (R9.1b) or in a close sweep (R9.2), it reruns that test alone (a target-only run of that one
+  id), up to the project's `flaky_reruns` times (R7.15), when the failure is untouched and
+  pre-existing: absent from the baseline (R9.6), collected at `run start`, and in a file the
+  plan does not declare in any cycle (`files`, `stub_expected`, the file of a `test` or
+  `modifies_tests` id as R7.14 resolves it, or `ancillary_files`). A test whose file cannot
+  be resolved is never rerun. A rerun that passes clears the failure: it is recorded as a
+  `flaky_pre_existing` integrity event `{test, phase, outcomes}` and the phase proceeds as if
+  the suite had not reported it. A test that never passes stays in the reply, which carries
+  `rerun_outcomes: {test: outcomes}` as evidence. Reruns write no invocation row; each emits a
+  `project_completed` heartbeat with phase `RERUN`. Decided in #73.
 - **R9.2** On the transition out of `AWAITING_REFACTOR`, the close sweep runs: the cycle's own
   projects, plus every project **downstream of an artifact the cycle modified** per the
   `consumed_by` edges in §7.1, plus lint and typecheck for each. Projects with
@@ -652,7 +688,11 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   merely looks clean is worse than no run at all — every pre-existing failure reads as a
   regression, at every close sweep, for the life of the run. The check runs before the run row
   is written, so a refusal leaves nothing behind to block the next attempt. A project with no
-  test files and no collection errors is not an error; it simply has no suite yet.
+  test files and no collection errors is not an error; it simply has no suite yet. The
+  nothing-collected refusal quotes the first failed file's recorded reason (the command, its exit
+  status and its output, issue #184), and in split mode says the command ran through the runner,
+  as the agent: that hop is where a PATH or environment difference from the agent's own shell
+  comes from.
 - **R9.5b** `resume --unblock --accept-failures` folds pre-existing failures into the baseline,
   recorded as a `baseline_amended` integrity event alongside the mandatory `--note`. For each
   candidate failure (present in the last close sweep but absent from the current baseline row),
@@ -900,7 +940,9 @@ Adapter.typecheck(project)               -> GateResult
   file it came from. `tdd doctor` reads the subprocess's **stdout**: `uv` writes
   environment warnings (e.g. `VIRTUAL_ENV=... does not match ...`) to stderr, while pytest writes
   the actual collection error (e.g. `ModuleNotFoundError`) to stdout. A check that reads stderr
-  reports the wrapper's noise and loses the real error underneath it. Collection's whole-suite
+  reports the wrapper's noise and loses the real error underneath it. When stdout is blank (a
+  command that is not found writes to stderr only, issue #184), the detail is the probe's command,
+  its exit status and the tail of stderr, so a failing gate never has an empty detail. Collection's whole-suite
   vitest listing is `vitest list --json`, not the text listing `collectable()` probes: the text
   prefixes `[<project>] ` to every line of a named vitest project and prints paths relative to
   that project's own `root`, while the JSON carries each test's absolute `file`, which the

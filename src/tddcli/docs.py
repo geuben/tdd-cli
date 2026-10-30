@@ -27,13 +27,17 @@ class Topic:
     summary: str
 
     def resolve(self) -> Path:
-        """The readable copy, preferring the packaged one.
+        return shipped(self.path)
 
-        A source checkout has no `_docs`; an installed wheel has no repository
-        above it. Exactly one of these exists in any given installation.
-        """
-        packaged = _PACKAGED / self.path
-        return packaged if packaged.is_file() else _SOURCE / self.path
+
+def shipped(path: str) -> Path:
+    """The readable copy of a shipped file, preferring the packaged one.
+
+    A source checkout has no `_docs`; an installed wheel has no repository
+    above it. Exactly one of these exists in any given installation.
+    """
+    packaged = _PACKAGED / path
+    return packaged if packaged.is_file() else _SOURCE / path
 
 
 TOPICS: tuple[Topic, ...] = (
@@ -45,7 +49,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         "skill",
         "examples/skills/tdd-drive/SKILL.md",
-        "a complete driving skill for Claude Code — copy it into .claude/skills/",
+        "a complete driving skill for Claude Code: `tdd init --skill claude-code` installs it",
     ),
     Topic(
         "handoff",
@@ -55,7 +59,8 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         "hooks",
         "examples/claude-code-hooks/README.md",
-        "the Stop and Bash hooks that keep an agent inside the loop",
+        "the Stop and Bash hooks that keep an agent inside the loop,"
+        " installed by `tdd init --skill claude-code`",
     ),
     Topic(
         "plan",

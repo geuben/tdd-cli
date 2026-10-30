@@ -71,6 +71,7 @@ from .base import (
     GateResult,
     Verdict,
     clip_failure,
+    command_failure,
 )
 
 # `     Running unittests src/lib.rs (target/debug/deps/x-abc)` → target "lib"
@@ -305,7 +306,7 @@ class CargoAdapter(Adapter):
             cmd = f"{self._targeted_prefix()} --test {shlex.quote(declared)} -- --list 2>&1"
             code, out, _err = self._run_suite(cmd, self._suite_env(None))
             if code != 0 or _COULD_NOT_COMPILE_RE.search(out):
-                result.failed_files[rel] = clip_failure(self._errors(out))
+                result.failed_files[rel] = command_failure(cmd, code, self._errors(out))
                 continue
             default = declared.replace("-", "_")
             result.tests |= {self.qualify(t) for t in self._parse_list(out, default=default)}
@@ -339,12 +340,14 @@ class CargoAdapter(Adapter):
         return tests
 
     def collectable(self) -> GateResult:
-        code, out, err = self._run_suite(
-            f"{self._targeted_prefix()} --no-run 2>&1", self._suite_env(None)
-        )
+        cmd = f"{self._targeted_prefix()} --no-run 2>&1"
+        code, out, err = self._run_suite(cmd, self._suite_env(None))
         if code == 0:
             return GateResult(ok=True)
-        return GateResult(ok=False, output=clip_failure(self._errors(out + err)))
+        return GateResult(
+            ok=False,
+            output=clip_failure(self._errors(out + err)) or command_failure(cmd, code),
+        )
 
     # ------------------------------------------------------------------
     # Results
