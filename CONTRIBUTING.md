@@ -34,6 +34,7 @@ uv run pytest
   accept a phase, and no file an agent edits may claim progress.
 - Every behaviour change needs a test. The suite is fast; run all of it.
 - Lint with `uv run ruff check src tests`.
+- Type-check with `uv run mypy` (it reads its paths and settings from `pyproject.toml`).
 - Touching `.github/` means running `uv run zizmor .` too — CI audits the
   workflows with [zizmor](https://github.com/zizmorcore/zizmor) and fails on any
   finding. Actions are hash-pinned with a `# vN` comment; Dependabot moves the
@@ -44,8 +45,8 @@ uv run pytest
 
 - Keep PRs focused — one concern per PR.
 - Write commit messages that state the behaviour change, not the mechanics.
-- CI must pass (tests on Python 3.11–3.14, lint, workflow audit, build + wheel
-  smoke test).
+- CI must pass (tests on Python 3.11–3.14, lint, type check, workflow audit, build +
+  wheel smoke test).
 
 ## Reporting bugs
 

@@ -9,3 +9,4 @@ root       = "."
 adapter    = "pytest"
 test_paths = ["tests/"]
 lint       = ["uv run ruff check"]
+typecheck  = ["uv run mypy"]
