@@ -195,31 +195,23 @@ def _scope_list(value) -> list:
     return value if isinstance(value, list) else [value]
 
 
+def _in_scope(entry: str | dict, cycle: DeclaredCycle) -> bool:
+    if isinstance(entry, str):
+        return True
+    if "applies_to" in entry:
+        return cycle.ordinal in _scope_list(entry["applies_to"])
+    return any(p in _scope_list(entry.get("projects")) for p in cycle.projects)
+
+
 def _resolve_annotation_keys(entries, cycles: list[DeclaredCycle]) -> list[str]:
     """Set each cycle's required keys; return the names in declaration order."""
-    if not isinstance(entries, list):
+    if not isinstance(entries, list) or not all(isinstance(e, str | dict) for e in entries):
         raise ContractError("annotation_keys must be a list of strings or mappings")
-    names: list[str] = []
     for c in cycles:
-        c.annotation_keys = []
-    for entry in entries:
-        if isinstance(entry, str):
-            name, applies = entry, lambda c: True
-        elif isinstance(entry, dict):
-            name = entry.get("name")
-            if "applies_to" in entry:
-                ordinals = _scope_list(entry["applies_to"])
-                applies = lambda c, o=ordinals: c.ordinal in o  # noqa: E731
-            else:
-                projects = _scope_list(entry.get("projects"))
-                applies = lambda c, p=projects: any(x in p for x in c.projects)  # noqa: E731
-        else:
-            raise ContractError("annotation_keys must be a list of strings or mappings")
-        names.append(name)
-        for c in cycles:
-            if applies(c):
-                c.annotation_keys.append(name)
-    return names
+        c.annotation_keys = [
+            e if isinstance(e, str) else e["name"] for e in entries if _in_scope(e, c)
+        ]
+    return [e if isinstance(e, str) else e["name"] for e in entries]
 
 
 def parse(text: str, plan_path: str, config: Config | None = None) -> PlanContract:
