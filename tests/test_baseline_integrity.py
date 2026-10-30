@@ -678,3 +678,17 @@ def test_run_start_refuses_a_baseline_whose_suite_produced_no_report(repo, tmp_p
     assert seen == {
         j: (False, "baseline_unreadable", [("backend", True)], True) for j in ("1", "2")
     }
+
+
+def test_an_unreadable_baseline_is_not_cached_for_reuse(repo):
+    """Issue #99 — a refusal that a --reuse-baselines cache hit can undo is no refusal."""
+    set_test_command(repo, NO_REPORT)
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    first = run_cli(repo, "run", "start", "--plan", plan, "--reuse-baselines")
+    second = run_cli(repo, "run", "start", "--plan", plan, "--reuse-baselines")
+
+    assert (first["result"].get("reason"), second["result"].get("reason")) == (
+        "baseline_unreadable",
+        "baseline_unreadable",
+    )
