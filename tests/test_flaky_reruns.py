@@ -148,3 +148,15 @@ def test_a_failure_in_any_file_the_plan_declares_is_not_rerun(repo, tmp_path):
         _to_green(cases[name], tmp_path / f"{name}-count", "n == 2", **kw)
         verbs[name] = run_cli(cases[name], "advance")["next_action"]["verb"]
     assert verbs == dict.fromkeys(CASES, "fix_regression")
+
+
+def test_a_failure_in_a_test_the_run_added_is_not_rerun(repo, tmp_path):
+    _to_green(repo, tmp_path / "count", "False")
+    (repo / "backend" / "tests" / "test_new.py").write_text(
+        _flaky(tmp_path / "new-count", "n == 1", "test_new")
+    )
+    out = run_cli(repo, "advance")
+    assert (out["next_action"]["verb"], out["result"]["other_failures"]) == (
+        "fix_regression",
+        ["backend::tests/test_new.py::test_new"],
+    )
