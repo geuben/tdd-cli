@@ -122,5 +122,6 @@ def test_an_unblock_whose_note_reads_like_an_abandonment_is_still_counted(tmp_pa
         fidelity(render.friction_log(ledger, run)),
     ) == (
         1,
-        FIDELITY_HEAD + "- Unblocks: 1\n  - 2026-09-01T10:05:00+00:00: abandoned: superseded by #145",
+        FIDELITY_HEAD
+        + "- Unblocks: 1\n  - 2026-09-01T10:05:00+00:00: abandoned: superseded by #145",
     )
