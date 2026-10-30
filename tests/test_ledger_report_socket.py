@@ -3,6 +3,7 @@ for an operator's dashboard that must never be handed the admin socket."""
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -160,3 +161,18 @@ def test_the_report_socket_refuses_every_other_method(report_service, tmp_path):
     answers = {m: answer(report_service.report, m, *a) for m, a in other}
 
     assert answers == {m: "method_not_allowed" for m, _ in other}
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes a mode-0444 file")
+def test_the_report_socket_reads_ledgers_it_cannot_write(report_service):
+    host_ledger(report_service.home, TWO_RUNS)
+    # Before anything opens it, and never restored: a failed writer leaves its -wal and
+    # -shm files at this mode too.
+    (report_service.home / "somerepo.sqlite3").chmod(0o444)
+
+    reads = [
+        isinstance(answer(report_service.report, m, *a), dict)
+        for m, a in (("metrics", ()), ("fleet", ()), ("log", ("somerepo", 1)))
+    ]
+
+    assert reads == [True, True, True]
