@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import io
-import json
 import os
-import sys
+import stat
 
 import pytest
 
-from conftest import current_user, run_cli, write_plan
+from conftest import ABSENT, agent_context, current_user, git, run_cli, write_plan
 from tddcli import actor
 
 MINIMAL_PLAN = """\
@@ -42,18 +40,64 @@ def test_run_start_spawns_git_and_the_suite_as_the_agent(repo, split_runner):
     assert spawned == (True, True, True)
 
 
-def _agent_context(monkeypatch, **extra: str) -> None:
-    """What the client writes to the runner's stdin: the agent's environment."""
-    payload = json.dumps({"env": {**os.environ, **extra}})
-    monkeypatch.setattr(sys, "stdin", io.StringIO(payload))
-
-
 def test_agent_context_on_stdin_reaches_spawned_commands(repo, split_runner, monkeypatch):
-    _agent_context(monkeypatch, MARK="from-agent")
+    agent_context(monkeypatch, MARK="from-agent")
 
     run_cli(repo, "--agent-context-stdin", "doctor")
 
     assert any(line.startswith("MARK=from-agent ") for line in split_runner.shim.lines())
+
+
+def test_the_suite_runs_under_the_agents_umask(repo, split_runner, monkeypatch, tmp_path):
+    """Split mode changes nothing about the suite but the uid: a file it creates gets
+    the agent's umask, not the one the runner's sudo hop (here, the shim's 002) left."""
+    made = tmp_path / "made-by-suite"
+    (repo / "backend" / "tests" / "test_smoke.py").write_text(
+        f"import pathlib\n\n\ndef test_smoke():\n    pathlib.Path({str(made)!r}).touch()\n"
+    )
+    git(repo, "commit", "-qam", "the suite writes a file")
+    plan = write_plan(repo, MINIMAL_PLAN)
+    run_cli(repo, "plan", "register", plan)
+    agent_context(monkeypatch, umask=0o022)
+
+    run_cli(repo, "--agent-context-stdin", "run", "start", "--plan", plan)
+
+    assert stat.S_IMODE(made.stat().st_mode) == 0o644
+
+
+def test_only_a_umask_in_range_is_applied(repo, split_runner, monkeypatch):
+    """Anything else is ignored, as an older client's missing umask is: the commands
+    still run, under whatever sudo leaves. `-c umask ` because the bare word is also
+    in this test's own path."""
+    forms = {
+        "0": 0,
+        "0o777": 0o777,
+        "true": True,
+        "string": "0022",
+        "negative": -1,
+        "too wide": 0o1000,
+        "null": None,
+        "absent": ABSENT,
+    }
+    applied = {}
+    for name, form in forms.items():
+        split_runner.shim.log.write_text("")
+        agent_context(monkeypatch, umask=form)
+        run_cli(repo, "--agent-context-stdin", "doctor")
+        lines = split_runner.shim.lines()
+        applied[name] = (bool(lines), any(" -c umask " in line for line in lines))
+
+    used, ignored = (True, True), (True, False)
+    assert applied == {
+        "0": used,
+        "0o777": used,
+        "true": ignored,
+        "string": ignored,
+        "negative": ignored,
+        "too wide": ignored,
+        "null": ignored,
+        "absent": ignored,
+    }
 
 
 def test_the_runner_without_an_agent_refuses_to_act(repo, split_runner, monkeypatch):

@@ -58,7 +58,10 @@ def forward(cfg: RunnerConfig, argv: list[str]) -> int:
     asked = [cfg.sudo, "-n", "-H", "-u", cfg.user, "--", cfg.command, CONTEXT_FLAG, *argv]
     # sudo resets the environment and the suites need the agent's, so it travels as
     # data: the runner hands it back to the agent's own processes and uses none of it.
-    context = json.dumps({"env": dict(os.environ)})
+    # The umask too: sudo, or the PAM session it opens, may leave a different one.
+    umask = os.umask(0)
+    os.umask(umask)
+    context = json.dumps({"env": dict(os.environ), "umask": umask})
     proc = actor.LocalActor().relay(asked, input=context)
     sys.stdout.write(proc.stdout)
     return proc.returncode

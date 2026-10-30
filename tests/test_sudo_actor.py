@@ -9,6 +9,7 @@ without root can show.
 from __future__ import annotations
 
 import os
+import stat
 
 from tddcli.actor import SudoActor
 
@@ -47,6 +48,20 @@ def test_without_an_agent_environment_sudo_builds_it(sudo_shim):
 
     asked = sudo_shim.lines()[0].split(" ", 1)[1]
     assert asked == "-n -H -u agent-x -- true"
+
+
+def test_spawned_commands_run_under_the_agents_umask(tmp_path, sudo_shim):
+    """The shim runs commands under umask 002, as a PAM session may; the agent's own
+    umask is applied after sudo, so it wins for both spawn forms."""
+    actor = SudoActor(
+        sudo=str(sudo_shim.path), agent="agent-x", env=_agent_env(sudo_shim), umask=0o022
+    )
+
+    actor.run_shell("touch shell.txt", cwd=tmp_path)
+    actor.run_argv(["touch", str(tmp_path / "argv.txt")])
+
+    modes = [stat.S_IMODE((tmp_path / name).stat().st_mode) for name in ("shell.txt", "argv.txt")]
+    assert modes == [0o644, 0o644]
 
 
 def test_file_operations_are_performed_as_the_agent(sudo_shim):

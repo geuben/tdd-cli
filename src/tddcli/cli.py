@@ -313,30 +313,45 @@ def _cleanliness_detail(blocking: list[str], unrelated: list[str]) -> str:
     return ""
 
 
+def _drop_to_the_agent(split: runner_mod.RunnerConfig) -> tuple[bool, str]:
+    """Whether the runner can act as the agent, and if not, what fixes it.
+
+    Probed before anything else doctor asks of the actor: everything else goes through
+    the same sudo hop, and a refused hop would otherwise surface as whichever of them
+    ran first. From `/`, so it cannot fail for a reason in the worktree.
+    """
+    agent = os.environ.get("SUDO_USER", "")
+    asked = actor.current().run_argv(["id", "-u"], cwd=Path("/"))
+    try:
+        dropped = int(asked.stdout.strip()) == pwd.getpwnam(agent).pw_uid
+    except (ValueError, KeyError):
+        dropped = False
+    if dropped:
+        return True, ""
+    said = asked.stderr.strip()
+    return False, (
+        f"the runner could not run `id -u` as {agent!r}. Add to sudoers:"
+        f" `{split.user} ALL=({agent}) NOPASSWD:SETENV: ALL`"
+        + (f" (sudo said: {said})" if said else "")
+    )
+
+
 def _split_checks(
-    check: Callable, split: runner_mod.RunnerConfig, ledger_file: Path | None
+    check: Callable,
+    split: runner_mod.RunnerConfig,
+    ledger_file: Path | None,
+    dropped: tuple[bool, str],
 ) -> None:
     """What split mode rests on, probed live and as the agent.
 
     Each probe goes through the installed actor, so on a real machine it is answered
     by the real sudo and the real accounts: that is the one place the uid change
-    itself is ever verified. `ledger_file` is None when the ledger is on the host's
-    ledger service: there is then no file here for the agent to reach.
+    itself is ever verified. `dropped` is `_drop_to_the_agent`'s answer, asked before
+    anything else. `ledger_file` is None when the ledger is on the host's ledger
+    service: there is then no file here for the agent to reach.
     """
     agent = os.environ.get("SUDO_USER", "")
-    asked = actor.current().run_argv(["id", "-u"])
-    try:
-        dropped = int(asked.stdout.strip()) == pwd.getpwnam(agent).pw_uid
-    except (ValueError, KeyError):
-        dropped = False
-    check(
-        "runs as the agent",
-        dropped,
-        ""
-        if dropped
-        else f"the runner could not run `id -u` as {agent!r}. Add to sudoers:"
-        f" `{split.user} ALL=({agent}) NOPASSWD:SETENV: ALL`",
-    )
+    check("runs as the agent", *dropped)
 
     if ledger_file is not None:
         readable = actor.current().run_argv(["test", "-r", str(ledger_file)]).returncode == 0
@@ -363,8 +378,18 @@ def _split_checks(
 
 
 def cmd_doctor(args) -> Envelope:
-    worktree = _worktree()
     checks, check = _doctor_checklist()
+    split = runner_mod.load()
+    dropped = (True, "") if split is None else _drop_to_the_agent(split)
+    if not dropped[0]:
+        check("runs as the agent", *dropped)
+        return Envelope(
+            ok=False,
+            error="the runner cannot act as the agent",
+            result={"checks": checks, "projects": {}, "healthy": False, "mode": "split"},
+            next_action=NextAction(Verb.RESOLVE_BLOCKER, "Resolve the failing checks above."),
+        )
+    worktree = _worktree()
 
     check("worktree resolvable", True, str(worktree))
     try:
@@ -385,7 +410,6 @@ def cmd_doctor(args) -> Envelope:
     check(
         "ledger outside worktree", not str(ledger.path).startswith(str(worktree)), str(ledger.path)
     )
-    split = runner_mod.load()
     mode = "single" if split is None else "split"
     if split is None:
         # A notice, never a blocker: single-user installs must keep working. What it
@@ -398,7 +422,7 @@ def cmd_doctor(args) -> Envelope:
             " cannot reach.",
         )
     else:
-        _split_checks(check, split, None if remote else ledger.path)
+        _split_checks(check, split, None if remote else ledger.path, dropped)
 
     ex = identity.resolve(worktree)
     ex_detail = f"{ex.source}: {ex.model}"
@@ -2031,7 +2055,9 @@ LOCAL_VERBS = {"docs", "init", "ledger"}
 
 
 def _actor_for(
-    split: runner_mod.RunnerConfig | None, agent_env: dict[str, str] | None
+    split: runner_mod.RunnerConfig | None,
+    agent_env: dict[str, str] | None,
+    agent_umask: int | None = None,
 ) -> actor.LocalActor:
     """Who acts in the agent's territory for this invocation.
 
@@ -2045,7 +2071,7 @@ def _actor_for(
     """
     if split is not None and split.role == "runner":
         agent = os.environ.get("SUDO_USER", "")
-        return actor.SudoActor(sudo=split.sudo, agent=agent, env=agent_env)
+        return actor.SudoActor(sudo=split.sudo, agent=agent, env=agent_env, umask=agent_umask)
     return actor.LocalActor()
 
 
@@ -2068,13 +2094,20 @@ def _refusal(split: runner_mod.RunnerConfig | None, args) -> Envelope | None:
     )
 
 
-def _agent_env(args) -> dict[str, str] | None:
-    """The environment the client sent. It only ever reaches processes spawned as the
-    agent, so nothing in it is trusted and nothing in it needs to be."""
+def _agent_context(args) -> tuple[dict[str, str] | None, int | None]:
+    """The environment and umask the client sent. They only ever reach processes
+    spawned as the agent, so nothing in them is trusted and nothing needs to be. A
+    umask that is not a mode is ignored, as an older client's missing one is."""
     if not args.agent_context_stdin:
-        return None
-    env = json.loads(sys.stdin.read() or "{}").get("env")
-    return {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else None
+        return None, None
+    context = json.loads(sys.stdin.read() or "{}")
+    env = context.get("env")
+    umask = context.get("umask")
+    valid = type(umask) is int and 0 <= umask <= 0o777
+    return (
+        {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else None,
+        umask if valid else None,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2094,7 +2127,7 @@ def main(argv: list[str] | None = None) -> int:
             # Parsed first, so `--help`, `--version` and a mistyped verb never cost a
             # round trip; forwarded verbatim, so the runner parses exactly what we did.
             return runner_mod.forward(split, list(sys.argv[1:] if argv is None else argv))
-        actor.install(_actor_for(split, _agent_env(args)))
+        actor.install(_actor_for(split, *_agent_context(args)))
         envelope = _refusal(split, args) or args.fn(args)
     except PermissionError as exc:
         # Only the runner reads someone else's files. Anywhere else this is a bug, and
