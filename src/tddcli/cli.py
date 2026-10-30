@@ -1475,6 +1475,11 @@ def cmd_target(args) -> Envelope:
 
 
 def cmd_invocation_show(args) -> Envelope:
+    worktree, cfg, ledger, run = _context(require_run=False)
+    if ledger.invocation(args.id) is None:
+        return failure(
+            f"no invocation {args.id} in this repository's ledger", reason="unknown_invocation"
+        )
     return failure("tdd invocation show is not implemented", reason="not_implemented")
 
 
