@@ -640,3 +640,15 @@ def test_a_no_run_build_that_prints_nothing_names_its_command_and_exit(tmp_path)
     assert a.collectable() == GateResult(
         ok=False, output="`sh -c 'exit 3' --no-run 2>&1` exited 3 with no output"
     )
+
+
+def test_a_target_that_fails_to_list_records_its_command_and_exit(tmp_path):
+    """Issue 184: a per-target listing that fails without a word recorded an empty
+    reason, so run start had nothing to quote."""
+    a = make_adapter(tmp_path, TOML + "test_command = \"sh -c 'exit 3'\"\n")
+
+    c = a.collect()
+
+    assert c.failed_files == {
+        "tests/roundtrip.rs": "`sh -c 'exit 3' --test roundtrip -- --list 2>&1` exited 3 with no output"
+    }
