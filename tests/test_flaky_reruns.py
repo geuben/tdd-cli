@@ -187,3 +187,12 @@ def test_flaky_reruns_two_reruns_until_the_test_passes(repo, tmp_path):
     run_id = _to_green(repo, tmp_path / "count", "n in (2, 3)", toml="flaky_reruns = 2\n")
     run_cli(repo, "advance")
     assert [e["outcomes"] for e in _flaky_events(repo, run_id)] == [["failed", "failed", "passed"]]
+
+
+def test_flaky_reruns_zero_replies_exactly_as_before(repo, tmp_path):
+    _to_green(repo, tmp_path / "count", "n == 2", toml="flaky_reruns = 0\n")
+    out = run_cli(repo, "advance")
+    assert (out["next_action"]["verb"], out["result"]) == (
+        "fix_regression",
+        {"other_failures": [ID]},
+    )
