@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from conftest import run_cli
 from tddcli import ledger as ledger_mod
 from tddcli import service, wire
 
@@ -192,3 +193,21 @@ def test_a_report_socket_on_the_admin_path_is_refused(tmp_path):
 
     with pytest.raises(service.ServiceConfigError, match="report_socket"):
         service.load_config(path)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root connects to a mode-000 socket")
+def test_ledger_reads_fall_back_to_the_report_socket(repo, report_service, tmp_path):
+    host_ledger(report_service.home, TWO_RUNS)
+    # The dashboard's account: refused on connect to the admin socket.
+    report_service.admin.chmod(0)
+
+    outs = [
+        run_cli(repo, "ledger", *v)
+        for v in (
+            ("metrics",),
+            ("fleet",),
+            ("log", "--repo", "somerepo", "--run", "1", "--out", str(tmp_path / "log.md")),
+        )
+    ]
+
+    assert [o.get("ok") for o in outs] == [True, True, True]
