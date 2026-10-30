@@ -287,6 +287,11 @@ When the last declared cycle closes, the tool gathers every path that appeared i
   emitted (visible in `tdd metrics` and the friction log) and the run completes. The event
   makes a silent drop visible without blocking, since the file is already gone.
 
+Paths git's ignore rules match are build output, tracked or not. They are never staged,
+never fire `undeclared_file_touched`, and so never reach this gate. When the last cycle
+closes, any of them still dirty are named once, in an `ignored_paths_dirty` event on that
+cycle. It is an informational line in the friction log and blocks nothing.
+
 ### Abandoning a run
 
 A run that will not be finished — stopped on purpose, or blocked for good — is ended with
@@ -643,6 +648,15 @@ baseline_max_failure_ratio = 0.8    # allow up to 80% failing at baseline
 ```
 
 The value must be in `(0, 1]`. Without it, the repo-wide default of 0.5 applies.
+
+### Unreadable baseline (R9.5j)
+
+`run start` refuses a baseline whose suite produced no report the tool could read (no JSON
+report written, or one the adapter could not parse), whatever its failure ratio and even with
+`--accept-baseline`. The refusal carries `reason: "baseline_unreadable"` and a `projects` array of
+`{project, defect}`, where `defect` is the text a cycle would record as `tooling_defect`. Fix the
+environment and retry: `tdd doctor` notes a foreign `VIRTUAL_ENV` inherited from whatever launched
+the shell, and the project's reporter (`pytest-json-report` for pytest) must be installed.
 
 ### Standing-failure delta
 

@@ -60,6 +60,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   without it fall back to the bind socket when the admin socket cannot be opened.
   `tdd ledger unbind <source>` clears a binding, so the source's next runs record the
   guest's claim again instead of the previous run's model.
+- **`tdd doctor` notes a `VIRTUAL_ENV`** (#99). When the variable is set, an informational
+  `VIRTUAL_ENV` check names the project whose root holds it, or warns that it points outside
+  every project root and was inherited from whatever launched the shell.
 
 ### Changed
 
@@ -80,6 +83,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Paths git's ignore rules match, including tracked ones such as a committed `.gradle/`,
+  are no longer staged, flagged `undeclared_file_touched` or held by the run-close gate**
+  (#98). A tracked one inside the cycle's project no longer fails GREEN's commit. Any left
+  dirty are named once at run close in a new informational `ignored_paths_dirty` event.
+- **`stale_artifact` no longer fires on every cycle for an artifact the run cannot produce**
+  (#99). A cycle close checks only artifacts whose producer is in the run's reachable projects,
+  or whose producer the cycle touched. An artifact outside that set that stays stale at
+  `run start` is reported once, as `artifact_stale_inherited`.
+- **`run start` refuses a baseline whose suite produced no readable report** (#99), with
+  `reason: "baseline_unreadable"` naming each project and its defect, whatever the failure
+  ratio and despite `--accept-baseline`. Such a probe is never cached, so a `--reuse-baselines`
+  retry is refused too.
 - **`tdd ledger bind --executor ""` bound an empty model** (#179), which every later run
   recorded as operator-attested. An empty or blank executor is now refused with
   `reason: "bad_executor"`.

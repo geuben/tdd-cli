@@ -105,6 +105,7 @@ def _stage_and_commit(
         declared,
         engine.excluded,
         ancillary=set(engine.ancillary_files),
+        ignored=gitutil.ignored_paths(engine.worktree, sorted(changed)),
     )
     if phase == staging.RED:
         adopted = _sanctioned_stubs(engine, cycle, classification.implementation)
@@ -500,7 +501,7 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     if sha:
         touched = set(staged) | touched
 
-    artifact_outcome = engine.check_artifacts(cycle)
+    artifact_outcome = engine.check_artifacts(cycle, touched)
 
     if artifact_outcome.failed:
         names = ", ".join(f["artifact"] for f in artifact_outcome.failed)
