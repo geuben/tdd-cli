@@ -15,7 +15,7 @@ from tddcli.adapters.cargo_adapter import CargoAdapter
 from tddcli.ledger import Ledger
 from test_baseline_integrity import PLAN, TEST_ADD, reach_refactor
 from test_cargo_adapter import FULL_RUN, make_adapter
-from test_evidence_extraction import _vitest_adapter
+from test_evidence_extraction import _gradle_adapter, _gradle_write_results, _vitest_adapter
 
 
 def _at(minute):
@@ -230,5 +230,38 @@ def test_cargo_reports_each_failure_with_its_panic_line(tmp_path):
             detail=panic + "\nassertion `left == right` failed: expected width mismatch\n"
             "  left: 2\n right: 3\n"
             "note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+        )
+    }
+
+
+def test_gradle_reports_each_failure_with_its_failure_message(tmp_path):
+    adapter = _gradle_adapter(tmp_path)
+    junit_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<testsuite name="com.example.CalcTest" tests="2" failures="1">\n'
+        '  <testcase name="add" classname="com.example.CalcTest" time="0.010">\n'
+        '    <failure message="expected:&lt;1000&gt; but was:&lt;500&gt;"'
+        ' type="org.opentest4j.AssertionFailedError">'
+        "org.opentest4j.AssertionFailedError: expected:&lt;1000&gt; but was:&lt;500&gt;\n"
+        "\tat com.example.CalcTest.add(CalcTest.kt:10)\n"
+        "</failure>\n"
+        "  </testcase>\n"
+        '<testcase name="sub" classname="com.example.CalcTest" time="0.010"/>'
+        "</testsuite>\n"
+    )
+
+    def side_effect(cmd, env=None):
+        _gradle_write_results(adapter, junit_xml)
+        return (1, "", "")
+
+    with patch.object(type(adapter), "_run_suite", side_effect=side_effect):
+        verdict = adapter.run(None)
+    assert verdict.failure_details == {
+        "android-app::com.example.CalcTest/add": FailureDetail(
+            phase=None,
+            message="expected:<1000> but was:<500>",
+            detail="expected:<1000> but was:<500>\n"
+            "org.opentest4j.AssertionFailedError: expected:<1000> but was:<500>\n"
+            "\tat com.example.CalcTest.add(CalcTest.kt:10)",
         )
     }
