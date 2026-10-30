@@ -2,6 +2,9 @@
 name: tdd-drive
 description: Drive a tdd-cli run to completion. Dispatches on next_action.verb from each JSON envelope, writes only tests and implementation, and lets the tool run suites, decide phase, and commit.
 argument-hint: [<plan-path>]
+metadata:
+  verb_set_version: "2"
+  envelope_version: "1"
 ---
 
 You are driving a `tdd-cli` run. The tool decides everything about process state; you

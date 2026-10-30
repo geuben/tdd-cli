@@ -13,7 +13,14 @@ from unittest.mock import patch
 
 from tddcli import config as config_mod
 from tddcli.adapters import available
-from tddcli.adapters.base import FAILED, NOT_COLLECTED, NOT_FOUND, PASSED, Collection
+from tddcli.adapters.base import (
+    FAILED,
+    NOT_COLLECTED,
+    NOT_FOUND,
+    PASSED,
+    Collection,
+    GateResult,
+)
 from tddcli.adapters.cargo_adapter import CargoAdapter
 
 TOML = """
@@ -623,3 +630,25 @@ def test_test_files_expands_a_wildcard_directory_pattern(tmp_path):
     a = make_consolidated_adapter(tmp_path)
     rels = sorted(str(p.relative_to(tmp_path)) for p in a._test_files())
     assert rels == ["crates/dd-bridge/tests/main.rs", "crates/dd-core/tests/main.rs"]
+
+
+def test_a_no_run_build_that_prints_nothing_names_its_command_and_exit(tmp_path):
+    """Issue 184: a build that fails without a word left the gate's detail blank,
+    and doctor crashed on it."""
+    a = make_adapter(tmp_path, TOML + "test_command = \"sh -c 'exit 3'\"\n")
+
+    assert a.collectable() == GateResult(
+        ok=False, output="`sh -c 'exit 3' --no-run 2>&1` exited 3 with no output"
+    )
+
+
+def test_a_target_that_fails_to_list_records_its_command_and_exit(tmp_path):
+    """Issue 184: a per-target listing that fails without a word recorded an empty
+    reason, so run start had nothing to quote."""
+    a = make_adapter(tmp_path, TOML + "test_command = \"sh -c 'exit 3'\"\n")
+
+    c = a.collect()
+
+    assert c.failed_files == {
+        "tests/roundtrip.rs": "`sh -c 'exit 3' --test roundtrip -- --list 2>&1` exited 3 with no output"
+    }

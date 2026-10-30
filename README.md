@@ -49,6 +49,7 @@ uv run tdd --help
 
 ```sh
 tdd init                       # scaffold tdd.toml from detected projects — then review it
+tdd init --skill claude-code   # also scaffold the Claude Code skill and hooks; see tdd docs hooks
 tdd doctor                     # environment preflight
 tdd plan register tasks/my-plan.md
 tdd run start --plan tasks/my-plan.md
@@ -481,7 +482,7 @@ and is never reclassified as a pin.
 | Command | Purpose |
 |---|---|
 | `tdd docs [topic]` | print the documentation shipped with this version; no network |
-| `tdd init` / `tdd doctor` | scaffold config; environment preflight |
+| `tdd init [--skill claude-code [--update-skill]]` / `tdd doctor` | scaffold config (and the agent harness); environment preflight |
 | `tdd plan register <path>` | parse and hash the contract |
 | `tdd plan paths <path>` | resolve a plan's test ids to repository file paths |
 | `tdd run start --plan <path>` | capture baselines, resolve executor, open cycle 1 |
@@ -696,7 +697,10 @@ cannot become:
 - across a VM boundary, the runner in each guest keeps no ledger at all: it reads and writes
   the host's through a socket served by `tdd ledger serve`, which records every run under the
   source of the socket it came in on, refuses a guest anything but its own open runs, and
-  gives the operator one history and one worker budget for every guest.
+  gives the operator one history and one worker budget for every guest. The operator binds
+  or unbinds each source's model, and can give an orchestrator a socket that does only that.
+  An optional read-only report socket gives a dashboard every source's metrics, fleet and
+  logs, and nothing else.
 
 `tdd docs split` ([docs/split-runner.md](docs/split-runner.md)) has the setup, the
 verification checklist, and what split mode does not protect against.
@@ -718,7 +722,8 @@ see the run-close gate above.
 **Delegated to hooks:** a Stop hook that queries `tdd status` and refuses to let an agent
 stop while a run is live; a Bash hook redirecting bare `pytest`/`vitest` through `tdd advance`.
 Ready-made Claude Code implementations of both live in
-[`examples/claude-code-hooks/`](./examples/claude-code-hooks/).
+[`examples/claude-code-hooks/`](./examples/claude-code-hooks/), and `tdd init --skill
+claude-code` installs and wires them, from the copies shipped with the binary.
 
 **Delegated to the skill:** how to respond to each `next_action` verb — writing the test,
 the stub, the implementation. [`docs/harness-integration.md`](./docs/harness-integration.md)
