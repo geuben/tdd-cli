@@ -74,3 +74,13 @@ def test_a_tracked_ignored_path_outside_the_cycle_project_fires_no_undeclared_ev
 
     events = run_cli(repo, "metrics")["result"]["runs"][0]["integrity_events"]
     assert events.get("undeclared_file_touched", 0) == 0
+
+
+def test_a_tracked_ignored_path_left_dirty_does_not_block_run_close(repo):
+    rel = ".gradle/8.0/checksums.lock"
+    _track_ignored(repo, rel)
+    _start(repo, ONE)
+
+    _, _, close = _drive_one_cycle(repo, rel, "v2\n")
+
+    assert close["next_action"]["verb"] == "complete"
