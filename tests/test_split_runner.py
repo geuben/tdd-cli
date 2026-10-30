@@ -147,3 +147,19 @@ def test_the_runner_never_installs_an_actor_that_acts_as_itself(repo, split_runn
     run_cli(repo, "status")
 
     assert isinstance(actor.current(), actor.SudoActor)
+
+
+def test_a_collection_refusal_says_it_ran_through_the_runner_as_the_agent(repo, split_runner):
+    """Issue 184: the refusal says the command crossed the runner's sudo hop, which
+    is where a PATH or environment difference from the agent's shell comes from."""
+    (repo / "tdd.toml").write_text(
+        (repo / "tdd.toml").read_text() + 'collect_command = "tdd-184-no-such-tool pytest"\n'
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a collect command that is not installed")
+
+    plan = write_plan(repo, MINIMAL_PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+
+    assert f"ran through the split-mode runner, as {current_user()}" in out["error"], out

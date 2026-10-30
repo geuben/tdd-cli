@@ -247,6 +247,7 @@ The operator adds a source for each guest, from the host:
 
     tdd ledger add-source vm-1 --socket /run/tdd-cli/vm-1.sock --executor claude-fable-5-1
     tdd ledger bind vm-1 --executor claude-opus-5-5     # the model for its next runs
+    tdd ledger unbind vm-1                               # its next runs record the guest's claim again
     tdd ledger sources                                   # every source, socket and binding
     tdd ledger remove-source vm-1                        # closes the socket; its runs stay
 
@@ -256,6 +257,40 @@ mode 660: give its group to whatever forwards it into the guest, and nothing els
 
 `tdd ledger` verbs are always answered on the machine you run them on, never forwarded to
 a runner. With no service config they fail with `reason: "no_service"`.
+
+### A bind-only socket for an orchestrator
+
+The process that knows which model a guest runs is usually the one that starts it: a VM or
+container orchestrator under its own account. It needs `bind` and `unbind`, and nothing
+else the admin socket answers. Give it a bind socket:
+
+    [service]
+    admin_socket = "/run/tdd-cli/admin.sock"
+    bind_socket  = "/run/tdd-cli/bind.sock"
+    bind_group   = "guest-starters"
+
+- **The two keys go together.** A config with one and not the other is refused, and so is
+  a `bind_socket` that is the `admin_socket`. A `bind_group` that is not a group on the
+  host is refused when the config loads.
+- **The socket is mode 660 and belongs to `bind_group`.** The service account must be a
+  member of that group: if it is not, `tdd ledger serve` fails to start. Put the
+  orchestrator's account in the group, and nothing else. The admin socket stays mode 600.
+- **It answers `bind` and `unbind` alone**, for a source that already exists. Every other
+  method, `ping` included, is refused with `refusal: "method_not_allowed"`. An unknown
+  source is `unknown_source` and an empty executor is `bad_executor`, as on the admin
+  socket. It takes no identity from the request: its authority is its mode and group.
+- **Which socket the CLI uses.** `tdd ledger bind` and `tdd ledger unbind` take
+  `--socket PATH` and use that socket alone. Without it they connect to `admin_socket`,
+  and when that connect fails (no permission, no socket) and a `bind_socket` is
+  configured, they send the request there instead. A request the admin socket took is
+  never resent. Every other `tdd ledger` verb uses the admin socket only.
+- **The orchestrator still reads `ledger.toml`.** Every `tdd ledger` verb loads the service
+  config first, held to the runner's trust rule: owned by root or by the reading account,
+  not group- or world-writable. So the file must be owned by root and readable by the
+  orchestrator's account. One owned by the service account is refused for every other
+  account. `--socket` does not skip the config.
+- **A binding belongs to the source, not to a run.** A run abandoned after its source was
+  rebound for the next run is stamped with the binding in force when it is abandoned.
 
 ### Forwarding the socket into the guest
 
@@ -313,18 +348,70 @@ them, which is no worse than a forged test report on a single machine.
 edit, so it is a claim. When the operator binds an executor to a source, the service
 records that model with `executor_source: "operator"` on every run the source starts or
 abandons, whatever the guest sent. With no binding, a guest that says `operator` is
-recorded as `claimed`.
+recorded as `claimed`. `tdd ledger unbind <source>` clears a binding, so the source's next
+runs record the guest's claim again; `bind` refuses an empty or blank executor with
+`reason: "bad_executor"`.
 
 ### One history per host
 
 On the host, the operator reads every source together through the admin socket:
 
-    tdd ledger metrics [--repo <slug>]              # `tdd metrics` over every source, per repository
-    tdd ledger fleet                                # active runs of every source, and the host's suites
+    tdd ledger metrics [--repo <slug>] [--since <time>]   # `tdd metrics` over every source, per repository
+    tdd ledger fleet                                      # active runs of every source, and the host's suites
     tdd ledger log --repo <slug> --run <id> [--out FILE]
 
 Every run in them carries its `source`. Inside a guest, `tdd metrics`, `tdd fleet`,
 `tdd log render` and `tdd invocation show` still work, and see only that guest's source.
+
+`--since` is for a poller: it keeps only the runs whose figures can have changed since its
+last poll, those still open and those that ended at or after the given time. A resumed run
+is open again, so it comes back. The time is ISO 8601 with a UTC offset
+(`2026-09-01T10:20:00+00:00`, `2026-09-01T10:20:00Z`, `2026-09-01T11:20:00+01:00`); one
+with no offset, a bare date or anything else is refused with `reason: "bad_since"`, never
+read as local time. Every run in `metrics`, here and in `tdd metrics`, carries
+`time.cycles`: each cycle's `ordinal`, `opened_at`, `closed_at`, `wall_clock_s`, `suite_s`
+and suite `runs`, with `closed_at` and `wall_clock_s` null while the cycle is open.
+
+### A read-only report socket for dashboards
+
+A dashboard that charts cycle and suite time across the host needs those three reads and
+nothing else. The admin socket would also give it `add-source`, `remove-source`, `import`
+and `bind`. Give it a report socket instead:
+
+    [service]
+    admin_socket  = "/run/tdd-cli/admin.sock"
+    report_socket = "/var/lib/tdd-cli/report/report.sock"
+
+With no `report_socket` there is no report socket, and nothing changes. It must not be
+`admin_socket`'s path: the service refuses that config, because the report listener would
+replace the admin socket.
+
+- It answers `metrics`, `fleet` and `log` only, with the same results the admin socket
+  gives. Every other request, `ping` included, is refused with `method_not_allowed`.
+- It opens every ledger read-only (SQLite's `mode=ro`), so no request on it can write, nor
+  migrate an old ledger.
+- It is mode 660, like a source's, with the group a new file gets. The unit's `Group=` is
+  the guests' group, so the mode alone does not keep it to one account.
+
+**Whose it is.** It is the dashboard's account's, and nobody else's. Put it in a directory
+of its own that only the service account and that account can traverse, and admit the
+account with an inherited (default) ACL on the directory, so the socket the service
+recreates on every start gets it too:
+
+    install -d -o tdd-ledger -g tdd-ledger -m 700 /var/lib/tdd-cli/report
+    setfacl -m u:orchestrator:rx,d:u:orchestrator:rw /var/lib/tdd-cli/report
+
+`tdd ledger metrics`, `fleet` and `log` fall back to the report socket when the admin
+socket cannot be opened, so the dashboard's account runs the same commands as the operator.
+Only a failed connect falls back; every other `tdd ledger` verb still needs the admin
+socket. That account must be able to read `/etc/tdd-cli/ledger.toml`, which stays owned by
+root or the service account.
+
+A client that speaks the wire itself sends one JSON line per request, and reads one back:
+
+    {"method": "metrics", "args": [<slug or null>], "kwargs": {"since": <time>}}
+    {"method": "fleet"}
+    {"method": "log", "args": [<slug>, <run id>]}
 
 **Worker leases are the host's.** A socket-mode runner takes each suite's worker lease
 from the service, which splits the host's cores across every guest's running suites. A
