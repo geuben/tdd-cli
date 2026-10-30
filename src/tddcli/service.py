@@ -24,6 +24,7 @@ import threading
 import time
 import tomllib
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from . import fleet, leases, render, runner, wire
@@ -274,6 +275,11 @@ def _well_formed_repo(repo) -> bool:
     )
 
 
+def _since(raw) -> datetime | None:
+    """A `metrics` request's `since`, as a time."""
+    return None if raw is None else datetime.fromisoformat(raw)
+
+
 def _view(repo: str, path: Path, readonly: bool) -> ledger_mod.Ledger | None:
     """A host ledger, opened to read every source's runs.
 
@@ -481,7 +487,9 @@ class Service:
         marker = ledger_mod.import_as_source(source, target, name)
         return _ok({"imported": str(target), "pre_split_import": marker})
 
-    def metrics(self, repo: str | None = None, *, readonly: bool = False) -> dict:
+    def metrics(
+        self, repo: str | None = None, *, since: datetime | None = None, readonly: bool = False
+    ) -> dict:
         """`tdd metrics`, over every source's runs, for each repository on the host."""
         out = {}
         for slug, path in self.host_files(repo).items():
@@ -489,7 +497,7 @@ class Service:
             if view is None:
                 continue
             try:
-                out[slug] = render.metrics(view, None)
+                out[slug] = render.metrics(view, None, since=since)
             finally:
                 view.close()
         return {"repos": out}
@@ -499,7 +507,7 @@ class Service:
         if method not in REPORT_METHODS:
             return _refusal("method_not_allowed", f"{method} is not answered on the report socket")
         if method == "metrics":
-            return _ok(self.metrics(*args, readonly=True))
+            return _ok(self.metrics(*args, since=_since(kwargs.get("since")), readonly=True))
         if method == "fleet":
             return _ok(self.fleet())
         return self.log(*args, readonly=True)
@@ -507,7 +515,7 @@ class Service:
     def admin(self, method: str, args: list, kwargs: dict) -> dict:
         """An operator's request, from the admin socket."""
         if method == "metrics":
-            return _ok(self.metrics(*args))
+            return _ok(self.metrics(*args, since=_since(kwargs.get("since"))))
         if method == "fleet":
             return _ok(self.fleet())
         if method == "log":

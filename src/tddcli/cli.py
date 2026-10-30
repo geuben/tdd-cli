@@ -1786,7 +1786,7 @@ def _ledger_import(args, cfg) -> Envelope:
 
 def _ledger_metrics(args, cfg) -> Envelope:
     return Envelope(
-        result=_ledger_read(cfg, "metrics", args.repo),
+        result=_ledger_read(cfg, "metrics", args.repo, since=args.since),
         next_action=NextAction(Verb.COMPLETE, "Metrics computed over every source."),
     )
 
