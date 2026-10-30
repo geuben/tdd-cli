@@ -368,3 +368,9 @@ def test_the_friction_log_lists_each_invocations_failures(tmp_path, ledger_home)
         "  - `p::tests/test_b.py::test_b`: FAIL: expected exit 0",
     ]
     assert "\n".join(block) in render.friction_log(ledger, ledger.run(run_id))
+
+
+def test_showing_an_unknown_invocation_is_refused(repo):
+    assert (
+        run_cli(repo, "invocation", "show", "999")["result"].get("reason") == "unknown_invocation"
+    )

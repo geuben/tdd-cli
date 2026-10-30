@@ -1474,6 +1474,10 @@ def cmd_target(args) -> Envelope:
     )
 
 
+def cmd_invocation_show(args) -> Envelope:
+    return failure("tdd invocation show is not implemented", reason="not_implemented")
+
+
 def cmd_log_render(args) -> Envelope:
     worktree, cfg, ledger, run = _context(require_run=False)
     if run is None:
@@ -1932,6 +1936,12 @@ def build_parser() -> argparse.ArgumentParser:
         " worktree root, not the current directory",
     )
     s.set_defaults(fn=cmd_log_render)
+
+    inv = sub.add_parser("invocation", help="one suite invocation's recorded failures")
+    inv = inv.add_subparsers(dest="invocation_command", required=True)
+    s = inv.add_parser("show")
+    s.add_argument("id", type=int)
+    s.set_defaults(fn=cmd_invocation_show)
 
     s = sub.add_parser("progress", help="human-readable plan progress")
     s.add_argument("--json", action="store_true", help="machine output instead")
