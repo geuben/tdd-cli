@@ -54,6 +54,7 @@ class DeclaredCycle:
             "modifies_tests": self.modifies_tests,
             "commit_messages": self.commit_messages,
             "meta": self.meta,
+            "annotation_keys": self.annotation_keys,
         }
 
     @staticmethod
@@ -69,6 +70,7 @@ class DeclaredCycle:
             modifies_tests=d.get("modifies_tests", []),
             commit_messages=d.get("commit_messages", {}),
             meta=d.get("meta", {}),
+            annotation_keys=d.get("annotation_keys"),
         )
 
 
@@ -189,6 +191,12 @@ def parse_cycle(raw: dict, config: Config | None) -> DeclaredCycle:
         commit_messages=commits,
         meta=meta,
     )
+
+
+def required_annotation_keys(cycle_keys: list[str] | None, contract_keys: list[str]) -> list[str]:
+    """The keys a cycle must carry before it closes. A cycle stored before scoping existed
+    (``None``) requires every key the contract declares."""
+    return list(contract_keys) if cycle_keys is None else list(cycle_keys)
 
 
 def _scope_list(value) -> list:

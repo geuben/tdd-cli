@@ -247,8 +247,22 @@ ancillary_files:
 
 **Top-level keys:**
 
-`annotation_keys` — a list of judgement-annotation keys the plan requires; the run close
-gate checks that every key is present before the plan can be marked complete.
+`annotation_keys` — a list of judgement-annotation keys the plan requires; a cycle cannot
+close until it carries every key that applies to it. A plain string applies to every
+cycle. A key that only some cycles concern is scoped with a mapping, so the other cycles
+are not forced to record `n/a`:
+
+```yaml
+annotation_keys:
+  - plan_defect_seen                       # every cycle
+  - {name: artifact_verify, applies_to: [12, 19]}
+  - {name: device_log, projects: [device-suite]}
+```
+
+`applies_to` takes cycle ordinals and `projects` takes project names; each accepts a
+scalar or a list, and they are exclusive on one entry. A contract cycle is in a `projects`
+scope when any of its projects is listed. An ordinal the plan does not declare, a project
+no declared cycle uses, a duplicate name or a mapping with no scope fails registration.
 
 `ancillary_files` — a plan-level list of repo-root-relative paths the plan is known to
 touch outside any registered project root (cross-project ripples, companion documents).
