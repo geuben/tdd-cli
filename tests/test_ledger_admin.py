@@ -16,6 +16,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import pytest
+
 from conftest import run_cli
 from tddcli import service, wire
 
@@ -120,6 +122,15 @@ def test_bind_refuses_an_empty_executor(repo, ledger_service):
         for e in ("", "   ")
     ]
     assert reasons == ["bad_executor", "bad_executor"]
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root connects to a mode-000 socket")
+def test_a_forbidden_admin_socket_with_no_bind_socket_is_unreachable(repo, ledger_service):
+    ledger_service.service.add_source("vm-1", ledger_service.dir / "vm-1.sock")
+    (ledger_service.dir / "admin.sock").chmod(0)
+
+    out = run_cli(repo, "ledger", "bind", "vm-1", "--executor", "m")
+    assert out["result"].get("reason") == "ledger_unreachable"
 
 
 def test_socket_modes(ledger_service):
