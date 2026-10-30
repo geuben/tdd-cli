@@ -350,14 +350,10 @@ class PytestAdapter(Adapter):
         """Per file (R10.3) — one uncollectable module must not destroy the whole set."""
         for rel in sorted(rels):
             base, env = self._collect_cmd_for(rel)
-            code, out, err = run_command(
-                f"{base} --collect-only -q {shlex.quote(rel)}",
-                self.root,
-                extra_env=env,
-                label="collect",
-            )
+            command = f"{base} --collect-only -q {shlex.quote(rel)}"
+            code, out, err = run_command(command, self.root, extra_env=env, label="collect")
             if code != 0:
-                result.failed_files[rel] = (err or out).strip()[:800]
+                result.failed_files[rel] = command_failure(command, code, err or out)
                 continue
             tests, _ = self._nodeids(out)
             result.tests |= tests
