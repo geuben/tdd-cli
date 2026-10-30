@@ -110,3 +110,17 @@ def test_a_pre_change_abandon_row_is_not_an_unblock(tmp_path, ledger_home):
         render.metrics(ledger, "/wt")["runs"][0]["unblocks"],
         fidelity(render.friction_log(ledger, run)),
     ) == (1, FIDELITY_HEAD + "- Unblocks: 1\n  - 2026-09-01T10:02:00+00:00: fixed the fixture")
+
+
+def test_an_unblock_whose_note_reads_like_an_abandonment_is_still_counted(tmp_path, ledger_home):
+    ledger, run = fixture_ledger(
+        tmp_path, [(5, "abandoned: superseded by #145")], abandoned=(10, "superseded by #145")
+    )
+
+    assert (
+        render.metrics(ledger, "/wt")["runs"][0]["unblocks"],
+        fidelity(render.friction_log(ledger, run)),
+    ) == (
+        1,
+        FIDELITY_HEAD + "- Unblocks: 1\n  - 2026-09-01T10:05:00+00:00: abandoned: superseded by #145",
+    )
