@@ -15,7 +15,12 @@ from tddcli.adapters.cargo_adapter import CargoAdapter
 from tddcli.ledger import Ledger
 from test_baseline_integrity import PLAN, TEST_ADD, reach_refactor
 from test_cargo_adapter import FULL_RUN, make_adapter
-from test_evidence_extraction import _gradle_adapter, _gradle_write_results, _vitest_adapter
+from test_evidence_extraction import (
+    _gradle_adapter,
+    _gradle_write_results,
+    _vitest_adapter,
+    _xctest_adapter,
+)
 
 
 def _at(minute):
@@ -263,5 +268,32 @@ def test_gradle_reports_each_failure_with_its_failure_message(tmp_path):
             detail="expected:<1000> but was:<500>\n"
             "org.opentest4j.AssertionFailedError: expected:<1000> but was:<500>\n"
             "\tat com.example.CalcTest.add(CalcTest.kt:10)",
+        )
+    }
+
+
+def test_xctest_reports_each_failure_with_its_error_line(tmp_path):
+    adapter = _xctest_adapter(tmp_path)
+    error = (
+        "/Users/x/RecTests.swift:42: error: -[AppTests.RecTests testStopsRecording] :"
+        ' XCTAssertEqual failed: ("recording") is not equal to ("stopped")'
+    )
+    noise = "2026-08-27 10:00:00.001 AppTests[1234:5678] Socket SO_ERROR [61: Connection refused]"
+    canned = (
+        "Test Suite 'All tests' started at 2026-08-27 10:00:00.000.\n"
+        "Test Case '-[AppTests.RecTests testStopsRecording]' started.\n"
+        f"{noise}\n"
+        f"{error}\n"
+        "Test Case '-[AppTests.RecTests testStopsRecording]' failed (0.002 seconds).\n"
+        "Test Case '-[AppTests.RecTests testStarts]' started.\n"
+        "Test Case '-[AppTests.RecTests testStarts]' passed (0.001 seconds).\n"
+        "Test Suite 'All tests' failed at 2026-08-27 10:00:00.003.\n"
+        "** TEST FAILED **\n"
+    )
+    with patch.object(type(adapter), "_run_suite", return_value=(1, canned, "")):
+        verdict = adapter.run(None)
+    assert verdict.failure_details == {
+        "native-ios::AppTests/RecTests/testStopsRecording": FailureDetail(
+            phase=None, message=error, detail=f"{noise}\n{error}"
         )
     }
