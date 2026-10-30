@@ -509,3 +509,19 @@ def test_unresolved_stale_artifact_at_close_replies_fix_regression(repo, tmp_pat
         "fix_regression",
         ["spec"],
     )
+
+
+def test_stale_artifact_whose_hook_commits_nothing_replies_fix_regression(repo, tmp_path):
+    marker = tmp_path / "stale"
+    plan = _register_spec_artifact(
+        repo, f'check       = "test ! -f {marker}"\nregenerate  = "true"\n'
+    )
+    assert run_cli(repo, "run", "start", "--plan", plan)["ok"]
+
+    marker.touch()
+    adv = run_cli(repo, "advance")
+
+    assert (adv["next_action"]["verb"], adv["result"].get("stale_artifacts")) == (
+        "fix_regression",
+        ["spec"],
+    )
