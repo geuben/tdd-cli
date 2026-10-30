@@ -16,6 +16,15 @@ def _fmt_list(items) -> str:
     return ", ".join(f"`{i}`" for i in items) if items else "none"
 
 
+def _unblocks(ledger: Ledger, run_id: int) -> list:
+    """The run's `human_intervention` rows, less the one `run abandon` wrote before #186."""
+    abandonment = ledger.abandonment(run_id)
+    rows = ledger.interventions(run_id)
+    if abandonment is None:
+        return rows
+    return [r for r in rows if r["note"] != f"abandoned: {abandonment['reason']}"]
+
+
 def friction_log(ledger: Ledger, run) -> str:
     contract = ledger.contract(run["plan_contract_id"])
     cycles = ledger.cycles(run["id"])
@@ -63,9 +72,9 @@ def friction_log(ledger: Ledger, run) -> str:
     a(f"- Delivered: {len(delivered)}   Skipped: {len(skipped)}")
     missing = sorted({d["n"] for d in declared} - delivered - skipped)
     a(f"- Never reached: {missing or 'none'}")
-    interventions = ledger.interventions(run["id"])
-    a(f"- Unblocks: {len(interventions)}")
-    for i in interventions:
+    unblocks = _unblocks(ledger, run["id"])
+    a(f"- Unblocks: {len(unblocks)}")
+    for i in unblocks:
         a(f"  - {i['at']}: {i['note']}")
     for amended in ledger.event_details(run["id"], "baseline_amended"):
         detail = json.loads(amended)
@@ -393,7 +402,7 @@ def metrics(ledger: Ledger, worktree: str | None) -> dict:
                 "impl_attempts_max": max(impl_attempts, default=0),
                 "cycles_by_project": dict(by_project),
                 "blockers": {b["kind"]: b["n"] for b in blockers},
-                "unblocks": len(ledger.interventions(run["id"])),
+                "unblocks": len(_unblocks(ledger, run["id"])),
                 "time": _time_json(_time_summary(ledger, run)),
                 "integrity_events": {r["kind"]: r["n"] for r in ledger.event_counts(run["id"])},
             }
