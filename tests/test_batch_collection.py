@@ -22,6 +22,7 @@ their suite keeps the old loop for every unlisted file.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from conftest import run_cli, write_plan
@@ -352,3 +353,20 @@ def test_an_adapter_whose_invocations_name_no_suite_keeps_the_loop(repo, monkeyp
     adapter.collect()
 
     assert len([c for c in seen if "test_gen1.py" in c]) == 1, seen
+
+
+def test_a_file_that_fails_to_collect_records_its_command_exit_and_stderr(repo):
+    """Issue 184: run start can only quote what collection recorded. A reason of
+    stderr alone does not say which command failed, or how."""
+    (repo / "tdd.toml").write_text(
+        (repo / "tdd.toml").read_text() + 'collect_command = "tdd-184-no-such-tool pytest"\n'
+    )
+
+    collected = _adapter(repo).collect()
+
+    reason = collected.failed_files["tests/test_smoke.py"]
+    assert re.fullmatch(
+        r"`tdd-184-no-such-tool pytest --collect-only -q tests/test_smoke\.py`"
+        r" exited 127: [^\n]*not found",
+        reason,
+    ), reason
