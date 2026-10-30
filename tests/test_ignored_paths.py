@@ -63,3 +63,14 @@ def test_a_tracked_ignored_path_inside_the_cycle_project_is_left_out_of_the_gree
     red, green, _ = _drive_one_cycle(repo, rel, "v2\n")
 
     assert green["result"].get("staged") == ["backend/app/calc.py"]
+
+
+def test_a_tracked_ignored_path_outside_the_cycle_project_fires_no_undeclared_event(repo):
+    rel = ".gradle/8.0/checksums.lock"
+    _track_ignored(repo, rel)
+    _start(repo, ONE)
+
+    _drive_one_cycle(repo, rel, "v2\n")
+
+    events = run_cli(repo, "metrics")["result"]["runs"][0]["integrity_events"]
+    assert events.get("undeclared_file_touched", 0) == 0
