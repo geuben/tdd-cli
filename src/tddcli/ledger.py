@@ -1152,7 +1152,6 @@ class Ledger:
             executor_source=executor_source,
             at=at,
         )
-        self.insert("human_intervention", run_id=run_id, note=f"abandoned: {reason}", at=at)
         self.release_claim(run["worktree_path"])
         self.release_advance_claim(run["worktree_path"])
 
