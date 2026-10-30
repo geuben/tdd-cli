@@ -306,7 +306,7 @@ class CargoAdapter(Adapter):
             cmd = f"{self._targeted_prefix()} --test {shlex.quote(declared)} -- --list 2>&1"
             code, out, _err = self._run_suite(cmd, self._suite_env(None))
             if code != 0 or _COULD_NOT_COMPILE_RE.search(out):
-                result.failed_files[rel] = clip_failure(self._errors(out))
+                result.failed_files[rel] = command_failure(cmd, code, self._errors(out))
                 continue
             default = declared.replace("-", "_")
             result.tests |= {self.qualify(t) for t in self._parse_list(out, default=default)}
