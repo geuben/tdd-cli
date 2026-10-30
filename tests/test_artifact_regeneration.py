@@ -59,6 +59,21 @@ def _start_run_with_id(repo, artifact_toml: str) -> int:
     return out["run"]["id"]
 
 
+def _register_spec_artifact(repo, toml_lines: str) -> str:
+    """Declare artifact `spec` (with `toml_lines` appended), commit, register PLAN."""
+    with (repo / "tdd.toml").open("a") as f:
+        f.write(
+            "\n[artifact.spec]\n"
+            'path        = "backend/spec.json"\n'
+            'produced_by = "backend"\n' + toml_lines
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "declare spec artifact")
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    return plan
+
+
 def test_regeneration_commits_the_artifacts_own_path(repo):
     """The regenerated spec must land in the chore commit even without `generated = true`."""
     _start_run(
@@ -480,3 +495,17 @@ def test_run_start_reports_outside_stale_artifacts_once_as_inherited(repo):
     assert _artifact_events(repo, out["run"]["id"]) == [
         ("artifact_stale_inherited", None, '["client", "spec"]')
     ]
+
+
+def test_unresolved_stale_artifact_at_close_replies_fix_regression(repo, tmp_path):
+    marker = tmp_path / "stale"
+    plan = _register_spec_artifact(repo, f'check       = "test ! -f {marker}"\n')
+    assert run_cli(repo, "run", "start", "--plan", plan)["ok"]
+
+    marker.touch()
+    adv = run_cli(repo, "advance")
+
+    assert (adv["next_action"]["verb"], adv["result"].get("stale_artifacts")) == (
+        "fix_regression",
+        ["spec"],
+    )
