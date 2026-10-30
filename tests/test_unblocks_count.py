@@ -6,7 +6,6 @@ import json
 import sqlite3
 
 from conftest import run_cli, write_plan
-from tddcli import render
 from tddcli.ledger import Ledger
 
 PLAN = """---
