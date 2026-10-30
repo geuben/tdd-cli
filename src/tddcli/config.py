@@ -120,6 +120,9 @@ class Project:
     baseline_max_failure_ratio: float | None = None
     #: Shell command run before probing to verify live services are reachable.
     health_command: str | None = None
+    #: How many times an untouched pre-existing failure is rerun alone before it is
+    #: reported (R7.15, R9.1f). `0` turns reruns off for this project.
+    flaky_reruns: int = 1
 
     def override_for(self, rel_path: str) -> Override | None:
         """First declared override whose pattern matches (path relative to the
@@ -378,6 +381,9 @@ def load(worktree: Path) -> Config:
         health_command = body.get("health_command")
         if health_command is not None and not isinstance(health_command, str):
             raise ConfigError(f"project {name!r}: health_command must be a string")
+        flaky_reruns = body.get("flaky_reruns", 1)
+        if isinstance(flaky_reruns, bool) or not isinstance(flaky_reruns, int) or flaky_reruns < 0:
+            raise ConfigError(f"project {name!r}: flaky_reruns must be a non-negative integer")
         projects[name] = Project(
             name=name,
             root=body["root"].rstrip("/"),
@@ -394,6 +400,7 @@ def load(worktree: Path) -> Config:
             timeout=timeout,
             baseline_max_failure_ratio=baseline_max_failure_ratio,
             health_command=health_command,
+            flaky_reruns=flaky_reruns,
         )
 
     artifacts: dict[str, Artifact] = {}

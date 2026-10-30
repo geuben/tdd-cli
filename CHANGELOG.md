@@ -8,6 +8,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **An untouched pre-existing failure is rerun before it blocks** (#73). When GREEN's
+  whole-suite run or a close sweep finds a failure that is absent from the baseline, was
+  collected at `run start`, and lives in a file no cycle of the plan declares (`files`,
+  `stub_expected`, a `test` or `modifies_tests` id's file, or `ancillary_files`), `tdd advance`
+  reruns that test alone before replying `fix_regression`. A test whose file cannot be
+  resolved is never rerun. The per-project `flaky_reruns` key in `tdd.toml` sets how many
+  reruns it gets (default 1, `0` turns reruns off). A rerun that passes clears the failure and
+  records a `flaky_pre_existing` integrity event with every outcome; a test that never passes
+  stays in the reply, which now carries `rerun_outcomes` as evidence for the blocker.
 - **Annotation keys can be scoped to the cycles they apply to** (#76). An `annotation_keys`
   entry may now be a mapping, `{name: k, applies_to: [12, 19]}` or
   `{name: k, projects: [device-suite]}`, and the close gate demands it only on those cycles,
@@ -81,6 +90,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   where its budget is `core_budget` in `[runner]` of its runner.toml, or else the CPUs it
   may run on. A `core_budget` that is not a positive integer is refused. A runner that
   keeps its own ledger ignores it, and `tdd fleet` still shows the host's split.
+- **`tdd plan paths` resolves exec ids to their script** (#73), as R7.14 already stated. Before
+  this it reported every exec id as `no_path_in_id`.
 
 ## [0.16.0] - 2026-10-30
 

@@ -204,7 +204,10 @@ an auditor compares them against reality.
 ### IntegrityEvent
 Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mismatch`,
 `off_protocol_invocation`, `stale_artifact`, `plan_blob_changed`, `executor_unknown`,
-`artifact_regenerate_failed`, `baseline_late_probe`, `baseline_late_probe_unobserved`.
+`artifact_regenerate_failed`, `baseline_late_probe`, `baseline_late_probe_unobserved`,
+`flaky_pre_existing`.
+
+`flaky_pre_existing` is an untouched pre-existing failure that passed when rerun alone (R9.1f).
 
 ### Blocker
 Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `context_exhausted`,
@@ -253,7 +256,8 @@ Outcomes that are not simple advancement:
 - **Target not collected** (import error, missing module) → distinguished from `not_found`
   (identifier matches nothing). Not-collected is a legitimate RED in `AWAITING_TEST` if the plan
   declares a stub step; otherwise `next_action` directs stub creation. Never routes to a human.
-- **New failures elsewhere** → phase holds, `next_action` names the regressed tests.
+- **New failures elsewhere** → phase holds, `next_action` names the regressed tests. An untouched
+  pre-existing failure is rerun alone first; one that passes does not hold the phase (R9.1f).
 - **Nothing changed since the last invocation** → refused with `no_change_since_last_run`, to stop
   loops that re-run an unmodified tree. `tdd advance --retry` proceeds anyway: re-running a suite
   is legitimate (flaky tests, environmental failures). Retries are counted, and after three
@@ -382,6 +386,9 @@ Requirements:
   maps to zero files is `not_found_in_sources`; one that maps to two or more is `ambiguous_id`;
   an id in a grammar that never carries a path and whose adapter has no source scan is
   `no_path_in_id`. Unresolved ids do not fail the command.
+- **R7.15** A project may declare `flaky_reruns`, a non-negative integer (default 1): how many
+  times R9.1f reruns an untouched pre-existing failure before reporting it. `0` turns reruns
+  off for that project. Any other value is refused when `tdd.toml` is loaded.
 
 ### 7.2 Plan front-matter
 
@@ -650,6 +657,17 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   whole-suite run is the attempt's last invocation, which is the one the close sweep's skip
   compares against (§6.1). A target that fails while something else also broke is reported first;
   the other breakage is reported once the target passes. Decided in #149.
+- **R9.1f** Before `advance` replies `fix_regression` for a failure in GREEN's whole-suite run
+  (R9.1b) or in a close sweep (R9.2), it reruns that test alone (a target-only run of that one
+  id), up to the project's `flaky_reruns` times (R7.15), when the failure is untouched and
+  pre-existing: absent from the baseline (R9.6), collected at `run start`, and in a file the
+  plan does not declare in any cycle (`files`, `stub_expected`, the file of a `test` or
+  `modifies_tests` id as R7.14 resolves it, or `ancillary_files`). A test whose file cannot
+  be resolved is never rerun. A rerun that passes clears the failure: it is recorded as a
+  `flaky_pre_existing` integrity event `{test, phase, outcomes}` and the phase proceeds as if
+  the suite had not reported it. A test that never passes stays in the reply, which carries
+  `rerun_outcomes: {test: outcomes}` as evidence. Reruns write no invocation row; each emits a
+  `project_completed` heartbeat with phase `RERUN`. Decided in #73.
 - **R9.2** On the transition out of `AWAITING_REFACTOR`, the close sweep runs: the cycle's own
   projects, plus every project **downstream of an artifact the cycle modified** per the
   `consumed_by` edges in §7.1, plus lint and typecheck for each. Projects with
