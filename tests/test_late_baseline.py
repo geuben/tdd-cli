@@ -327,3 +327,19 @@ def test_close_sweep_late_probes_an_unbaselined_project_at_the_start_sha(repo_sc
         json.loads(row["failing"]) if row else None,
         detail.get("start_sha"),
     ) == ("late_probe", ["svc::tests/test_svc.py::test_svc_fails"], start_sha)
+
+
+def test_a_late_probe_records_its_failed_files_as_an_empty_map(repo_schema_other):
+    repo = repo_schema_other
+    _drive_to_close(repo)
+    ledger = Ledger(gitutil.repo_identity(repo))
+    run_id = ledger.one(
+        "SELECT id FROM run WHERE worktree_path = ? ORDER BY id DESC LIMIT 1", (str(repo),)
+    )["id"]
+    _pull_svc_into_the_sweep(repo)
+    run_cli(repo, "advance")
+    row = ledger.one(
+        "SELECT failed_files FROM collection_snapshot WHERE run_id = ? AND project = 'svc'",
+        (run_id,),
+    )
+    assert (json.loads(row["failed_files"]) if row else None) == {}
