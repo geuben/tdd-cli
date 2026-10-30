@@ -14,9 +14,11 @@ the protocol has no source field at all.
 from __future__ import annotations
 
 import contextlib
+import grp
 import inspect
 import json
 import os
+import shutil
 import signal
 import socket
 import socketserver
@@ -41,6 +43,8 @@ SOURCES_FILE = "sources.json"
 #: keeps to one account with an ACL on its directory.
 ADMIN_MODE = 0o600
 GUEST_MODE = 0o660
+#: The bind socket is shared with the group the operator gives its orchestrator.
+BIND_MODE = 0o660
 
 #: A run with one of these outcomes takes no more writes from a guest.
 CLOSED_OUTCOMES = ("complete", "abandoned")
@@ -55,6 +59,10 @@ REPORT_METHODS = frozenset({"metrics", "fleet", "log"})
 #: Writes that record who executed a run: the service sets the executor on them.
 STAMPED = frozenset({"start_run", "abandon_run"})
 
+#: All the bind socket answers: an orchestrator sets or clears the model a source's next
+#: runs record.
+BIND_METHODS = frozenset({"bind", "unbind"})
+
 
 class ServiceConfigError(RuntimeError):
     pass
@@ -65,6 +73,9 @@ class ServiceConfig:
     admin_socket: Path
     home: Path
     report_socket: Path | None = None
+    #: A socket that answers `bind` and `unbind` alone, given to `bind_group`.
+    bind_socket: Path | None = None
+    bind_group: str | None = None
 
 
 def config_path() -> Path:
@@ -90,10 +101,26 @@ def load_config(path: Path | None = None) -> ServiceConfig:
     if report and Path(report) == Path(section["admin_socket"]):
         # A listener replaces any socket at its path: the admin socket would be lost.
         raise ServiceConfigError(f"{path}: [service] report_socket must not be admin_socket")
+    bind_socket = section.get("bind_socket")
+    if bool(bind_socket) != bool(section.get("bind_group")):
+        raise ServiceConfigError(f"{path}: [service] bind_socket and bind_group go together")
+    if bind_socket and Path(bind_socket) == Path(section["admin_socket"]):
+        raise ServiceConfigError(f"{path}: [service] bind_socket must not be admin_socket")
+    if report and bind_socket and Path(report) == Path(bind_socket):
+        raise ServiceConfigError(f"{path}: [service] report_socket must not be bind_socket")
+    if bind_socket:
+        try:
+            grp.getgrnam(section["bind_group"])
+        except KeyError:
+            raise ServiceConfigError(
+                f"{path}: [service] bind_group {section['bind_group']!r} is not a group on this host"
+            ) from None
     return ServiceConfig(
         admin_socket=Path(section["admin_socket"]),
         home=Path(home) if home else Path.home() / ".local" / "share" / "tdd-cli",
         report_socket=Path(report) if report else None,
+        bind_socket=Path(bind_socket) if bind_socket else None,
+        bind_group=section.get("bind_group"),
     )
 
 
@@ -128,10 +155,12 @@ class _Session:
         service: Service,
         source: str | None,
         conn: socket.socket,
+        bind_only: bool = False,
         report_only: bool = False,
     ):
         self.service = service
         self.source = source
+        self.bind_only = bind_only
         self.conn = conn
         self.report_only = report_only
         self.ledger: ledger_mod.Ledger | None = None
@@ -143,6 +172,12 @@ class _Session:
         if self.report_only:
             # The report socket: reads, and not even `ping` besides.
             return self.service.report(method, args, kwargs)
+        if self.bind_only:
+            if method not in BIND_METHODS:
+                return _refusal(
+                    "method_not_allowed", f"{method} is not answered on the bind socket"
+                )
+            return self.service.admin(method, args, kwargs)
         if method == "ping":
             return _ok({"source": self.source, "executor": self.service.executors.get(self.source)})
         if self.source is None:
@@ -314,7 +349,11 @@ class _Handler(socketserver.StreamRequestHandler):
     def handle(self) -> None:
         listener: _Listener = self.server  # type: ignore[assignment]
         session = _Session(
-            listener.service, listener.source, self.request, report_only=listener.report_only
+            listener.service,
+            listener.source,
+            self.request,
+            bind_only=listener.bind_only,
+            report_only=listener.report_only,
         )
         try:
             while (request := wire.receive(self.rfile)) is not None:
@@ -328,17 +367,30 @@ class _Listener(socketserver.ThreadingUnixStreamServer):
     daemon_threads = True
     block_on_close = False
 
-    def __init__(self, path: Path, service: Service, source: str | None, report_only: bool = False):
+    def __init__(
+        self,
+        path: Path,
+        service: Service,
+        source: str | None,
+        bind_only: bool = False,
+        group: str | None = None,
+        report_only: bool = False,
+    ):
         self.path = path
         self.service = service
         self.source = source
+        self.bind_only = bind_only
         self.report_only = report_only
         # A socket file left by a service that died is not a listener: replace it.
         with contextlib.suppress(FileNotFoundError):
             path.unlink()
         super().__init__(str(path), _Handler)
         # A socket's mode follows the umask unless it is set.
-        path.chmod(ADMIN_MODE if source is None and not report_only else GUEST_MODE)
+        if bind_only:
+            path.chmod(BIND_MODE)
+            shutil.chown(path, group=group)
+        else:
+            path.chmod(ADMIN_MODE if source is None and not report_only else GUEST_MODE)
         self.thread = threading.Thread(target=self.serve_forever, daemon=True)
         self.thread.start()
 
@@ -354,6 +406,7 @@ class Service:
         self.config = config
         self.listeners: dict[str | None, _Listener] = {}
         self.report_listener: _Listener | None = None
+        self.bind_listener: _Listener | None = None
         self.executors: dict[str, str | None] = {}
         # Worker leases held by guests, across every source: one budget per host. A
         # lease is its connection, held open for as long as the suite runs.
@@ -366,6 +419,10 @@ class Service:
         if self.config.report_socket is not None:
             self.report_listener = _Listener(
                 self.config.report_socket, self, None, report_only=True
+            )
+        if self.config.bind_socket is not None:
+            self.bind_listener = _Listener(
+                self.config.bind_socket, self, None, bind_only=True, group=self.config.bind_group
             )
         for name, entry in sorted(self._saved().items()):
             self.add_source(name, Path(entry["socket"]), entry.get("executor"))
@@ -392,6 +449,9 @@ class Service:
         if self.report_listener is not None:
             self.report_listener.close()
             self.report_listener = None
+        if self.bind_listener is not None:
+            self.bind_listener.close()
+            self.bind_listener = None
 
     def add_source(self, name: str, socket_path: Path, executor: str | None = None) -> None:
         self.executors[name] = executor
@@ -400,6 +460,11 @@ class Service:
 
     def bind(self, name: str, executor: str) -> None:
         self.executors[name] = executor
+        self._save()
+
+    def unbind(self, name: str) -> None:
+        """Clear the source's binding: its next runs record the guest's own claim."""
+        self.executors[name] = None
         self._save()
 
     def take_lease(self, holder: _Session, conn: socket.socket) -> int:
@@ -550,8 +615,19 @@ class Service:
             name, executor = args
             if name not in self.executors:
                 return _refusal("unknown_source", f"no source named {name!r}")
+            if not isinstance(executor, str) or not executor.strip():
+                return _refusal(
+                    "bad_executor",
+                    "an executor names a model: `tdd ledger unbind` clears a binding",
+                )
             self.bind(name, executor)
             return _ok({"name": name, "executor": executor})
+        if method == "unbind":
+            (name,) = args
+            if name not in self.executors:
+                return _refusal("unknown_source", f"no source named {name!r}")
+            self.unbind(name)
+            return _ok({"name": name, "executor": None})
         if method == "remove_source":
             (name,) = args
             if name not in self.executors:

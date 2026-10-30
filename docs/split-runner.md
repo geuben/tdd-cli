@@ -247,6 +247,7 @@ The operator adds a source for each guest, from the host:
 
     tdd ledger add-source vm-1 --socket /run/tdd-cli/vm-1.sock --executor claude-fable-5-1
     tdd ledger bind vm-1 --executor claude-opus-5-5     # the model for its next runs
+    tdd ledger unbind vm-1                               # its next runs record the guest's claim again
     tdd ledger sources                                   # every source, socket and binding
     tdd ledger remove-source vm-1                        # closes the socket; its runs stay
 
@@ -256,6 +257,40 @@ mode 660: give its group to whatever forwards it into the guest, and nothing els
 
 `tdd ledger` verbs are always answered on the machine you run them on, never forwarded to
 a runner. With no service config they fail with `reason: "no_service"`.
+
+### A bind-only socket for an orchestrator
+
+The process that knows which model a guest runs is usually the one that starts it: a VM or
+container orchestrator under its own account. It needs `bind` and `unbind`, and nothing
+else the admin socket answers. Give it a bind socket:
+
+    [service]
+    admin_socket = "/run/tdd-cli/admin.sock"
+    bind_socket  = "/run/tdd-cli/bind.sock"
+    bind_group   = "guest-starters"
+
+- **The two keys go together.** A config with one and not the other is refused, and so is
+  a `bind_socket` that is the `admin_socket`. A `bind_group` that is not a group on the
+  host is refused when the config loads.
+- **The socket is mode 660 and belongs to `bind_group`.** The service account must be a
+  member of that group: if it is not, `tdd ledger serve` fails to start. Put the
+  orchestrator's account in the group, and nothing else. The admin socket stays mode 600.
+- **It answers `bind` and `unbind` alone**, for a source that already exists. Every other
+  method, `ping` included, is refused with `refusal: "method_not_allowed"`. An unknown
+  source is `unknown_source` and an empty executor is `bad_executor`, as on the admin
+  socket. It takes no identity from the request: its authority is its mode and group.
+- **Which socket the CLI uses.** `tdd ledger bind` and `tdd ledger unbind` take
+  `--socket PATH` and use that socket alone. Without it they connect to `admin_socket`,
+  and when that connect fails (no permission, no socket) and a `bind_socket` is
+  configured, they send the request there instead. A request the admin socket took is
+  never resent. Every other `tdd ledger` verb uses the admin socket only.
+- **The orchestrator still reads `ledger.toml`.** Every `tdd ledger` verb loads the service
+  config first, held to the runner's trust rule: owned by root or by the reading account,
+  not group- or world-writable. So the file must be owned by root and readable by the
+  orchestrator's account. One owned by the service account is refused for every other
+  account. `--socket` does not skip the config.
+- **A binding belongs to the source, not to a run.** A run abandoned after its source was
+  rebound for the next run is stamped with the binding in force when it is abandoned.
 
 ### Forwarding the socket into the guest
 
@@ -312,7 +347,9 @@ them, which is no worse than a forged test report on a single machine.
 edit, so it is a claim. When the operator binds an executor to a source, the service
 records that model with `executor_source: "operator"` on every run the source starts or
 abandons, whatever the guest sent. With no binding, a guest that says `operator` is
-recorded as `claimed`.
+recorded as `claimed`. `tdd ledger unbind <source>` clears a binding, so the source's next
+runs record the guest's claim again; `bind` refuses an empty or blank executor with
+`reason: "bad_executor"`.
 
 ### One history per host
 

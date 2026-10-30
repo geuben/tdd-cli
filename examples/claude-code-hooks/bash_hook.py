@@ -10,7 +10,8 @@ Only plain runs are denied. Collection and listing (`--collect-only`,
 `vitest list`) stay allowed: they observe nothing and agents legitimately use
 them to name targets.
 
-Wire it up in `.claude/settings.json` — see README.md in this directory.
+`tdd init --skill claude-code` installs and wires it; `tdd docs hooks` shows the manual
+setup.
 """
 
 import json

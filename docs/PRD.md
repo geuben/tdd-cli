@@ -510,7 +510,7 @@ commands emit `confirm_cycle_applicable` instead — the recovery action is `tdd
 ### 8.1 Setup
 | Command | Behaviour |
 |---|---|
-| `tdd init` | scaffold `tdd.toml` from detected projects, for human review |
+| `tdd init [--skill <harness> [--update-skill]]` | scaffold `tdd.toml` from detected projects, for human review; `--skill claude-code` also writes the driving skill, its hooks and (when absent) `.claude/settings.json` from the installed copies, and `--update-skill` replaces harness files that differ |
 | `tdd doctor` | preflight: registry valid, adapters runnable, reporters installed, worktree resolvable, no stale report artifacts, tree clean enough. `ok` mirrors `healthy` (cycle 17) — a failing check is a non-zero exit, not `ok: true` with `healthy: false` buried in `result` |
 
 **"Clean enough"** is scoped, not absolute: `worktree clean` fails only on dirt a run
@@ -651,7 +651,11 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   merely looks clean is worse than no run at all — every pre-existing failure reads as a
   regression, at every close sweep, for the life of the run. The check runs before the run row
   is written, so a refusal leaves nothing behind to block the next attempt. A project with no
-  test files and no collection errors is not an error; it simply has no suite yet.
+  test files and no collection errors is not an error; it simply has no suite yet. The
+  nothing-collected refusal quotes the first failed file's recorded reason (the command, its exit
+  status and its output, issue #184), and in split mode says the command ran through the runner,
+  as the agent: that hop is where a PATH or environment difference from the agent's own shell
+  comes from.
 - **R9.5b** `resume --unblock --accept-failures` folds pre-existing failures into the baseline,
   recorded as a `baseline_amended` integrity event alongside the mandatory `--note`. For each
   candidate failure (present in the last close sweep but absent from the current baseline row),
@@ -896,7 +900,9 @@ Adapter.typecheck(project)               -> GateResult
   file it came from. `tdd doctor` reads the subprocess's **stdout**: `uv` writes
   environment warnings (e.g. `VIRTUAL_ENV=... does not match ...`) to stderr, while pytest writes
   the actual collection error (e.g. `ModuleNotFoundError`) to stdout. A check that reads stderr
-  reports the wrapper's noise and loses the real error underneath it. Collection's whole-suite
+  reports the wrapper's noise and loses the real error underneath it. When stdout is blank (a
+  command that is not found writes to stderr only, issue #184), the detail is the probe's command,
+  its exit status and the tail of stderr, so a failing gate never has an empty detail. Collection's whole-suite
   vitest listing is `vitest list --json`, not the text listing `collectable()` probes: the text
   prefixes `[<project>] ` to every line of a named vitest project and prints paths relative to
   that project's own `root`, while the JSON carries each test's absolute `file`, which the
