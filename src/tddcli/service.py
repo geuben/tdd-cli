@@ -13,6 +13,7 @@ the protocol has no source field at all.
 from __future__ import annotations
 
 import contextlib
+import grp
 import inspect
 import json
 import os
@@ -94,6 +95,13 @@ def load_config(path: Path | None = None) -> ServiceConfig:
         raise ServiceConfigError(f"{path}: [service] bind_socket and bind_group go together")
     if bind_socket and Path(bind_socket) == Path(section["admin_socket"]):
         raise ServiceConfigError(f"{path}: [service] bind_socket must not be admin_socket")
+    if bind_socket:
+        try:
+            grp.getgrnam(section["bind_group"])
+        except KeyError:
+            raise ServiceConfigError(
+                f"{path}: [service] bind_group {section['bind_group']!r} is not a group on this host"
+            ) from None
     return ServiceConfig(
         admin_socket=Path(section["admin_socket"]),
         home=Path(home) if home else Path.home() / ".local" / "share" / "tdd-cli",
