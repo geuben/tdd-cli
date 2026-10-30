@@ -81,14 +81,25 @@ def test_metrics_reports_the_reason_and_who_abandoned_the_run(repo):
     }
 
 
-def test_abandoning_records_a_human_intervention(repo):
+def test_abandoning_records_no_unblock(repo):
     plan = register(repo)
     start(repo, plan)
 
     run_cli(repo, "run", "abandon", "--reason", "superseded by #145")
 
     notes = [r["note"] for r in ledger(repo).all("SELECT note FROM human_intervention")]
-    assert notes == ["abandoned: superseded by #145"]
+    assert notes == []
+
+
+def test_the_friction_log_names_the_abandonment_reason(repo):
+    plan = register(repo)
+    start(repo, plan)
+
+    run_cli(repo, "run", "abandon", "--reason", "superseded by #145")
+    run_cli(repo, "log", "render", "--out", str(repo / "friction.md"))
+
+    text = (repo / "friction.md").read_text()
+    assert "  Outcome: abandoned\n- Abandoned: superseded by #145\n" in text
 
 
 def test_fleet_stops_listing_an_abandoned_run(repo):
@@ -196,7 +207,9 @@ def test_abandon_refuses_a_run_that_already_ended(repo):
     start(repo, plan)
     a_id = last_run_id(repo)
     run_cli(repo, "cycle", "skip", "--reason", "r")
-    start(repo, plan)
+    again = write_plan(repo, PLAN, "tasks/plan-again.md")
+    run_cli(repo, "plan", "register", again)
+    start(repo, again)
     b_id = last_run_id(repo)
     run_cli(repo, "run", "abandon", "--reason", "superseded")
 

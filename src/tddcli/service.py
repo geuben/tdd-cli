@@ -5,7 +5,8 @@ is where the suites run. Its ledger must not be: it would vanish with the guest,
 guest root could rewrite it. So the runner keeps none, and reads and writes the host's
 through a socket the host forwards into the guest.
 
-The service listens on one socket per source, plus an admin socket for the operator.
+The service listens on one socket per source, plus an admin socket for the operator,
+and optionally a report socket that answers the operator's reads and nothing else.
 A connection's source is the listener it arrived on, never anything the client sends:
 the protocol has no source field at all.
 """
@@ -25,6 +26,7 @@ import threading
 import time
 import tomllib
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from . import fleet, leases, render, runner, wire
@@ -37,7 +39,8 @@ CONFIG_ENV = "TDD_LEDGER_SERVICE_CONFIG"
 SOURCES_FILE = "sources.json"
 
 #: The admin socket is the service account's alone; a guest's is shared with the group
-#: the operator forwards it through.
+#: the operator forwards it through, and so is the report socket, which the operator
+#: keeps to one account with an ACL on its directory.
 ADMIN_MODE = 0o600
 GUEST_MODE = 0o660
 #: The bind socket is shared with the group the operator gives its orchestrator.
@@ -49,6 +52,9 @@ CLOSED_OUTCOMES = ("complete", "abandoned")
 #: The one write a closed run still takes: `tdd note` after the run is documented use,
 #: and is how an executor leaves its closing narrative.
 CLOSED_RUN_EXEMPT = frozenset({"add_note"})
+
+#: The only requests the report socket answers: reads, for an operator's dashboard.
+REPORT_METHODS = frozenset({"metrics", "fleet", "log"})
 
 #: Writes that record who executed a run: the service sets the executor on them.
 STAMPED = frozenset({"start_run", "abandon_run"})
@@ -66,6 +72,7 @@ class ServiceConfigError(RuntimeError):
 class ServiceConfig:
     admin_socket: Path
     home: Path
+    report_socket: Path | None = None
     #: A socket that answers `bind` and `unbind` alone, given to `bind_group`.
     bind_socket: Path | None = None
     bind_group: str | None = None
@@ -90,11 +97,17 @@ def load_config(path: Path | None = None) -> ServiceConfig:
     if not section.get("admin_socket"):
         raise ServiceConfigError(f"{path}: [service] needs `admin_socket`")
     home = section.get("home")
+    report = section.get("report_socket")
+    if report and Path(report) == Path(section["admin_socket"]):
+        # A listener replaces any socket at its path: the admin socket would be lost.
+        raise ServiceConfigError(f"{path}: [service] report_socket must not be admin_socket")
     bind_socket = section.get("bind_socket")
     if bool(bind_socket) != bool(section.get("bind_group")):
         raise ServiceConfigError(f"{path}: [service] bind_socket and bind_group go together")
     if bind_socket and Path(bind_socket) == Path(section["admin_socket"]):
         raise ServiceConfigError(f"{path}: [service] bind_socket must not be admin_socket")
+    if report and bind_socket and Path(report) == Path(bind_socket):
+        raise ServiceConfigError(f"{path}: [service] report_socket must not be bind_socket")
     if bind_socket:
         try:
             grp.getgrnam(section["bind_group"])
@@ -105,6 +118,7 @@ def load_config(path: Path | None = None) -> ServiceConfig:
     return ServiceConfig(
         admin_socket=Path(section["admin_socket"]),
         home=Path(home) if home else Path.home() / ".local" / "share" / "tdd-cli",
+        report_socket=Path(report) if report else None,
         bind_socket=Path(bind_socket) if bind_socket else None,
         bind_group=section.get("bind_group"),
     )
@@ -142,17 +156,22 @@ class _Session:
         source: str | None,
         conn: socket.socket,
         bind_only: bool = False,
+        report_only: bool = False,
     ):
         self.service = service
         self.source = source
         self.bind_only = bind_only
         self.conn = conn
+        self.report_only = report_only
         self.ledger: ledger_mod.Ledger | None = None
 
     def answer(self, request: dict) -> dict:
         method = request.get("method")
         args = request.get("args") or []
         kwargs = request.get("kwargs") or {}
+        if self.report_only:
+            # The report socket: reads, and not even `ping` besides.
+            return self.service.report(method, args, kwargs)
         if self.bind_only:
             if method not in BIND_METHODS:
                 return _refusal(
@@ -291,6 +310,31 @@ def _well_formed_repo(repo) -> bool:
     )
 
 
+def _since(raw) -> datetime | None:
+    """A `metrics` request's `since`, as a time; ValueError unless it carries an offset.
+
+    A naive time is refused rather than taken as UTC: the host's own offset would shift
+    it silently, and it cannot be compared with the ledger's times, which all carry one.
+    """
+    if raw is None:
+        return None
+    since = datetime.fromisoformat(raw) if isinstance(raw, str) else None
+    if since is None or since.tzinfo is None:
+        raise ValueError(raw)
+    return since
+
+
+def _view(repo: str, path: Path, readonly: bool) -> ledger_mod.Ledger | None:
+    """A host ledger, opened to read every source's runs.
+
+    Read-only opens it as `fleet` does, so it is never written, nor migrated: None when
+    it has gone. Otherwise it is opened as a `Ledger`, which migrates an old one.
+    """
+    if readonly:
+        return ledger_mod.open_readonly(path, source=None)
+    return ledger_mod.Ledger(Path(repo), path=path, source=None)
+
+
 def _ok(result) -> dict:
     return {"ok": True, "result": wire.encode(result)}
 
@@ -304,7 +348,13 @@ class _Handler(socketserver.StreamRequestHandler):
 
     def handle(self) -> None:
         listener: _Listener = self.server  # type: ignore[assignment]
-        session = _Session(listener.service, listener.source, self.request, listener.bind_only)
+        session = _Session(
+            listener.service,
+            listener.source,
+            self.request,
+            bind_only=listener.bind_only,
+            report_only=listener.report_only,
+        )
         try:
             while (request := wire.receive(self.rfile)) is not None:
                 wire.send(self.wfile, session.answer(request))
@@ -324,11 +374,13 @@ class _Listener(socketserver.ThreadingUnixStreamServer):
         source: str | None,
         bind_only: bool = False,
         group: str | None = None,
+        report_only: bool = False,
     ):
         self.path = path
         self.service = service
         self.source = source
         self.bind_only = bind_only
+        self.report_only = report_only
         # A socket file left by a service that died is not a listener: replace it.
         with contextlib.suppress(FileNotFoundError):
             path.unlink()
@@ -338,7 +390,7 @@ class _Listener(socketserver.ThreadingUnixStreamServer):
             path.chmod(BIND_MODE)
             shutil.chown(path, group=group)
         else:
-            path.chmod(ADMIN_MODE if source is None else GUEST_MODE)
+            path.chmod(ADMIN_MODE if source is None and not report_only else GUEST_MODE)
         self.thread = threading.Thread(target=self.serve_forever, daemon=True)
         self.thread.start()
 
@@ -353,6 +405,7 @@ class Service:
     def __init__(self, config: ServiceConfig) -> None:
         self.config = config
         self.listeners: dict[str | None, _Listener] = {}
+        self.report_listener: _Listener | None = None
         self.bind_listener: _Listener | None = None
         self.executors: dict[str, str | None] = {}
         # Worker leases held by guests, across every source: one budget per host. A
@@ -363,6 +416,10 @@ class Service:
     def start(self) -> None:
         self.config.home.mkdir(parents=True, exist_ok=True)
         self.listeners[None] = _Listener(self.config.admin_socket, self, None)
+        if self.config.report_socket is not None:
+            self.report_listener = _Listener(
+                self.config.report_socket, self, None, report_only=True
+            )
         if self.config.bind_socket is not None:
             self.bind_listener = _Listener(
                 self.config.bind_socket, self, None, bind_only=True, group=self.config.bind_group
@@ -389,6 +446,9 @@ class Service:
         for listener in list(self.listeners.values()):
             listener.close()
         self.listeners.clear()
+        if self.report_listener is not None:
+            self.report_listener.close()
+            self.report_listener = None
         if self.bind_listener is not None:
             self.bind_listener.close()
             self.bind_listener = None
@@ -473,12 +533,12 @@ class Service:
         out["suites"] = self.lease_snapshot()
         return out
 
-    def log(self, repo: str, run_id: int) -> dict:
+    def log(self, repo: str, run_id: int, *, readonly: bool = False) -> dict:
         """Any source's run, rendered as the friction log its guest would render."""
         path = self.host_files(repo).get(repo)
-        if path is None:
+        view = None if path is None else _view(repo, path, readonly)
+        if view is None:
             return _refusal("unknown_repo", f"no ledger for {repo!r} on this host")
-        view = ledger_mod.Ledger(Path(repo), path=path, source=None)
         try:
             run = view.run(run_id)
             if run is None:
@@ -501,21 +561,48 @@ class Service:
         marker = ledger_mod.import_as_source(source, target, name)
         return _ok({"imported": str(target), "pre_split_import": marker})
 
-    def metrics(self, repo: str | None = None) -> dict:
+    def metrics(
+        self, repo: str | None = None, *, since: datetime | None = None, readonly: bool = False
+    ) -> dict:
         """`tdd metrics`, over every source's runs, for each repository on the host."""
         out = {}
         for slug, path in self.host_files(repo).items():
-            view = ledger_mod.Ledger(Path(slug), path=path, source=None)
+            view = _view(slug, path, readonly)
+            if view is None:
+                continue
             try:
-                out[slug] = render.metrics(view, None)
+                out[slug] = render.metrics(view, None, since=since)
             finally:
                 view.close()
         return {"repos": out}
 
+    def _metrics(self, args: list, kwargs: dict, *, readonly: bool) -> dict:
+        """A `metrics` request, on either socket: refused when its `since` is not a time."""
+        raw = kwargs.get("since")
+        try:
+            since = _since(raw)
+        except ValueError:
+            return _refusal(
+                "bad_since",
+                "since takes an ISO 8601 time with a UTC offset, such as"
+                f" 2026-09-01T10:20:00+00:00: {raw}",
+            )
+        return _ok(self.metrics(*args, since=since, readonly=readonly))
+
+    def report(self, method: str, args: list, kwargs: dict) -> dict:
+        """A dashboard's request, from the report socket: the admin socket's reads alone."""
+        if method not in REPORT_METHODS:
+            return _refusal("method_not_allowed", f"{method} is not answered on the report socket")
+        if method == "metrics":
+            return self._metrics(args, kwargs, readonly=True)
+        if method == "fleet":
+            return _ok(self.fleet())
+        return self.log(*args, readonly=True)
+
     def admin(self, method: str, args: list, kwargs: dict) -> dict:
         """An operator's request, from the admin socket."""
         if method == "metrics":
-            return _ok(self.metrics(*args))
+            return self._metrics(args, kwargs, readonly=False)
         if method == "fleet":
             return _ok(self.fleet())
         if method == "log":

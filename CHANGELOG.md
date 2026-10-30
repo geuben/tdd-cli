@@ -8,6 +8,50 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **An untouched pre-existing failure is rerun before it blocks** (#73). When GREEN's
+  whole-suite run or a close sweep finds a failure that is absent from the baseline, was
+  collected at `run start`, and lives in a file no cycle of the plan declares (`files`,
+  `stub_expected`, a `test` or `modifies_tests` id's file, or `ancillary_files`), `tdd advance`
+  reruns that test alone before replying `fix_regression`. A test whose file cannot be
+  resolved is never rerun. The per-project `flaky_reruns` key in `tdd.toml` sets how many
+  reruns it gets (default 1, `0` turns reruns off). A rerun that passes clears the failure and
+  records a `flaky_pre_existing` integrity event with every outcome; a test that never passes
+  stays in the reply, which now carries `rerun_outcomes` as evidence for the blocker.
+- **Annotation keys can be scoped to the cycles they apply to** (#76). An `annotation_keys`
+  entry may now be a mapping, `{name: k, applies_to: [12, 19]}` or
+  `{name: k, projects: [device-suite]}`, and the close gate demands it only on those cycles,
+  so the rest no longer fill the friction log with `n/a`. Malformed entries fail
+  registration. Plain string keys behave as before, and a contract registered by an older
+  `tdd` keeps requiring every key on every cycle. The friction log's Plan fidelity section
+  now warns of a declared check that never ran: a key none of whose cycles was delivered.
+- **A read-only report socket for dashboards** (#185). `[service] report_socket` opens a
+  socket (mode 660) that answers `metrics`, `fleet` and `log` with the admin socket's
+  results, opens every ledger read-only, and refuses every other request with
+  `method_not_allowed`. `tdd ledger metrics`, `fleet` and `log` fall back to it when the
+  admin socket cannot be opened. With no setting, nothing changes.
+- **`tdd ledger metrics --since <time>`** (#185): only the runs still open or ended at or
+  after an ISO 8601 time with a UTC offset; any other time is refused with `bad_since`.
+- **`time.cycles` in every run of `tdd metrics` and `tdd ledger metrics`** (#185): each
+  cycle's `opened_at`, `closed_at`, wall clock, suite time and suite runs.
+- **`tdd init --skill claude-code`** (#114). Scaffolds the agent harness from the copies
+  installed with the binary, so it matches the `tdd` that drives it:
+  `.claude/skills/tdd-drive/SKILL.md`, `.claude/hooks/tdd_stop_hook.py` and
+  `.claude/hooks/tdd_bash_hook.py`. `.claude/settings.json` is written, wiring both hooks,
+  only when it does not exist; an existing one is never edited, and is reported as
+  `harness.settings: "wired"` or `"not_written"` (with the stanza in
+  `result.harness.settings_stanza` to merge by hand). An existing `tdd.toml` is kept
+  (`config: "kept"`) unless `--force`. A harness file that differs from the shipped copy
+  refuses the command before anything is written (`harness_files_differ`, naming it in
+  `result.differs`); `--update-skill` replaces it, and `--force` does not. Other refusals:
+  `unknown_harness`, `missing_from_install` (a packaging fault) and `skill_required`
+  (`--update-skill` without `--skill`).
+- The wheel now ships `examples/claude-code-hooks/stop_hook.py` and `bash_hook.py`, which
+  `init --skill` copies out.
+- **`tdd doctor`: `driving skill version`.** When `.claude/skills/tdd-drive/SKILL.md`
+  exists, doctor compares the `metadata.verb_set_version` and `envelope_version` its
+  front-matter declares (the shipped skill now declares both) with what the binary emits.
+  A mismatch fails and names `tdd init --skill claude-code --update-skill`; a skill that
+  declares nothing passes as a notice.
 - **A bind-only socket, and `tdd ledger unbind`** (#179). An optional `[service]
   bind_socket`, with `bind_group`, is a second operator socket, mode 660 and owned by that
   group, that answers `bind` and `unbind` for existing sources and refuses everything else
@@ -17,11 +61,44 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   `tdd ledger unbind <source>` clears a binding, so the source's next runs record the
   guest's claim again instead of the previous run's model.
 
+### Changed
+
+- **Unblocks, not human interventions** (#186). The friction log's "Human interventions: N" is
+  now "Unblocks: N", and `tdd metrics`' `human_interventions` key is now `unblocks` (breaking
+  for JSON readers; there is no alias). tdd-cli cannot tell who ran `resume --unblock`, so it no
+  longer says a person did. `tdd run abandon` no longer counts as one. It stops writing a
+  `human_intervention` row, the rows it wrote before are left out of the count, and the
+  friction log names the reason on a new `Abandoned:` header line. The ledger schema is
+  unchanged.
+- **`tdd run start` refuses a plan that was already delivered** (#97). A plan path that a
+  completed run already delivered is refused with `reason: "plan_already_delivered"`,
+  `prior_run_id` and `ended_at`, before any suite runs. Re-running a delivered plan used to
+  record a fresh run whose every cycle was a `red_first_violation`. To redeliver, register
+  the plan under a new path. Blocked and abandoned runs do not count. With a ledger service,
+  upgrade the host with or before its guests: a 0.16.0 host refuses the new `delivered_run`
+  read with `method_not_allowed`.
+
 ### Fixed
 
 - **`tdd ledger bind --executor ""` bound an empty model** (#179), which every later run
   recorded as operator-attested. An empty or blank executor is now refused with
   `reason: "bad_executor"`.
+- **A collection probe that fails silently is reported, not crashed on** (#184). `tdd doctor`
+  raised an `AssertionError` when a `collectable` probe failed with nothing on stdout (a
+  command that is not found writes to stderr only); every adapter's probe now falls back to
+  the command, its exit status and the tail of its output. `run start`'s "no test could be
+  collected" refusal now quotes the first failed file's reason the same way. In split mode,
+  both messages say the command ran through the runner, as the agent, which is where a PATH
+  or environment difference from the agent's own shell comes from.
+- **A guest runner caps its worker lease at its own budget** (#190). In socket mode the
+  ledger service sizes each lease from the host's cores, so a guest smaller than its host
+  ran a host-sized `-n` (a 6-core, 4 GB VM on a 10-core host ran `pytest -n 10`, and the OOM
+  killer took its workers). The guest now uses `min(the service's share, its own budget)`,
+  where its budget is `core_budget` in `[runner]` of its runner.toml, or else the CPUs it
+  may run on. A `core_budget` that is not a positive integer is refused. A runner that
+  keeps its own ledger ignores it, and `tdd fleet` still shows the host's split.
+- **`tdd plan paths` resolves exec ids to their script** (#73), as R7.14 already stated. Before
+  this it reported every exec id as `no_path_in_id`.
 
 ## [0.16.0] - 2026-10-30
 
