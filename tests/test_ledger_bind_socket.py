@@ -158,3 +158,14 @@ def test_a_half_or_clashing_bind_config_is_refused(tmp_path):
     ]
 
     assert [refused(tmp_path, body) for body in cases] == [True, True, True]
+
+
+def test_a_bind_group_that_does_not_exist_is_refused(tmp_path):
+    path = tmp_path / "ledger.toml"
+    path.write_text(
+        '[service]\nadmin_socket = "/tmp/tdd-179-admin.sock"\n'
+        'bind_socket = "/tmp/tdd-179-bind.sock"\nbind_group = "no-such-group-179"\n'
+    )
+
+    with pytest.raises(service.ServiceConfigError, match="no-such-group-179"):
+        service.load_config(path)
