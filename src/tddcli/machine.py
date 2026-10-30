@@ -304,16 +304,20 @@ class Engine:
             if path is None or path in declared or project.relative_to_root(path) in declared:
                 remaining.append(test_id)
                 continue
-            started = time.monotonic()
-            verdict = adapter.run(test_id, target_only=True)
-            heartbeat(
-                event="project_completed",
-                project=name,
-                phase="RERUN",
-                elapsed_s=round(time.monotonic() - started, 2),
-            )
-            outcomes = ["failed", verdict.target_outcome]
-            if verdict.target_outcome != "passed":
+            outcomes = ["failed"]
+            for _ in range(project.flaky_reruns):
+                started = time.monotonic()
+                verdict = adapter.run(test_id, target_only=True)
+                heartbeat(
+                    event="project_completed",
+                    project=name,
+                    phase="RERUN",
+                    elapsed_s=round(time.monotonic() - started, 2),
+                )
+                outcomes.append(verdict.target_outcome)
+                if verdict.target_outcome == "passed":
+                    break
+            if outcomes[-1] != "passed":
                 remaining.append(test_id)
                 reruns[test_id] = outcomes
                 continue
