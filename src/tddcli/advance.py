@@ -429,6 +429,8 @@ def _handle_impl(engine: Engine, cycle, retried: bool) -> Envelope:
     outcomes, others, _, failure = engine.run_projects(
         projects, targets, cycle, AWAITING_IMPL, retried
     )
+    if others:
+        others, _ = engine.rerun_untouched(cycle, AWAITING_IMPL, others)
 
     if others:
         return _reply(
