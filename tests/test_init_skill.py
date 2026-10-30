@@ -209,3 +209,52 @@ def test_update_skill_without_skill_is_refused(bare_repo):
         "skill_required",
         False,
     )
+
+
+def test_doctor_checks_the_driving_skills_declared_versions(repo):
+    shipped = (REPO_ROOT / "examples/skills/tdd-drive/SKILL.md").read_text()
+    v, e = f'verb_set_version: "{VERB_SET_VERSION}"', f'envelope_version: "{ENVELOPE_VERSION}"'
+
+    def check(text):
+        path = repo / SKILL
+        if text is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        found = [
+            c
+            for c in run_cli(repo, "doctor")["result"]["checks"]
+            if c["check"] == "driving skill version"
+        ]
+        return found[0] if found else None
+
+    def ok(text):
+        return (check(text) or {}).get("ok")
+
+    older = check(shipped.replace(v, f'verb_set_version: "{VERB_SET_VERSION - 1}"'))
+    actual = {
+        "absent": check(None),
+        "current": ok(shipped),
+        "current, unquoted": ok(shipped.replace(v, f"verb_set_version: {VERB_SET_VERSION}")),
+        "older verb set": (older or {}).get("ok"),
+        "older envelope": ok(shipped.replace(e, f'envelope_version: "{ENVELOPE_VERSION - 1}"')),
+        "no metadata": ok("---\nname: tdd-drive\n---\nbody\n"),
+        "no front-matter": ok("just prose\n"),
+        "malformed": ok("---\nname: [unclosed\n---\n"),
+        "not a mapping": ok("---\n- a list\n---\n"),
+        "remedy named": "tdd init --skill claude-code --update-skill"
+        in (older or {}).get("detail", ""),
+    }
+    assert actual == {
+        "absent": None,
+        "current": True,
+        "current, unquoted": True,
+        "older verb set": False,
+        "older envelope": False,
+        "no metadata": True,
+        "no front-matter": True,
+        "malformed": True,
+        "not a mapping": True,
+        "remedy named": True,
+    }
