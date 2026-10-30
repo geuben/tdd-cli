@@ -181,3 +181,9 @@ def test_each_rerun_emits_a_heartbeat(repo, tmp_path, capsys):
     assert [
         {k: v for k, v in h.items() if k != "elapsed_s"} for h in lines if h.get("phase") == "RERUN"
     ] == [{"event": "project_completed", "project": "backend", "phase": "RERUN"}]
+
+
+def test_flaky_reruns_two_reruns_until_the_test_passes(repo, tmp_path):
+    run_id = _to_green(repo, tmp_path / "count", "n in (2, 3)", toml="flaky_reruns = 2\n")
+    run_cli(repo, "advance")
+    assert [e["outcomes"] for e in _flaky_events(repo, run_id)] == [["failed", "failed", "passed"]]
