@@ -180,7 +180,7 @@ def worker_lease(total_cores: int | None = None) -> Iterator[int]:
         from . import remote
 
         with remote.worker_lease(socket_path) as workers:
-            yield workers
+            yield min(workers, len(os.sched_getaffinity(0)))
         return
     directory = lease_dir()
     directory.mkdir(parents=True, exist_ok=True)
