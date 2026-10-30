@@ -30,6 +30,7 @@ from .base import (
     _overlap_error,
     _suite_overlap,
     clip_failure,
+    command_failure,
     run_command,
 )
 
@@ -266,7 +267,8 @@ class PytestAdapter(Adapter):
         Reads **stdout**, not stderr: `uv` writes environment warnings
         (`VIRTUAL_ENV=... does not match ...`) to stderr while pytest writes the
         actual `ModuleNotFoundError` to stdout. A doctor check that reads stderr
-        loses the real error and the failure surfaces unattributed.
+        loses the real error and the failure surfaces unattributed. Only a
+        probe with nothing on stdout falls back to its command, exit and stderr.
         """
         chunks = []
         probes = [(self._collect_cmd(), self._suite_env(None))] + [
@@ -274,11 +276,10 @@ class PytestAdapter(Adapter):
             for ov in self.project.overrides
         ]
         for cmd, env in probes:
-            code, out, err = run_command(
-                f"{cmd} --collect-only -q", self.root, extra_env=env, label="doctor"
-            )
+            probe = f"{cmd} --collect-only -q"
+            code, out, err = run_command(probe, self.root, extra_env=env, label="doctor")
             if code != 0:
-                chunks.append(out.strip())
+                chunks.append(out.strip() or command_failure(probe, code, err))
         return GateResult(ok=not chunks, output="\n\n".join(chunks)[:2000])
 
     def override_isolation(self) -> GateResult:
