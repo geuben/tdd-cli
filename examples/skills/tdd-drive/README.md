@@ -8,6 +8,17 @@ implements is [`docs/harness-integration.md`](../../../docs/harness-integration.
 ## Installation
 
 ```sh
+tdd init --skill claude-code
+```
+
+That writes the skill, the hooks and their wiring together, from the copies installed
+with `tdd`, so the skill on disk is the one written for the binary that will drive it.
+See [`../../claude-code-hooks/README.md`](../../claude-code-hooks/README.md) for what it
+writes and what it leaves alone.
+
+By hand, the skill alone:
+
+```sh
 mkdir -p .claude/skills/tdd-drive
 cp SKILL.md .claude/skills/tdd-drive/
 ```
@@ -28,3 +39,8 @@ The skill is written against `verb_set_version: 2` and `envelope_version: 1`, an
 refuses to run against anything newer — extend the verb table rather than deleting the
 check. Project conventions (where plans live, what annotations mean, friction-log
 destinations) belong in additions to the verb entries, not in new state or stop rules.
+
+Keep the `metadata.verb_set_version` and `metadata.envelope_version` front-matter when
+customising: `tdd doctor` compares them with what the binary emits and names a skill that
+has drifted. `tdd init --skill claude-code --update-skill` replaces it with the current
+copy; re-apply your additions afterwards.

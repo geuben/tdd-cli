@@ -2095,7 +2095,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 #: Verbs an agent's own `tdd` answers on a split machine. `docs` prints what shipped
-#: with the binary, and `init` writes `tdd.toml` into the agent's own worktree; neither
+#: with the binary, and `init` writes `tdd.toml` and the harness files into the agent's
+#: own worktree; neither
 #: touches the ledger. `ledger` is the host operator's, and talks to the ledger service
 #: on this machine. Everything else is the runner's to do.
 LOCAL_VERBS = {"docs", "init", "ledger"}

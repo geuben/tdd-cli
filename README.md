@@ -49,6 +49,7 @@ uv run tdd --help
 
 ```sh
 tdd init                       # scaffold tdd.toml from detected projects — then review it
+tdd init --skill claude-code   # also scaffold the Claude Code skill and hooks; see tdd docs hooks
 tdd doctor                     # environment preflight
 tdd plan register tasks/my-plan.md
 tdd run start --plan tasks/my-plan.md
@@ -479,7 +480,7 @@ and is never reclassified as a pin.
 | Command | Purpose |
 |---|---|
 | `tdd docs [topic]` | print the documentation shipped with this version; no network |
-| `tdd init` / `tdd doctor` | scaffold config; environment preflight |
+| `tdd init [--skill claude-code [--update-skill]]` / `tdd doctor` | scaffold config (and the agent harness); environment preflight |
 | `tdd plan register <path>` | parse and hash the contract |
 | `tdd plan paths <path>` | resolve a plan's test ids to repository file paths |
 | `tdd run start --plan <path>` | capture baselines, resolve executor, open cycle 1 |
@@ -715,7 +716,8 @@ see the run-close gate above.
 **Delegated to hooks:** a Stop hook that queries `tdd status` and refuses to let an agent
 stop while a run is live; a Bash hook redirecting bare `pytest`/`vitest` through `tdd advance`.
 Ready-made Claude Code implementations of both live in
-[`examples/claude-code-hooks/`](./examples/claude-code-hooks/).
+[`examples/claude-code-hooks/`](./examples/claude-code-hooks/), and `tdd init --skill
+claude-code` installs and wires them, from the copies shipped with the binary.
 
 **Delegated to the skill:** how to respond to each `next_action` verb — writing the test,
 the stub, the implementation. [`docs/harness-integration.md`](./docs/harness-integration.md)

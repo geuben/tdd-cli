@@ -49,7 +49,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         "skill",
         "examples/skills/tdd-drive/SKILL.md",
-        "a complete driving skill for Claude Code — copy it into .claude/skills/",
+        "a complete driving skill for Claude Code: `tdd init --skill claude-code` installs it",
     ),
     Topic(
         "handoff",
@@ -59,7 +59,8 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         "hooks",
         "examples/claude-code-hooks/README.md",
-        "the Stop and Bash hooks that keep an agent inside the loop",
+        "the Stop and Bash hooks that keep an agent inside the loop,"
+        " installed by `tdd init --skill claude-code`",
     ),
     Topic(
         "plan",
