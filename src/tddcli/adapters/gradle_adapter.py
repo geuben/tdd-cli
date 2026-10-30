@@ -72,6 +72,7 @@ from .base import (
     PASSED,
     Adapter,
     Collection,
+    FailureDetail,
     GateResult,
     Verdict,
     clip_failure,
@@ -102,6 +103,13 @@ _METHOD_RE = re.compile(
     r"@Test\b.*?\b(?:fun|void)\s+(?:`(?P<bt>[^`]+)`|(?P<id>\w+))",
     re.DOTALL,
 )
+
+
+def _failure_detail(text: str) -> FailureDetail:
+    """A failure's text, with its first non-empty line (the message) as the message."""
+    return FailureDetail(
+        phase=None, message=next((ln for ln in text.splitlines() if ln.strip()), ""), detail=text
+    )
 
 
 class GradleAdapter(Adapter):
@@ -336,6 +344,9 @@ class GradleAdapter(Adapter):
                     verdict.error = errors
             return verdict
 
+        for tid in failed:
+            verdict.failure_details[tid] = _failure_detail(failures.get(tid, "test failed"))
+
         if target is None:
             return verdict
 
@@ -343,11 +354,9 @@ class GradleAdapter(Adapter):
             verdict.target_outcome = PASSED
         elif target in failed:
             verdict.target_outcome = FAILED
-            failure_text = failures.get(target, "test failed")
-            verdict.target_failure = failure_text
-            verdict.target_evidence = next(
-                (ln for ln in failure_text.splitlines() if ln.strip()), ""
-            )
+            detail = _failure_detail(failures.get(target, "test failed"))
+            verdict.target_failure = detail.detail
+            verdict.target_evidence = detail.message
         # else NOT_FOUND (default): the suite ran but never produced this id
 
         return verdict
