@@ -16,9 +16,11 @@ from tddcli.ledger import Ledger
 from test_baseline_integrity import PLAN, TEST_ADD, reach_refactor
 from test_cargo_adapter import FULL_RUN, make_adapter
 from test_evidence_extraction import (
+    _exec_adapter,
     _gradle_adapter,
     _gradle_write_results,
     _vitest_adapter,
+    _write_script,
     _xctest_adapter,
 )
 
@@ -295,5 +297,23 @@ def test_xctest_reports_each_failure_with_its_error_line(tmp_path):
     assert verdict.failure_details == {
         "native-ios::AppTests/RecTests/testStopsRecording": FailureDetail(
             phase=None, message=error, detail=f"{noise}\n{error}"
+        )
+    }
+
+
+def test_exec_reports_each_failing_script_with_its_last_output_line(tmp_path):
+    adapter = _exec_adapter(tmp_path)
+    scripts = tmp_path / "gates" / "scripts"
+    _write_script(
+        scripts / "check-deploy.sh",
+        'echo "INFO: starting deployment"\necho "FAIL: expected exit 0, got 1"; exit 1',
+    )
+    _write_script(scripts / "check-ok.sh", "exit 0")
+    verdict = adapter.run(None)
+    assert verdict.failure_details == {
+        "gates::scripts/check-deploy.sh": FailureDetail(
+            phase=None,
+            message="FAIL: expected exit 0, got 1",
+            detail="INFO: starting deployment\nFAIL: expected exit 0, got 1",
         )
     }
