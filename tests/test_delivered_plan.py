@@ -70,3 +70,13 @@ def test_a_blocked_or_abandoned_run_does_not_deliver_its_plan(repo):
     after_block = run_cli(repo, "run", "start", "--plan", plan)
 
     assert [after_abandon["ok"], after_block["ok"]] == [True, True]
+
+
+def test_an_unchanged_plan_is_refused_after_its_delivery(repo):
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    deliver(repo, plan)
+
+    out = run_cli(repo, "run", "start", "--plan", plan)
+
+    assert out["result"].get("reason") == "plan_already_delivered"
