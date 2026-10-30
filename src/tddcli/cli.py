@@ -730,7 +730,7 @@ def _probe_projects(
                 run_s=round(ran - started, 2),
                 collect_s=round(elapsed - (ran - started), 2),
             )
-            if reuse_baselines and cfg is not None and config_sha is not None:
+            if reuse_baselines and cfg is not None and config_sha is not None and not verdict.error:
                 ledger.cache_baseline(
                     name,
                     tree_hash,

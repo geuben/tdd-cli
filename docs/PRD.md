@@ -706,6 +706,7 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   entries older than that many seconds, bounding how stale a reused baseline may be. A stale or
   wrong reused baseline is recoverable via `resume --unblock --accept-failures` (R9.5b),
   which treats a reused baseline row as an ordinary row, for tests that fail at the start sha.
+  A probe whose suite produced no readable report (R9.5j) is never cached.
 - **R9.6** Baseline failures are subtracted from `other_failures` in every subsequent invocation.
   A target-only invocation (R9.1a) has nothing to subtract from: it records `others_observed = 0`,
   and its empty `other_failures` must not be read as a clean run.
