@@ -106,6 +106,12 @@ def test_an_unbinding_survives_a_service_restart(repo, ledger_service):
     assert reply == {"source": "vm-1", "executor": None}
 
 
+def test_unbind_refuses_an_unknown_source(repo, ledger_service):
+    out = run_cli(repo, "ledger", "unbind", "nope")
+
+    assert out["result"].get("reason") == "unknown_source"
+
+
 def test_socket_modes(ledger_service):
     guest = ledger_service.dir / "vm-1.sock"
     ledger_service.service.add_source("vm-1", guest, executor=None)
