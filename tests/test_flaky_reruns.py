@@ -171,3 +171,13 @@ def test_a_failure_whose_file_cannot_be_resolved_is_not_rerun(repo, tmp_path, mo
         "fix_regression",
         [ID],
     )
+
+
+def test_each_rerun_emits_a_heartbeat(repo, tmp_path, capsys):
+    _to_green(repo, tmp_path / "count", "n == 2")
+    capsys.readouterr()
+    run_cli(repo, "advance")
+    lines = [json.loads(x) for x in capsys.readouterr().err.splitlines() if x.startswith("{")]
+    assert [
+        {k: v for k, v in h.items() if k != "elapsed_s"} for h in lines if h.get("phase") == "RERUN"
+    ] == [{"event": "project_completed", "project": "backend", "phase": "RERUN"}]
