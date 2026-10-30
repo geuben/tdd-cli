@@ -1138,7 +1138,7 @@ class Ledger:
         self.update("run", run_id, ended_at=now(), outcome=outcome)
 
     def reopen_run(self, run_id: int, note: str) -> None:
-        """`resume --unblock`: the run is live again, and a human said why."""
+        """`resume --unblock`: the run is live again, and whoever unblocked it said why."""
         self.update("run", run_id, ended_at=None, outcome=None)
         self.insert("human_intervention", run_id=run_id, note=note, at=now())
 
@@ -1164,7 +1164,6 @@ class Ledger:
             executor_source=executor_source,
             at=at,
         )
-        self.insert("human_intervention", run_id=run_id, note=f"abandoned: {reason}", at=at)
         self.release_claim(run["worktree_path"])
         self.release_advance_claim(run["worktree_path"])
 

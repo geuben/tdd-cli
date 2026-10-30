@@ -12,7 +12,7 @@ import os
 
 import pytest
 
-from conftest import ABSENT, agent_context, run_cli
+from conftest import ABSENT, agent_context, current_user, git, run_cli
 
 
 def _check(out: dict, name: str) -> dict:
@@ -161,3 +161,19 @@ def test_socket_mode_doctor_names_the_source_it_reaches(repo, split_guest):
 
     # `source vm-1`, not just `vm-1`: the socket's own file name already says that.
     assert (reachable["ok"], "source vm-1" in reachable["detail"]) == (True, True)
+
+
+def test_split_doctor_says_a_failed_collection_ran_through_the_runner_as_the_agent(
+    repo, split_runner
+):
+    """Issue 184: the runner's sudo hop replaced the agent's PATH, so the probe failed
+    where the agent's own shell could not reproduce it. The detail says where it ran."""
+    (repo / "tdd.toml").write_text(
+        (repo / "tdd.toml").read_text() + 'collect_command = "tdd-184-no-such-tool pytest"\n'
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a collect command that is not installed")
+
+    detail = _check(run_cli(repo, "doctor"), "collectable")["detail"]
+
+    assert f"ran through the split-mode runner, as {current_user()}" in detail, detail

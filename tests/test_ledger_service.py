@@ -270,6 +270,19 @@ def test_an_unbound_source_downgrades_a_guest_operator_claim(repo, split_guest, 
     assert (run["executor_model"], run["executor_source"]) == ("guest-says", "claimed")
 
 
+def test_unbind_returns_a_source_to_the_guests_claim(repo, split_guest, ledger_service):
+    ledger_service.service.add_source("vm-b", ledger_service.dir / "vm-b.sock", executor="model-x")
+    guest_config(
+        split_guest.runner,
+        ledger_service.dir / "vm-b.sock",
+        extra=f'[executor]\n"{current_user()}" = "guest-says"\n',
+    )
+    run_cli(repo, "ledger", "unbind", "vm-b")
+
+    run = host_run(ledger_service, repo, start_run(repo)["run"]["id"])
+    assert (run["executor_model"], run["executor_source"]) == ("guest-says", "claimed")
+
+
 def test_a_bound_source_stamps_the_abandoning_executor(repo, split_guest, ledger_service):
     ledger_service.service.add_source("vm-b", ledger_service.dir / "vm-b.sock", executor="model-x")
     guest_config(split_guest.runner, ledger_service.dir / "vm-b.sock")

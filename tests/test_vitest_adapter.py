@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tddcli import config as config_mod
+from tddcli.adapters.base import GateResult
 from tddcli.adapters.vitest_adapter import VitestAdapter
 
 TOML = """
@@ -167,3 +168,28 @@ def test_batch_collection_skips_a_listing_entry_without_a_name(tmp_path, monkeyp
         adapters.vitest_adapter, "run_command", lambda command, cwd, **_: (0, listing, "")
     )
     assert adapter.collect().tests == {"frontend::a.test.ts > adds"}
+
+
+def test_a_listing_that_prints_nothing_names_its_command_and_exit(tmp_path):
+    """Issue 184: a listing that fails without a word left the gate's detail blank
+    (or only the separators between suites), and doctor crashed on it."""
+    (tmp_path / "frontend").mkdir()
+    (tmp_path / "tdd.toml").write_text(
+        "[project.frontend]\n"
+        'root            = "frontend"\n'
+        'adapter         = "vitest"\n'
+        'test_paths      = ["**/*.test.ts"]\n'
+        "collect_command = \"sh -c 'exit 3'\"\n"
+        "\n"
+        "[[project.frontend.override]]\n"
+        'pattern         = "contract/"\n'
+        'test_command    = "npx vitest run"\n'
+        "collect_command = \"sh -c 'exit 4'\"\n"
+    )
+    adapter = VitestAdapter(config_mod.load(tmp_path).project("frontend"), tmp_path)
+
+    assert adapter.collectable() == GateResult(
+        ok=False,
+        output="`sh -c 'exit 3'` exited 3 with no output\n\n"
+        "`sh -c 'exit 4'` exited 4 with no output",
+    )

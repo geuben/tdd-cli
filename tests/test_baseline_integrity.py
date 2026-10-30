@@ -4,6 +4,7 @@ merely *looks* clean turns every pre-existing failure into a permanent regressio
 
 from __future__ import annotations
 
+import re
 import threading
 
 from conftest import git, run_cli, write_plan
@@ -629,3 +630,23 @@ def test_run_start_probes_concurrently_under_a_bounded_pool(repo_three, monkeypa
     assert out["ok"], out
     assert out["result"]["baselines"] == {"backend": 0, "svc": 0}, out["result"]["baselines"]
     assert peak == 2, f"expected peak concurrency of 2, got {peak}"
+
+
+def test_a_nothing_collected_refusal_quotes_the_first_failure(repo):
+    """Issue 184: the refusal named the first file but not why it failed, though
+    collection had already recorded the command, its exit and its stderr."""
+    (repo / "tdd.toml").write_text(
+        (repo / "tdd.toml").read_text() + 'collect_command = "tdd-184-no-such-tool pytest"\n'
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a collect command that is not installed")
+
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+
+    assert re.search(
+        r"\ntests/test_smoke\.py: `tdd-184-no-such-tool pytest --collect-only -q"
+        r" tests/test_smoke\.py` exited 127: [^\n]*not found\Z",
+        out["error"],
+    ), out
