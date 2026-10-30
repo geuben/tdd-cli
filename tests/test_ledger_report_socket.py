@@ -236,3 +236,17 @@ def test_metrics_since_keeps_runs_open_or_ended_since_then(repo, report_service)
     on_report = run_ids(answer(report_service.report, "metrics", None, since=ACCEPTED[0]))
 
     assert (by_form, on_report) == ({ts: [2, 3, 4] for ts in ACCEPTED}, [2, 3, 4])
+
+
+def test_metrics_since_refuses_a_time_with_no_offset(repo, report_service):
+    host_ledger(report_service.home, SINCE_RUNS)
+    rejected = ["2026-09-01T10:20:00", "2026-09-01", "yesterday", ""]
+
+    reasons = [
+        run_cli(repo, "ledger", "metrics", "--since", ts)["result"].get("reason") for ts in rejected
+    ]
+    on_report = [
+        answer(report_service.report, "metrics", None, since=v) for v in (5, "2026-09-01T10:20:00")
+    ]
+
+    assert reasons + on_report == ["bad_since"] * 6
