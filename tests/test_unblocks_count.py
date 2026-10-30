@@ -125,3 +125,11 @@ def test_an_unblock_whose_note_reads_like_an_abandonment_is_still_counted(tmp_pa
         FIDELITY_HEAD
         + "- Unblocks: 1\n  - 2026-09-01T10:05:00+00:00: abandoned: superseded by #145",
     )
+
+
+def test_unblock_without_a_note_asks_for_one_describing_the_unblock(repo):
+    blocked_run(repo)
+
+    out = run_cli(repo, "resume", "--unblock")
+
+    assert out["error"] == "--unblock requires --note describing the unblock"
