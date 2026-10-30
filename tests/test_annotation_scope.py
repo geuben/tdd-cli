@@ -128,6 +128,7 @@ REJECTED: list[tuple[str, str]] = [
     ),
     ("[{applies_to: [1]}]", "every annotation key mapping needs a string `name`"),
     ("[{name: 3, applies_to: [1]}]", "every annotation key mapping needs a string `name`"),
+    ("[{name: '', applies_to: [1]}]", "every annotation key mapping needs a string `name`"),
     (
         "[{name: k, applies_to: [true]}]",
         "annotation key 'k': applies_to must be a cycle ordinal or a list of them",
