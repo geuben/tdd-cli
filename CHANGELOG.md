@@ -75,7 +75,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   `prior_run_id` and `ended_at`, before any suite runs. Re-running a delivered plan used to
   record a fresh run whose every cycle was a `red_first_violation`. To redeliver, register
   the plan under a new path. Blocked and abandoned runs do not count. With a ledger service,
-  upgrade the host with or before its guests: a 0.15.0 host refuses the new `delivered_run`
+  upgrade the host with or before its guests: a 0.16.0 host refuses the new `delivered_run`
   read with `method_not_allowed`.
 
 ### Fixed
