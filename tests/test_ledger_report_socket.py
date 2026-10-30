@@ -181,3 +181,14 @@ def test_the_report_socket_reads_ledgers_it_cannot_write(report_service):
 
 def test_the_report_socket_is_mode_660(report_service):
     assert stat.S_IMODE(report_service.report.stat().st_mode) == 0o660
+
+
+def test_a_report_socket_on_the_admin_path_is_refused(tmp_path):
+    path = tmp_path / "ledger.toml"
+    path.write_text(
+        '[service]\nadmin_socket = "/tmp/tdd-185-admin.sock"\n'
+        'report_socket = "/tmp/tdd-185-admin.sock"\n'
+    )
+
+    with pytest.raises(service.ServiceConfigError, match="report_socket"):
+        service.load_config(path)
