@@ -58,6 +58,7 @@ class ServiceConfigError(RuntimeError):
 class ServiceConfig:
     admin_socket: Path
     home: Path
+    report_socket: Path | None = None
 
 
 def config_path() -> Path:
@@ -79,9 +80,11 @@ def load_config(path: Path | None = None) -> ServiceConfig:
     if not section.get("admin_socket"):
         raise ServiceConfigError(f"{path}: [service] needs `admin_socket`")
     home = section.get("home")
+    report = section.get("report_socket")
     return ServiceConfig(
         admin_socket=Path(section["admin_socket"]),
         home=Path(home) if home else Path.home() / ".local" / "share" / "tdd-cli",
+        report_socket=Path(report) if report else None,
     )
 
 
@@ -303,6 +306,7 @@ class Service:
     def __init__(self, config: ServiceConfig) -> None:
         self.config = config
         self.listeners: dict[str | None, _Listener] = {}
+        self.report_listener: _Listener | None = None
         self.executors: dict[str, str | None] = {}
         # Worker leases held by guests, across every source: one budget per host. A
         # lease is its connection, held open for as long as the suite runs.
@@ -312,6 +316,8 @@ class Service:
     def start(self) -> None:
         self.config.home.mkdir(parents=True, exist_ok=True)
         self.listeners[None] = _Listener(self.config.admin_socket, self, None)
+        if self.config.report_socket is not None:
+            self.report_listener = _Listener(self.config.report_socket, self, None)
         for name, entry in sorted(self._saved().items()):
             self.add_source(name, Path(entry["socket"]), entry.get("executor"))
 
@@ -334,6 +340,9 @@ class Service:
         for listener in list(self.listeners.values()):
             listener.close()
         self.listeners.clear()
+        if self.report_listener is not None:
+            self.report_listener.close()
+            self.report_listener = None
 
     def add_source(self, name: str, socket_path: Path, executor: str | None = None) -> None:
         self.executors[name] = executor
