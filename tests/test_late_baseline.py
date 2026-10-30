@@ -147,7 +147,7 @@ def test_friction_log_names_late_baselines_in_the_run_header(repo_schema_other):
     ) == (True, True)
 
 
-def test_friction_log_lists_amended_baseline_verdicts_under_human_interventions(repo):
+def test_friction_log_lists_amended_baseline_verdicts_under_unblocks(repo):
     from conftest import git as _git
     from test_baseline_integrity import reach_refactor
 

@@ -6,6 +6,7 @@ import json
 import sqlite3
 
 from conftest import run_cli, write_plan
+from tddcli import render
 from tddcli.ledger import Ledger
 
 PLAN = """---
@@ -88,3 +89,13 @@ def test_metrics_reports_unblocks_not_human_interventions(repo):
     m = run_cli(repo, "metrics")["result"]["runs"][0]
 
     assert (m.get("unblocks"), "human_interventions" in m) == (1, False)
+
+
+def test_the_friction_log_lists_each_unblock_under_unblocks(tmp_path, ledger_home):
+    ledger, run = fixture_ledger(tmp_path, [(2, "fixed the fixture"), (5, "verified against main")])
+
+    assert fidelity(render.friction_log(ledger, run)) == FIDELITY_HEAD + (
+        "- Unblocks: 2\n"
+        "  - 2026-09-01T10:02:00+00:00: fixed the fixture\n"
+        "  - 2026-09-01T10:05:00+00:00: verified against main"
+    )
