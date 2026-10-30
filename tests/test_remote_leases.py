@@ -91,3 +91,16 @@ def test_a_guest_caps_its_lease_at_the_cpus_it_may_use(split_guest, monkeypatch)
 
     with leases.worker_lease() as workers:
         assert workers == 3
+
+
+def test_core_budget_is_the_guests_own_budget(split_guest, monkeypatch):
+    got = {}
+    for budget, cpus in ((4, 64), (64, 64), (10, 3)):
+        monkeypatch.setattr(
+            os, "sched_getaffinity", lambda _pid, n=cpus: set(range(n)), raising=False
+        )
+        guest_config(split_guest.runner, split_guest.socket, f"core_budget = {budget}\n")
+        with leases.worker_lease() as workers:
+            got[budget] = workers
+
+    assert got == {4: 4, 64: 12, 10: 10}
