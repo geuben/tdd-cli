@@ -35,6 +35,8 @@ def test_a_split_runner_that_can_act_reports_its_checks_once_and_in_order(
 ):
     """Probing the drop to the agent first must not change what a healthy runner's
     doctor says: the same checks, in the same order, with `id -u` asked once."""
+    # `uv run pytest` exports one; its informational check is not under test here.
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
     agent_context(monkeypatch, umask=0o022)
 
     out = run_cli(repo, "--agent-context-stdin", "doctor")
@@ -161,6 +163,22 @@ def test_socket_mode_doctor_names_the_source_it_reaches(repo, split_guest):
 
     # `source vm-1`, not just `vm-1`: the socket's own file name already says that.
     assert (reachable["ok"], "source vm-1" in reachable["detail"]) == (True, True)
+
+
+def test_a_split_runner_notes_the_agents_virtual_env_not_its_own(
+    repo, split_runner, monkeypatch, tmp_path
+):
+    """Issue #99 — sudo resets the runner's environment, but the suites run with the
+    agent's, so the agent's VIRTUAL_ENV is the one that can leak into them."""
+    outside = tmp_path / "some-other-repo" / ".venv"
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+    agent_context(monkeypatch, umask=0o022, VIRTUAL_ENV=str(outside))
+
+    out = run_cli(repo, "--agent-context-stdin", "doctor")
+
+    assert _check(out, "VIRTUAL_ENV")["detail"].startswith(
+        f"VIRTUAL_ENV={outside} is outside every project root"
+    )
 
 
 def test_split_doctor_says_a_failed_collection_ran_through_the_runner_as_the_agent(

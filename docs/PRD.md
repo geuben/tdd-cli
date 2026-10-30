@@ -203,9 +203,9 @@ an auditor compares them against reality.
 
 ### IntegrityEvent
 Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mismatch`,
-`off_protocol_invocation`, `stale_artifact`, `plan_blob_changed`, `executor_unknown`,
-`artifact_regenerate_failed`, `baseline_late_probe`, `baseline_late_probe_unobserved`,
-`flaky_pre_existing`, `ignored_paths_dirty`.
+`off_protocol_invocation`, `stale_artifact`, `artifact_stale_inherited`, `plan_blob_changed`,
+`executor_unknown`, `artifact_regenerate_failed`, `baseline_late_probe`,
+`baseline_late_probe_unobserved`, `flaky_pre_existing`, `ignored_paths_dirty`.
 
 `flaky_pre_existing` is an untouched pre-existing failure that passed when rerun alone (R9.1f).
 
@@ -548,6 +548,12 @@ recorder rather than by each call site. A blocker with an empty `detail` is
 unfalsifiable — `resolve_blocker` with nothing to resolve — and an agent that meets
 one has no move left but to re-run doctor and read the same output again.
 
+When `VIRTUAL_ENV` is set in the agent's environment (in split mode, the one the client sends
+the runner, since the suites run with it), doctor records an informational `VIRTUAL_ENV` check (always
+`ok: true`). It names the project whose root holds the environment, or warns that the variable
+points outside every project root in `tdd.toml` and was inherited from whatever launched the
+shell, so a runner that honours it would run the suite in another environment (issue #99).
+
 ### 8.2 Registration
 | Command | Behaviour |
 |---|---|
@@ -746,6 +752,7 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   entries older than that many seconds, bounding how stale a reused baseline may be. A stale or
   wrong reused baseline is recoverable via `resume --unblock --accept-failures` (R9.5b),
   which treats a reused baseline row as an ordinary row, for tests that fail at the start sha.
+  A probe whose suite produced no readable report (R9.5j) is never cached.
 - **R9.6** Baseline failures are subtracted from `other_failures` in every subsequent invocation.
   A target-only invocation (R9.1a) has nothing to subtract from: it records `others_observed = 0`,
   and its empty `other_failures` must not be read as a clean run.
@@ -771,6 +778,12 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   `reason: "services_unreachable"` and a `projects` array carrying `{project, exit_code, output}`
   per failing project. There is no override: a down stack yields no believable baseline. The
   health probe runs before the claim so a down stack never touches the ledger.
+- **R9.5j** `run start` refuses a baseline whose suite produced no report the tool could read (the
+  adapter's `Verdict.error`, which a cycle records as `tooling_defect`). The refusal returns
+  `reason: "baseline_unreadable"` and a `projects` array carrying `{project, defect}`. It runs
+  before R9.5a's checks and R9.5g's ratio gate, and `--accept-baseline` does not override it. A
+  project with no tests and no collection errors is exempt, as in R9.5a. Nothing is written to
+  the ledger (issue #99).
 
 ### 9.3 Contract cycles
 - **R9.8** A cycle may declare multiple target tests, spanning multiple projects, **only** if the
@@ -789,7 +802,13 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   gate configuration that lives outside the project's declared roots (e.g. a top-level
   `pyproject.toml`) does not affect the tree hash and therefore does not invalidate the memo.
 - **R9.12** Before a run starts and at every cycle close, declared artifacts are checked for
-  staleness against their producer. When the tool cannot resolve staleness itself (no `regenerate`
+  staleness against their producer. At a cycle close only the artifacts the run can affect are
+  checked: those whose root producer is in the run's reachable set (R9.5c), and any whose
+  producer root the closing cycle touched (the test R9.2 uses to widen the close sweep). Any
+  other artifact's staleness was inherited from the branch point. `run start` still checks it,
+  regenerates it, and refuses when its hook fails. If it stays stale, `run start` records one
+  `artifact_stale_inherited` integrity event instead of `stale_artifact`. Its detail is a JSON
+  array of those artifact names, and no cycle checks them again (issue #99). When the tool cannot resolve staleness itself (no `regenerate`
   command, or the regenerate hook produced no commit), it emits `stale_artifact` and blocks the
   close — this is one of the few hard gates (§12), because a stale contract produces a *green*
   wrong answer. When the tool resolves staleness by regenerating and committing, it records

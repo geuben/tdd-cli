@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import re
 from collections.abc import Generator, Sequence
 from pathlib import Path
 
@@ -40,6 +41,17 @@ def worktree_root(start: Path) -> Path:
     return Path(out).resolve()
 
 
+def locate(start: Path) -> tuple[Path, Path]:
+    """`worktree_root` and `repo_identity` from one git process: every command that
+    opens the ledger needs both, and a spawn is most of what either costs."""
+    lines = git(
+        start, "rev-parse", "--show-toplevel", "--path-format=absolute", "--git-common-dir"
+    ).splitlines()
+    if len(lines) != 2 or not lines[0].strip():
+        raise GitError(f"not a git worktree: {start}")
+    return Path(lines[0].strip()).resolve(), Path(lines[1].strip()).resolve().parent
+
+
 def repo_identity(worktree: Path) -> Path:
     """The canonical repository path — the *common* git dir, shared by all worktrees.
 
@@ -54,10 +66,18 @@ def head(worktree: Path) -> str:
     return git(worktree, "rev-parse", "HEAD").strip()
 
 
+_SHA = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+
+
 def blob_sha_at_head(worktree: Path, rel_path: str) -> tuple[str, str]:
     """(blob_sha, commit_sha) for a path as committed — never the working-tree copy."""
-    commit = head(worktree)
-    out = git(worktree, "rev-parse", f"HEAD:{rel_path}", check=False).strip()
+    # One process for both. Unchecked, since a missing path fails the whole call:
+    # each line is judged on its own, as two separate calls would judge them.
+    lines = git(worktree, "rev-parse", "HEAD", f"HEAD:{rel_path}", check=False).splitlines()
+    commit = lines[0].strip() if lines else ""
+    if not _SHA.fullmatch(commit):
+        raise GitError(f"git rev-parse HEAD failed in {worktree}")
+    out = lines[1].strip() if len(lines) > 1 else ""
     if not out or " " in out:
         raise GitError(f"{rel_path} is not committed at HEAD")
     return out, commit
@@ -122,6 +142,19 @@ def diff_text(worktree: Path) -> str:
     return git(worktree, "diff")
 
 
+_index_paths: dict[Path, Path] = {}
+
+
+def _index_path(worktree: Path) -> Path:
+    """Where a worktree's index lives. It never moves, and `tree_hash` runs several
+    times per command, so it is asked of git once per worktree per process."""
+    if worktree not in _index_paths:
+        _index_paths[worktree] = Path(
+            git(worktree, "rev-parse", "--path-format=absolute", "--git-path", "index").strip()
+        )
+    return _index_paths[worktree]
+
+
 def tree_hash(worktree: Path, roots: list[str]) -> str:
     """Hash of working-tree content under the given roots: tracked and untracked,
     ignored files excluded. Independent of index and commit state, so the same
@@ -138,9 +171,7 @@ def tree_hash(worktree: Path, roots: list[str]) -> str:
     created it. The temp dir, the copy and the git calls all go through the
     actor: in split mode they are the agent's, not the runner's.
     """
-    real_index = Path(
-        git(worktree, "rev-parse", "--path-format=absolute", "--git-path", "index").strip()
-    )
+    real_index = _index_path(worktree)
     act = actor.current()
     h = hashlib.sha256()
     tmp = act.make_temp_dir("tdd-tree-hash-")

@@ -92,6 +92,10 @@ class LocalActor:
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.symlink_to(src)
 
+    def environ(self) -> dict[str, str]:
+        """The environment the agent's commands run with."""
+        return self._env({}) or dict(os.environ)
+
     def provenance(self) -> str:
         """Where a command ran, for a failure the agent may not reproduce in its own
         shell. Nothing to say when the actor is the process itself."""
