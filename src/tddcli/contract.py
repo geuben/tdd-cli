@@ -40,6 +40,7 @@ class DeclaredCycle:
     modifies_tests: list[str] = field(default_factory=list)
     commit_messages: dict[str, str] = field(default_factory=dict)
     meta: dict = field(default_factory=dict)
+    annotation_keys: list[str] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -190,6 +191,37 @@ def parse_cycle(raw: dict, config: Config | None) -> DeclaredCycle:
     )
 
 
+def _scope_list(value) -> list:
+    return value if isinstance(value, list) else [value]
+
+
+def _resolve_annotation_keys(entries, cycles: list[DeclaredCycle]) -> list[str]:
+    """Set each cycle's required keys; return the names in declaration order."""
+    if not isinstance(entries, list):
+        raise ContractError("annotation_keys must be a list of strings or mappings")
+    names: list[str] = []
+    for c in cycles:
+        c.annotation_keys = []
+    for entry in entries:
+        if isinstance(entry, str):
+            name, applies = entry, lambda c: True
+        elif isinstance(entry, dict):
+            name = entry.get("name")
+            if "applies_to" in entry:
+                ordinals = _scope_list(entry["applies_to"])
+                applies = lambda c, o=ordinals: c.ordinal in o  # noqa: E731
+            else:
+                projects = _scope_list(entry.get("projects"))
+                applies = lambda c, p=projects: any(x in p for x in c.projects)  # noqa: E731
+        else:
+            raise ContractError("annotation_keys must be a list of strings or mappings")
+        names.append(name)
+        for c in cycles:
+            if applies(c):
+                c.annotation_keys.append(name)
+    return names
+
+
 def parse(text: str, plan_path: str, config: Config | None = None) -> PlanContract:
     """Absent front-matter is legitimate (R7.9); malformed front-matter is a defect (R7.10)."""
     block = split_front_matter(text)
@@ -214,9 +246,7 @@ def parse(text: str, plan_path: str, config: Config | None = None) -> PlanContra
         raise ContractError(f"duplicate cycle ordinals: {ordinals}")
     cycles.sort(key=lambda c: c.ordinal)
 
-    keys = data.get("annotation_keys", [])
-    if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys):
-        raise ContractError("annotation_keys must be a list of strings")
+    keys = _resolve_annotation_keys(data.get("annotation_keys", []), cycles)
 
     anc = data.get("ancillary_files", [])
     if not isinstance(anc, list) or not all(isinstance(p, str) for p in anc):
