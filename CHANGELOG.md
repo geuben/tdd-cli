@@ -83,6 +83,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **An unresolved stale artifact now blocks the close, as PRD R9.12 specifies** (#110). An
+  artifact whose `check` fails and that the tool cannot regenerate (no `regenerate` hook, or
+  the hook commits nothing) used to record `stale_artifact` and let the cycle close. `tdd
+  advance` now replies `fix_regression` with `result.stale_artifacts` naming it, and the
+  cycle stays open until the check passes. `tdd run start` refuses with `reason:
+  "stale_artifact"` and ends the run `refused`. An artifact the tool regenerates and
+  commits is unaffected, and so is inherited staleness (`artifact_stale_inherited`, #99).
 - **Paths git's ignore rules match, including tracked ones such as a committed `.gradle/`,
   are no longer staged, flagged `undeclared_file_touched` or held by the run-close gate**
   (#98). A tracked one inside the cycle's project no longer fails GREEN's commit. Any left

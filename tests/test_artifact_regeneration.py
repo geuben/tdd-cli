@@ -59,6 +59,21 @@ def _start_run_with_id(repo, artifact_toml: str) -> int:
     return out["run"]["id"]
 
 
+def _register_spec_artifact(repo, toml_lines: str) -> str:
+    """Declare artifact `spec` (with `toml_lines` appended), commit, register PLAN."""
+    with (repo / "tdd.toml").open("a") as f:
+        f.write(
+            "\n[artifact.spec]\n"
+            'path        = "backend/spec.json"\n'
+            'produced_by = "backend"\n' + toml_lines
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "declare spec artifact")
+    plan = write_plan(repo, PLAN)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    return plan
+
+
 def test_regeneration_commits_the_artifacts_own_path(repo):
     """The regenerated spec must land in the chore commit even without `generated = true`."""
     _start_run(
@@ -140,14 +155,11 @@ def test_unresolved_stale_artifact_still_emits_event(repo):
     git(repo, "commit", "-q", "-m", "declare spec artifact")
     plan = write_plan(repo, PLAN)
     assert run_cli(repo, "plan", "register", plan)["ok"]
-    out = run_cli(repo, "run", "start", "--plan", plan)
-    assert out["ok"], out
-    run_id = out["run"]["id"]
+    run_cli(repo, "run", "start", "--plan", plan)
 
     ledger = Ledger(gitutil.repo_identity(repo))
     event = ledger.one(
-        "SELECT * FROM integrity_event WHERE run_id = ? AND kind = 'stale_artifact' AND detail = 'spec'",
-        (run_id,),
+        "SELECT * FROM integrity_event WHERE cycle_id IS NULL AND kind = 'stale_artifact' AND detail = 'spec'"
     )
     assert event is not None, "expected a stale_artifact event for spec"
 
@@ -217,14 +229,14 @@ def test_failed_regenerate_after_stale_check_reports_hook_failure_not_stale(repo
             "\n[artifact.wasm]\n"
             'path        = "wasm/bundle.js"\n'
             'produced_by = "backend"\n'
-            'check       = "false"\n'
+            f'check       = "test ! -f {marker}"\n'
             f'regenerate  = "test ! -f {marker} || {{ echo boom >&2; exit 1; }}"\n'
         )
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "declare wasm artifact")
     plan = write_plan(repo, PLAN)
     assert run_cli(repo, "plan", "register", plan)["ok"]
-    # run start: check=false → stale, hook succeeds (no marker) → run-level stale_artifact
+    # run start: no marker yet → the check passes, so the artifact is fresh at start
     out = run_cli(repo, "run", "start", "--plan", plan)
     assert out["ok"], out
     run_id = out["run"]["id"]
@@ -480,3 +492,66 @@ def test_run_start_reports_outside_stale_artifacts_once_as_inherited(repo):
     assert _artifact_events(repo, out["run"]["id"]) == [
         ("artifact_stale_inherited", None, '["client", "spec"]')
     ]
+
+
+def test_unresolved_stale_artifact_at_close_replies_fix_regression(repo, tmp_path):
+    marker = tmp_path / "stale"
+    plan = _register_spec_artifact(repo, f'check       = "test ! -f {marker}"\n')
+    assert run_cli(repo, "run", "start", "--plan", plan)["ok"]
+
+    marker.touch()
+    adv = run_cli(repo, "advance")
+
+    assert (adv["next_action"]["verb"], adv["result"].get("stale_artifacts")) == (
+        "fix_regression",
+        ["spec"],
+    )
+
+
+def test_stale_artifact_whose_hook_commits_nothing_replies_fix_regression(repo, tmp_path):
+    marker = tmp_path / "stale"
+    plan = _register_spec_artifact(
+        repo, f'check       = "test ! -f {marker}"\nregenerate  = "true"\n'
+    )
+    assert run_cli(repo, "run", "start", "--plan", plan)["ok"]
+
+    marker.touch()
+    adv = run_cli(repo, "advance")
+
+    assert (adv["next_action"]["verb"], adv["result"].get("stale_artifacts")) == (
+        "fix_regression",
+        ["spec"],
+    )
+
+
+def test_cycle_closes_once_the_stale_artifact_is_fresh_again(repo, tmp_path):
+    marker = tmp_path / "stale"
+    plan = _register_spec_artifact(repo, f'check       = "test ! -f {marker}"\n')
+    assert run_cli(repo, "run", "start", "--plan", plan)["ok"]
+    marker.touch()
+    first = run_cli(repo, "advance")
+    assert first["next_action"]["verb"] == "fix_regression", first
+
+    marker.unlink()
+    second = run_cli(repo, "advance")
+
+    assert second["next_action"]["verb"] == "complete"
+
+
+def test_unresolved_stale_artifact_at_run_start_refuses(repo):
+    plan = _register_spec_artifact(repo, 'check       = "false"\n')
+
+    out = run_cli(repo, "run", "start", "--plan", plan)
+    status = run_cli(repo, "status")
+    run_row = Ledger(gitutil.repo_identity(repo)).one(
+        "SELECT outcome FROM run ORDER BY id DESC LIMIT 1"
+    )
+
+    assert (
+        out["ok"],
+        "spec" in (out.get("error") or ""),
+        out["result"].get("reason"),
+        out["result"].get("stale_artifacts"),
+        run_row["outcome"],
+        status["result"].get("active"),
+    ) == (False, True, "stale_artifact", ["spec"], "refused", False)

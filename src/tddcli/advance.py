@@ -514,6 +514,18 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
             commit=sha,
         )
 
+    if artifact_outcome.stale:
+        names = ", ".join(artifact_outcome.stale)
+        return _reply(
+            engine,
+            cycle,
+            Verb.FIX_REGRESSION,
+            f"Declared artifact(s) stale and not regenerated: {names}. Rebuild and commit them, "
+            "or fix the regenerate hook, until the check passes, then re-run `tdd advance`.",
+            stale_artifacts=artifact_outcome.stale,
+            commit=sha,
+        )
+
     regenerated = artifact_outcome.regenerated
 
     # §6.1 — when nothing changed since GREEN, the cycle's own suites just passed on an

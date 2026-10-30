@@ -49,6 +49,7 @@ def _failure_rows(verdict, ids) -> dict[str, dict]:
 class ArtifactOutcome:
     regenerated: list[str]
     failed: list[dict]
+    stale: list[str]
 
 
 @dataclass
@@ -465,6 +466,7 @@ class Engine:
         """R9.12/R9.20 — the tool regenerates; the agent is informed, not asked."""
         regenerated: list[str] = []
         failed: list[dict] = []
+        stale_names: list[str] = []
         inherited: list[str] = []
         scope = set(self.config.reachable_projects([p for c in self.declared for p in c.projects]))
         for art in self.config.artifacts.values():
@@ -550,11 +552,12 @@ class Engine:
                     "stale_artifact",
                     art.name,
                 )
+                stale_names.append(art.name)
         if inherited:
             self.ledger.event(
                 self.run["id"], None, "artifact_stale_inherited", json.dumps(sorted(inherited))
             )
-        return ArtifactOutcome(regenerated=regenerated, failed=failed)
+        return ArtifactOutcome(regenerated=regenerated, failed=failed, stale=stale_names)
 
     def _artifact_stale(self, art) -> tuple[bool, dict | None]:
         if art.check:
