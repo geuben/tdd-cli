@@ -70,6 +70,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   `human_intervention` row, the rows it wrote before are left out of the count, and the
   friction log names the reason on a new `Abandoned:` header line. The ledger schema is
   unchanged.
+- **`tdd run start` refuses a plan that was already delivered** (#97). A plan path that a
+  completed run already delivered is refused with `reason: "plan_already_delivered"`,
+  `prior_run_id` and `ended_at`, before any suite runs. Re-running a delivered plan used to
+  record a fresh run whose every cycle was a `red_first_violation`. To redeliver, register
+  the plan under a new path. Blocked and abandoned runs do not count. With a ledger service,
+  upgrade the host with or before its guests: a 0.16.0 host refuses the new `delivered_run`
+  read with `method_not_allowed`.
 
 ### Fixed
 

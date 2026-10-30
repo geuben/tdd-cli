@@ -308,6 +308,20 @@ Refusals, under `result.reason`, write nothing: `reason_required` (blank reason)
 abandoned), `worktree_exists` (`--run` names another worktree that still exists), and
 `advance_in_flight` (a live `tdd advance` holds the worktree; a stale claim is released).
 
+### A delivered plan is not run again
+
+Once a run of a plan path has ended `complete`, `tdd run start` refuses that path for good,
+with `result.reason: "plan_already_delivered"`, `prior_run_id` (the earliest completed run of
+the path, the one that delivered it) and its `ended_at`. The check keys on the path, not on
+the plan's blob, so editing and re-registering a delivered plan is still refused. Only
+`complete` delivers: runs that ended `blocked`, `abandoned` or `refused` do not count. The
+refusal comes before the worktree is claimed, so no suite runs and nothing is written.
+
+There is no override. To deliver a plan again (say, its PR was closed unmerged), copy it to a
+new path, commit it, and `tdd plan register <new path>`. Re-verifying code that is already
+delivered is not supported: a re-run would record every cycle as a `red_first_violation`.
+A harness must treat `plan_already_delivered` as terminal and not retry the start.
+
 The gate composes with `ancillary_files`: declared paths never fire `undeclared_file_touched`,
 so they are never seen by the gate.
 

@@ -460,6 +460,7 @@ GUEST_READS = frozenset(
         "cycle_notes",
         "cycle_times",
         "cycles",
+        "delivered_run",
         "event_counts",
         "event_details",
         "failure_details",
@@ -558,6 +559,7 @@ SOURCE_ROOTED = frozenset(
         "claim_advance",
         "claim_row",
         "contract_by_blob",
+        "delivered_run",
         "get_meta",
         "latest_blocked_run",
         "latest_contract",
@@ -1042,6 +1044,16 @@ class Ledger:
         scope, extra = self._scoped()
         return self.one(
             f"SELECT * FROM plan_contract WHERE plan_path = ?{scope} ORDER BY id DESC LIMIT 1",
+            (plan_path, *extra),
+        )
+
+    def delivered_run(self, plan_path: str) -> sqlite3.Row | None:
+        """The earliest completed run of any contract registered under `plan_path`."""
+        scope, extra = self._scoped("run.source")
+        return self.one(
+            "SELECT run.* FROM run JOIN plan_contract ON plan_contract.id = run.plan_contract_id"
+            f" WHERE plan_contract.plan_path = ? AND run.outcome = 'complete'{scope}"
+            " ORDER BY run.id LIMIT 1",
             (plan_path, *extra),
         )
 

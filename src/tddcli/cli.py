@@ -900,6 +900,17 @@ def cmd_run_start(args) -> Envelope:
     if contract_row is None:
         return failure(f"{rel} is not registered; run `tdd plan register {rel}` first")
 
+    delivered = ledger.delivered_run(rel)
+    if delivered is not None:
+        return failure(
+            f"{rel} was delivered by run {delivered['id']} (ended {delivered['ended_at']});"
+            " a delivered plan is not run again. To deliver it again, copy it to a new path,"
+            " commit it, and run `tdd plan register <new path>`.",
+            reason="plan_already_delivered",
+            prior_run_id=delivered["id"],
+            ended_at=delivered["ended_at"],
+        )
+
     # R7.11 — the plan blob is the contract; drift must surface.
     blob_changed = False
     try:

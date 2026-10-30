@@ -207,7 +207,9 @@ def test_abandon_refuses_a_run_that_already_ended(repo):
     start(repo, plan)
     a_id = last_run_id(repo)
     run_cli(repo, "cycle", "skip", "--reason", "r")
-    start(repo, plan)
+    again = write_plan(repo, PLAN, "tasks/plan-again.md")
+    run_cli(repo, "plan", "register", again)
+    start(repo, again)
     b_id = last_run_id(repo)
     run_cli(repo, "run", "abandon", "--reason", "superseded")
 
