@@ -108,3 +108,17 @@ def test_the_close_sweep_closes_when_an_untouched_failure_passes_on_rerun(repo, 
         "complete",
         ["CLOSE_SWEEP"],
     )
+
+
+def test_a_close_sweep_failure_that_fails_again_carries_its_rerun_outcomes(repo, tmp_path):
+    _to_green(repo, tmp_path / "count", "n >= 3")
+    run_cli(repo, "advance")  # GREEN: execution 2
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    total = a + b\n    return total\n"
+    )
+    out = run_cli(repo, "advance")  # the close sweep: execution 3
+    assert (
+        out["next_action"]["verb"],
+        out["result"]["failures"],
+        out["result"].get("rerun_outcomes"),
+    ) == ("fix_regression", [ID], {ID: ["failed", "failed"]})
