@@ -301,9 +301,7 @@ class Engine:
             project = self.config.project(name)
             adapter = adapters.build(project, self.worktree)
             path, _ = plan_paths.locate(adapter, project, native, scan_cache)
-            if path is not None and (
-                path in declared or project.relative_to_root(path) in declared
-            ):
+            if path is None or path in declared or project.relative_to_root(path) in declared:
                 remaining.append(test_id)
                 continue
             verdict = adapter.run(test_id, target_only=True)
