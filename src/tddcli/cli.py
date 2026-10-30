@@ -24,6 +24,7 @@ from . import (
     adapters,
     fleet,
     gitutil,
+    harness,
     identity,
     render,
     snapshot,
@@ -44,7 +45,15 @@ from . import service as service_mod
 from . import target_lint as target_lint_mod
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
-from .envelope import Envelope, NextAction, Verb, failure, heartbeat
+from .envelope import (
+    ENVELOPE_VERSION,
+    VERB_SET_VERSION,
+    Envelope,
+    NextAction,
+    Verb,
+    failure,
+    heartbeat,
+)
 from .ledger import Ledger, LedgerVersionError, ledger_path, now, open_ledger
 from .machine import CLOSED, SKIPPED, Engine
 from .remote import RemoteLedger
@@ -171,10 +180,80 @@ def _project_key(name: str) -> str:
 
 def cmd_init(args) -> Envelope:
     worktree = _worktree()
+    if args.update_skill and not args.skill:
+        return failure(
+            "--update-skill replaces a harness's files: name the harness with --skill",
+            reason="skill_required",
+        )
+    chosen = None
+    if args.skill:
+        chosen = harness.HARNESSES.get(args.skill)
+        if chosen is None:
+            return failure(
+                f"unknown harness {args.skill!r}; known: {', '.join(sorted(harness.HARNESSES))}",
+                reason="unknown_harness",
+            )
+        for scaffold in chosen.files:
+            if not docs_mod.shipped(scaffold.source).is_file():
+                return failure(
+                    f"{scaffold.source} is missing from this installation of tdd-cli;"
+                    " nothing was written. Please report the packaging bug.",
+                    reason="missing_from_install",
+                )
+        # A dest that differs may be a local customisation; --force is for tdd.toml only.
+        differs = [
+            scaffold.dest
+            for scaffold in chosen.files
+            if (worktree / scaffold.dest).is_file()
+            and (worktree / scaffold.dest).read_bytes()
+            != docs_mod.shipped(scaffold.source).read_bytes()
+        ]
+        if differs and not args.update_skill:
+            return failure(
+                f"{', '.join(differs)} differ from this version's copies; nothing was written."
+                " Pass --update-skill to replace them (re-apply any local additions after).",
+                reason="harness_files_differ",
+                differs=differs,
+            )
     path = worktree / config_mod.CONFIG_NAME
     if path.exists() and not args.force:
-        return failure(f"{path} already exists; pass --force to overwrite")
+        if chosen is None:
+            return failure(f"{path} already exists; pass --force to overwrite")
+        # Adding the harness to a configured project must not cost its config.
+        result: dict = {"config": "kept"}
+        detail = "Kept the existing tdd.toml."
+    else:
+        result, detail = _write_config(worktree, path)
+    if chosen is not None:
+        for scaffold in chosen.files:
+            actor.current().write_file(
+                worktree / scaffold.dest, docs_mod.shipped(scaffold.source).read_bytes()
+            )
+        settings = worktree / chosen.settings_path
+        if not settings.exists():
+            actor.current().write_file(
+                settings, (json.dumps(chosen.settings, indent=2) + "\n").encode()
+            )
+            result["harness"] = {"name": chosen.name, "settings": "written"}
+        elif harness.wires(chosen, settings.read_text(errors="replace")):
+            result["harness"] = {"name": chosen.name, "settings": "wired"}
+        else:
+            # Never merged into: it is the user's file, and may already hold hooks.
+            result["harness"] = {
+                "name": chosen.name,
+                "settings": "not_written",
+                "settings_stanza": chosen.settings,
+            }
+            detail += (
+                f" {chosen.settings_path} already exists and does not wire the tdd hooks:"
+                " merge result.harness.settings_stanza into it. Without the Stop hook"
+                " nothing stops the agent ending its turn mid-run."
+            )
+    return Envelope(result=result, next_action=NextAction(Verb.CONFIRM_CYCLE_APPLICABLE, detail))
 
+
+def _write_config(worktree: Path, path: Path) -> tuple[dict, str]:
+    """Detect the worktree's projects and write `tdd.toml` for review."""
     detected: list[tuple[str, str, str, str]] = []  # (name, root, adapter, test_paths)
     unmatched: list[str] = []
 
@@ -207,24 +286,41 @@ def cmd_init(args) -> Envelope:
             "",
         ]
     actor.current().write_file(path, "\n".join(lines).encode())
-    return Envelope(
-        result={
-            "written": str(path),
-            "detected": [d[0] for d in detected],
-            "unmatched": unmatched or None,
-        },
-        next_action=NextAction(
-            Verb.CONFIRM_CYCLE_APPLICABLE,
-            "Review tdd.toml: confirm roots, add lint/typecheck commands and artifact edges."
-            " Then read `tdd docs harness` before driving a run."
-            + (
-                f" No supported adapter detected for: {', '.join(unmatched)} —"
-                " declare one manually (third-party adapters register under the"
-                " `tddcli.adapters` entry-point group)."
-                if unmatched
-                else ""
-            ),
-        ),
+    result = {
+        "written": str(path),
+        "detected": [d[0] for d in detected],
+        "unmatched": unmatched or None,
+    }
+    detail = (
+        "Review tdd.toml: confirm roots, add lint/typecheck commands and artifact edges."
+        " Then read `tdd docs harness` before driving a run."
+        + (
+            f" No supported adapter detected for: {', '.join(unmatched)} —"
+            " declare one manually (third-party adapters register under the"
+            " `tddcli.adapters` entry-point group)."
+            if unmatched
+            else ""
+        )
+    )
+    return result, detail
+
+
+def _skill_version(h: harness.Harness, text: str) -> tuple[bool, str]:
+    """A declared mismatch fails; a skill that declares nothing passes, as a notice."""
+    remedy = f"`tdd init --skill {h.name} --update-skill`"
+    declared = harness.declared_versions(text)
+    if declared is None:
+        return True, (
+            f"{h.skill} declares no verb_set_version, so drift cannot be checked;"
+            f" {remedy} replaces it with this version's copy"
+        )
+    verb_set, envelope = declared.get("verb_set_version"), declared.get("envelope_version")
+    if str(verb_set) == str(VERB_SET_VERSION) and str(envelope) == str(ENVELOPE_VERSION):
+        return True, f"verb_set_version {verb_set}, envelope_version {envelope}"
+    return False, (
+        f"{h.skill} was written for verb_set_version {verb_set}, envelope_version {envelope};"
+        f" this tdd emits {VERB_SET_VERSION}, {ENVELOPE_VERSION}. Run {remedy} and re-apply"
+        " any local additions."
     )
 
 
@@ -430,6 +526,11 @@ def cmd_doctor(args) -> Envelope:
         ex_detail += f" — {ex.reason}"
     check("executor identity", True, ex_detail)
 
+    for h in harness.HARNESSES.values():
+        skill = worktree / h.skill
+        if skill.is_file():
+            check("driving skill version", *_skill_version(h, skill.read_text(errors="replace")))
+
     projects: dict[str, dict] = {}
     for name, project in cfg.projects.items():
         before = len(checks)
@@ -495,7 +596,11 @@ def cmd_doctor(args) -> Envelope:
         # place a `ModuleNotFoundError` like the real `pyyaml` incident surfaces.
         adapter = adapters.build(project, worktree)
         gate = adapter.collectable()
-        check("collectable", gate.ok, gate.output, project=name)
+        detail = gate.output
+        provenance = actor.current().provenance()
+        if not gate.ok and provenance:
+            detail = f"{detail}\n{provenance}"
+        check("collectable", gate.ok, detail, project=name)
 
         # R7.13's premise — "files the default runner config cannot reach" — is
         # a config property nothing else enforces. Probe it at preflight so the
@@ -911,12 +1016,19 @@ def cmd_run_start(args) -> Envelope:
                 continue
             if not collection.tests and collection.failed_files:
                 sample = sorted(collection.failed_files)[0]
-                return failure(
+                message = (
                     f"{name}: no test could be collected — {len(collection.failed_files)}"
                     f" file(s) failed to collect, starting with {sample}. The baseline"
                     " would record no failures and every pre-existing failure would then"
                     " read as a regression. Fix the environment (dependencies"
-                    " installed?) and retry.",
+                    " installed?) and retry."
+                    f"\n{sample}: {collection.failed_files[sample]}"
+                )
+                provenance = actor.current().provenance()
+                if provenance:
+                    message = f"{message}\n{provenance}"
+                return failure(
+                    message,
                     project=name,
                     failed_files=sorted(collection.failed_files),
                 )
@@ -1276,7 +1388,7 @@ def cmd_resume(args) -> Envelope:
         if blocked is None:
             return failure("no blocked run to unblock in this worktree")
         if not args.note:
-            return failure("--unblock requires --note describing the intervention")
+            return failure("--unblock requires --note describing the unblock")
         ledger.reopen_run(blocked["id"], args.note)
         run = ledger.run(blocked["id"])
         if args.accept_failures:
@@ -1725,15 +1837,34 @@ def _ledger_serve(args, cfg) -> Envelope:
     )
 
 
+def _ledger_read(cfg, method: str, *args, **kwargs):
+    """A read, on the admin socket, or on the report socket when the admin socket
+    cannot be opened: the dashboard's account is let into the report socket alone.
+
+    Only a failed connect falls back. A connection that was made and then dropped is
+    never retried on the other socket.
+    """
+    try:
+        conn = wire.Connection(cfg.admin_socket)
+    except wire.LedgerUnreachable:
+        if cfg.report_socket is None:
+            raise
+        conn = wire.Connection(cfg.report_socket)
+    try:
+        return conn.request(method, *args, **kwargs)
+    finally:
+        conn.close()
+
+
 def _ledger_fleet(args, cfg) -> Envelope:
     return Envelope(
-        result=wire.call(cfg.admin_socket, "fleet"),
+        result=_ledger_read(cfg, "fleet"),
         next_action=NextAction(Verb.COMPLETE, "Fleet reported across every source."),
     )
 
 
 def _ledger_log(args, cfg) -> Envelope:
-    rendered = wire.call(cfg.admin_socket, "log", args.repo, args.run)
+    rendered = _ledger_read(cfg, "log", args.repo, args.run)
     if args.out:
         out = Path(args.out)
         actor.current().write_file(out, rendered["text"].encode())
@@ -1767,7 +1898,7 @@ def _ledger_import(args, cfg) -> Envelope:
 
 def _ledger_metrics(args, cfg) -> Envelope:
     return Envelope(
-        result=wire.call(cfg.admin_socket, "metrics", args.repo),
+        result=_ledger_read(cfg, "metrics", args.repo, since=args.since),
         next_action=NextAction(Verb.COMPLETE, "Metrics computed over every source."),
     )
 
@@ -1780,13 +1911,43 @@ def _ledger_sources(args, cfg) -> Envelope:
     )
 
 
+def _bind_call(args, cfg, method: str, *call_args):
+    """A `bind` or `unbind`, on the socket the operator named, or else the admin socket.
+
+    An admin socket this account cannot open falls back to the bind socket, when there
+    is one. Only a failed connect does: a request the admin socket took is never resent.
+    """
+    if args.socket:
+        return wire.call(Path(args.socket), method, *call_args)
+    try:
+        conn = wire.Connection(cfg.admin_socket)
+    except wire.LedgerUnreachable:
+        if cfg.bind_socket is None:
+            raise
+        conn = wire.Connection(cfg.bind_socket)
+    try:
+        return conn.request(method, *call_args)
+    finally:
+        conn.close()
+
+
 def _ledger_bind(args, cfg) -> Envelope:
-    bound = wire.call(cfg.admin_socket, "bind", args.name, args.executor)
+    bound = _bind_call(args, cfg, "bind", args.name, args.executor)
     return Envelope(
         result=bound,
         next_action=NextAction(
             Verb.COMPLETE,
             f"Source {args.name}'s next runs record {args.executor}, as said by the operator.",
+        ),
+    )
+
+
+def _ledger_unbind(args, cfg) -> Envelope:
+    unbound = _bind_call(args, cfg, "unbind", args.name)
+    return Envelope(
+        result=unbound,
+        next_action=NextAction(
+            Verb.COMPLETE, f"Source {args.name}'s next runs record the guest's own claim."
         ),
     )
 
@@ -1874,6 +2035,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("init", help="scaffold tdd.toml for review")
     s.add_argument("--force", action="store_true")
+    s.add_argument("--skill", help="also scaffold the driving skill and hooks for this harness")
+    s.add_argument(
+        "--update-skill",
+        action="store_true",
+        help="replace harness files that differ from this version's copies",
+    )
     s.set_defaults(fn=cmd_init)
 
     s = sub.add_parser("doctor", help="environment preflight")
@@ -2029,11 +2196,20 @@ def build_parser() -> argparse.ArgumentParser:
     s = ledger_p.add_parser("bind", help="set the executor a source's next runs record")
     s.add_argument("name")
     s.add_argument("--executor", required=True)
+    s.add_argument("--socket", help="the socket to bind through: the admin or the bind socket")
     s.set_defaults(fn=_ledger_verb(_ledger_bind))
+    s = ledger_p.add_parser("unbind", help="clear the executor a source's next runs record")
+    s.add_argument("name")
+    s.add_argument("--socket", help="the socket to unbind through: the admin or the bind socket")
+    s.set_defaults(fn=_ledger_verb(_ledger_unbind))
     s = ledger_p.add_parser("fleet", help="active runs of every source")
     s.set_defaults(fn=_ledger_verb(_ledger_fleet))
     s = ledger_p.add_parser("metrics", help="metrics over every source's runs")
     s.add_argument("--repo", help="one repository's ledger, by its slug")
+    s.add_argument(
+        "--since",
+        help="only runs still open, or ended at or after this ISO 8601 time with a UTC offset",
+    )
     s.set_defaults(fn=_ledger_verb(_ledger_metrics))
     s = ledger_p.add_parser("log", help="render any source's run as a friction log")
     s.add_argument("--repo", required=True, help="the repository's slug")
@@ -2048,7 +2224,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 #: Verbs an agent's own `tdd` answers on a split machine. `docs` prints what shipped
-#: with the binary, and `init` writes `tdd.toml` into the agent's own worktree; neither
+#: with the binary, and `init` writes `tdd.toml` and the harness files into the agent's
+#: own worktree; neither
 #: touches the ledger. `ledger` is the host operator's, and talks to the ledger service
 #: on this machine. Everything else is the runner's to do.
 LOCAL_VERBS = {"docs", "init", "ledger"}

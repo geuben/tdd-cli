@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from datetime import datetime
 
 from .contract import required_annotation_keys
 from .ledger import PRE_SPLIT_IMPORT, Ledger
@@ -15,6 +16,16 @@ from .ledger import PRE_SPLIT_IMPORT, Ledger
 
 def _fmt_list(items) -> str:
     return ", ".join(f"`{i}`" for i in items) if items else "none"
+
+
+def _unblocks(ledger: Ledger, run_id: int) -> list:
+    """The run's `human_intervention` rows, less the one `run abandon` wrote before #186."""
+    abandonment = ledger.abandonment(run_id)
+    rows = ledger.interventions(run_id)
+    if abandonment is None:
+        return rows
+    note = f"abandoned: {abandonment['reason']}"
+    return [r for r in rows if (r["note"], r["at"]) != (note, abandonment["at"])]
 
 
 def friction_log(ledger: Ledger, run) -> str:
@@ -32,6 +43,9 @@ def friction_log(ledger: Ledger, run) -> str:
         f"- Started: {run['started_at']}  Ended: {run['ended_at'] or '—'}"
         f"  Outcome: {run['outcome'] or 'live'}"
     )
+    abandonment = ledger.abandonment(run["id"])
+    if abandonment is not None:
+        a(f"- Abandoned: {abandonment['reason']}")
     all_baseline_rows = ledger.baseline_rows(run["id"])
     run_start_baselines = {
         r["project"]: json.loads(r["failing"])
@@ -74,9 +88,9 @@ def friction_log(ledger: Ledger, run) -> str:
         if not delivered.intersection(scope):
             ordinals = ", ".join(str(n) for n in scope)
             a(f"- **Declared check never ran:** `{key}` (applies to cycles {ordinals})")
-    interventions = ledger.interventions(run["id"])
-    a(f"- Human interventions: {len(interventions)}")
-    for i in interventions:
+    unblocks = _unblocks(ledger, run["id"])
+    a(f"- Unblocks: {len(unblocks)}")
+    for i in unblocks:
         a(f"  - {i['at']}: {i['note']}")
     for amended in ledger.event_details(run["id"], "baseline_amended"):
         detail = json.loads(amended)
@@ -289,6 +303,8 @@ def _time_summary(ledger: Ledger, run) -> dict:
     cycles = [
         {
             "ordinal": c["ordinal"],
+            "opened_at": c["opened_at"],
+            "closed_at": c["closed_at"],
             # An open cycle has no wall clock yet; a blocked run's last cycle stays open.
             "wall_clock_s": _seconds(c["opened_at"], c["closed_at"]) if c["closed_at"] else None,
             "suite_s": c["ms"] / 1000,
@@ -343,6 +359,16 @@ def _time_json(summary: dict) -> dict:
             phase: {"runs": p["runs"], "suite_s": round(p["suite_s"], 1)}
             for phase, p in summary["by_phase"].items()
         },
+        "cycles": [
+            {
+                **c,
+                "wall_clock_s": round(c["wall_clock_s"], 1)
+                if c["wall_clock_s"] is not None
+                else None,
+                "suite_s": round(c["suite_s"], 1),
+            }
+            for c in summary["cycles"]
+        ],
     }
 
 
@@ -355,9 +381,19 @@ def _impl_attempts(rows) -> int:
     return len(target_only) if target_only else len(rows)
 
 
-def metrics(ledger: Ledger, worktree: str | None) -> dict:
-    """Per-run metrics for one worktree's runs, or every worktree's when it is None."""
-    runs = ledger.runs_in(worktree)
+def metrics(ledger: Ledger, worktree: str | None, since: datetime | None = None) -> dict:
+    """Per-run metrics for one worktree's runs, or every worktree's when it is None.
+
+    With `since`, only the runs whose figures can have changed since then: those still
+    open, and those that ended at or after it. Compared as times, never as strings.
+    """
+    runs = [
+        run
+        for run in ledger.runs_in(worktree)
+        if since is None
+        or run["ended_at"] is None
+        or datetime.fromisoformat(run["ended_at"]) >= since
+    ]
     out = {
         "runs": [],
         "note": (
@@ -404,7 +440,7 @@ def metrics(ledger: Ledger, worktree: str | None) -> dict:
                 "impl_attempts_max": max(impl_attempts, default=0),
                 "cycles_by_project": dict(by_project),
                 "blockers": {b["kind"]: b["n"] for b in blockers},
-                "human_interventions": len(ledger.interventions(run["id"])),
+                "unblocks": len(_unblocks(ledger, run["id"])),
                 "time": _time_json(_time_summary(ledger, run)),
                 "integrity_events": {r["kind"]: r["n"] for r in ledger.event_counts(run["id"])},
             }

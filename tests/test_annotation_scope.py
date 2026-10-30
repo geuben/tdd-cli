@@ -173,7 +173,7 @@ def test_the_friction_log_warns_of_a_scoped_key_no_delivered_cycle_carried(repo)
     at = lines.index("- Never reached: none")
     assert lines[at + 1 : at + 3] == [
         "- **Declared check never ran:** `skipped_k` (applies to cycles 2)",
-        "- Human interventions: 0",
+        "- Unblocks: 0",
     ]
 
 
@@ -188,5 +188,5 @@ def test_the_friction_log_warns_of_a_plain_key_when_no_cycle_was_delivered(repo)
     at = lines.index("- Never reached: none")
     assert lines[at + 1 : at + 3] == [
         "- **Declared check never ran:** `plan_wide` (applies to cycles 1, 2)",
-        "- Human interventions: 0",
+        "- Unblocks: 0",
     ]

@@ -70,3 +70,29 @@ def test_ledger_socket_and_ledger_home_together_are_refused(tmp_path, monkeypatc
 
     with pytest.raises(runner.RunnerConfigError, match="ledger_socket"):
         runner.load()
+
+
+def test_a_core_budget_that_is_not_a_positive_integer_is_refused(tmp_path, monkeypatch):
+    cfg = tmp_path / "runner.toml"
+    monkeypatch.setenv("TDD_RUNNER_CONFIG", str(cfg))
+    values = ("0", "-2", '"4"', "4.5", "true")
+
+    def refused(raw: str) -> bool:
+        _write_config(cfg, _current_user())
+        cfg.write_text(cfg.read_text() + f"core_budget = {raw}\n")
+        try:
+            runner.load()
+        except runner.RunnerConfigError as exc:
+            return "core_budget" in str(exc)
+        return False
+
+    assert {raw: refused(raw) for raw in values} == dict.fromkeys(values, True)
+
+
+def test_a_core_budget_of_one_is_accepted(tmp_path, monkeypatch):
+    cfg = tmp_path / "runner.toml"
+    monkeypatch.setenv("TDD_RUNNER_CONFIG", str(cfg))
+    _write_config(cfg, _current_user())
+    cfg.write_text(cfg.read_text() + "core_budget = 1\n")
+
+    assert runner.load().core_budget == 1
