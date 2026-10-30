@@ -99,3 +99,14 @@ def test_the_friction_log_lists_each_unblock_under_unblocks(tmp_path, ledger_hom
         "  - 2026-09-01T10:02:00+00:00: fixed the fixture\n"
         "  - 2026-09-01T10:05:00+00:00: verified against main"
     )
+
+
+def test_a_pre_change_abandon_row_is_not_an_unblock(tmp_path, ledger_home):
+    ledger, run = fixture_ledger(
+        tmp_path, [(2, "fixed the fixture")], abandoned=(10, "superseded by #145")
+    )
+
+    assert (
+        render.metrics(ledger, "/wt")["runs"][0]["unblocks"],
+        fidelity(render.friction_log(ledger, run)),
+    ) == (1, FIDELITY_HEAD + "- Unblocks: 1\n  - 2026-09-01T10:02:00+00:00: fixed the fixture")
