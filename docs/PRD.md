@@ -821,6 +821,9 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   artifact name, exit code, and last 2000 chars of stderr), sets `artifact_check.regenerate_failed
   = 1`, and surfaces `fix_regression` — the cycle stays open. `run start` refuses when a
   regenerate hook fails before the first cycle; the run row is ended with outcome `refused`.
+  It likewise refuses, with reason `stale_artifact`, when an artifact records `stale_artifact`
+  before the first cycle; that run row is also ended `refused`. An inherited artifact
+  (`artifact_stale_inherited`) does not refuse.
 
 ### 9.5 Staging and commits
 

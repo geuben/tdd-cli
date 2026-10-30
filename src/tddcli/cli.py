@@ -1199,6 +1199,16 @@ def cmd_run_start(args) -> Envelope:
                 reason="artifact_regenerate_failed",
                 artifacts=artifact_outcome.failed,
             )
+        if artifact_outcome.stale:
+            names = ", ".join(artifact_outcome.stale)
+            ledger.end_run(run_id, "refused")
+            return failure(
+                f"artifact(s) stale and not regenerated: {names}. A stale contract gives a green"
+                " wrong answer; rebuild and commit the artifact (or fix its regenerate hook) so"
+                " its check passes, then retry.",
+                reason="stale_artifact",
+                stale_artifacts=artifact_outcome.stale,
+            )
         first = engine.declared[0] if engine.declared else None
         if first is None:
             return failure("contract declares no cycles")
