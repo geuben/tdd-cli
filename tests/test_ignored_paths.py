@@ -6,7 +6,7 @@ flagged `undeclared_file_touched` on every cycle, and held by the run-close gate
 
 from __future__ import annotations
 
-from conftest import git, run_cli, write_plan
+from conftest import git, run_cli, run_cli_text, write_plan
 
 ONE = """---
 cycles:
@@ -19,6 +19,18 @@ cycles:
 
 # Plan
 """
+
+TWO = ONE.replace(
+    "---\n\n# Plan",
+    """  - n: 2
+    project: backend
+    title: "subtracting two numbers"
+    test: "tests/test_sub.py::test_subtract_two_numbers"
+    stub_expected: ["app/sub.py"]
+---
+
+# Plan""",
+)
 
 
 def _track_ignored(repo, rel):
@@ -84,3 +96,26 @@ def test_a_tracked_ignored_path_left_dirty_does_not_block_run_close(repo):
     _, _, close = _drive_one_cycle(repo, rel, "v2\n")
 
     assert close["next_action"]["verb"] == "complete"
+
+
+def test_dirty_ignored_paths_are_reported_once_at_run_close(repo):
+    rel = ".gradle/8.0/checksums.lock"
+    _track_ignored(repo, rel)
+    _start(repo, TWO)
+    _drive_one_cycle(repo, rel, "v2\n")
+
+    (repo / "backend" / "tests" / "test_sub.py").write_text(
+        "from app.sub import sub\n\n\ndef test_subtract_two_numbers():\n"
+        "    assert sub(5, 3) == 2\n"
+    )
+    (repo / "backend" / "app" / "sub.py").write_text(
+        "def sub(a, b):\n    raise NotImplementedError\n"
+    )
+    run_cli(repo, "advance")
+    (repo / rel).write_text("v3\n")
+    (repo / "backend" / "app" / "sub.py").write_text("def sub(a, b):\n    return a - b\n")
+    run_cli(repo, "advance")
+    run_cli(repo, "advance")
+    rendered = run_cli_text(repo, "log", "render")
+
+    assert rendered.count('- **Event — ignored_paths_dirty:** [".gradle/8.0/checksums.lock"]') == 1
