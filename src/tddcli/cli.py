@@ -1837,15 +1837,34 @@ def _ledger_serve(args, cfg) -> Envelope:
     )
 
 
+def _ledger_read(cfg, method: str, *args, **kwargs):
+    """A read, on the admin socket, or on the report socket when the admin socket
+    cannot be opened: the dashboard's account is let into the report socket alone.
+
+    Only a failed connect falls back. A connection that was made and then dropped is
+    never retried on the other socket.
+    """
+    try:
+        conn = wire.Connection(cfg.admin_socket)
+    except wire.LedgerUnreachable:
+        if cfg.report_socket is None:
+            raise
+        conn = wire.Connection(cfg.report_socket)
+    try:
+        return conn.request(method, *args, **kwargs)
+    finally:
+        conn.close()
+
+
 def _ledger_fleet(args, cfg) -> Envelope:
     return Envelope(
-        result=wire.call(cfg.admin_socket, "fleet"),
+        result=_ledger_read(cfg, "fleet"),
         next_action=NextAction(Verb.COMPLETE, "Fleet reported across every source."),
     )
 
 
 def _ledger_log(args, cfg) -> Envelope:
-    rendered = wire.call(cfg.admin_socket, "log", args.repo, args.run)
+    rendered = _ledger_read(cfg, "log", args.repo, args.run)
     if args.out:
         out = Path(args.out)
         actor.current().write_file(out, rendered["text"].encode())
@@ -1879,7 +1898,7 @@ def _ledger_import(args, cfg) -> Envelope:
 
 def _ledger_metrics(args, cfg) -> Envelope:
     return Envelope(
-        result=wire.call(cfg.admin_socket, "metrics", args.repo),
+        result=_ledger_read(cfg, "metrics", args.repo, since=args.since),
         next_action=NextAction(Verb.COMPLETE, "Metrics computed over every source."),
     )
 
@@ -2187,6 +2206,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=_ledger_verb(_ledger_fleet))
     s = ledger_p.add_parser("metrics", help="metrics over every source's runs")
     s.add_argument("--repo", help="one repository's ledger, by its slug")
+    s.add_argument(
+        "--since",
+        help="only runs still open, or ended at or after this ISO 8601 time with a UTC offset",
+    )
     s.set_defaults(fn=_ledger_verb(_ledger_metrics))
     s = ledger_p.add_parser("log", help="render any source's run as a friction log")
     s.add_argument("--repo", required=True, help="the repository's slug")

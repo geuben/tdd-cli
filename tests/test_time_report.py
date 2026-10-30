@@ -78,6 +78,28 @@ def _ledger(tmp_path):
     return ledger, run_id
 
 
+#: Each cycle's time, worked out by hand: cycle 1 ran 10:00-10:04 with three 30 s suite
+#: runs; cycle 2 is open, with suite runs of 30, 42, 30 and 30 s.
+CYCLES = [
+    {
+        "ordinal": 1,
+        "opened_at": "2026-09-01T10:00:00+00:00",
+        "closed_at": "2026-09-01T10:04:00+00:00",
+        "wall_clock_s": 240.0,
+        "suite_s": 90.0,
+        "runs": 3,
+    },
+    {
+        "ordinal": 2,
+        "opened_at": "2026-09-01T10:04:00+00:00",
+        "closed_at": None,
+        "wall_clock_s": None,
+        "suite_s": 132.0,
+        "runs": 4,
+    },
+]
+
+
 def test_metrics_reports_suite_time_by_phase_and_the_wall_clock(tmp_path, ledger_home):
     ledger, _ = _ledger(tmp_path)
 
@@ -92,7 +114,16 @@ def test_metrics_reports_suite_time_by_phase_and_the_wall_clock(tmp_path, ledger
             "AWAITING_IMPL": {"runs": 3, "suite_s": 102.0},
             "CLOSE_SWEEP": {"runs": 2, "suite_s": 60.0},
         },
+        "cycles": CYCLES,
     }
+
+
+def test_metrics_reports_each_cycles_time(tmp_path, ledger_home):
+    ledger, _ = _ledger(tmp_path)
+
+    m = render.metrics(ledger, "/wt")["runs"][0]
+
+    assert m["time"].get("cycles") == CYCLES
 
 
 def test_metrics_measures_a_live_runs_wall_clock_to_now(tmp_path, ledger_home):

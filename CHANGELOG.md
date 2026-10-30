@@ -8,6 +8,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A read-only report socket for dashboards** (#185). `[service] report_socket` opens a
+  socket (mode 660) that answers `metrics`, `fleet` and `log` with the admin socket's
+  results, opens every ledger read-only, and refuses every other request with
+  `method_not_allowed`. `tdd ledger metrics`, `fleet` and `log` fall back to it when the
+  admin socket cannot be opened. With no setting, nothing changes.
+- **`tdd ledger metrics --since <time>`** (#185): only the runs still open or ended at or
+  after an ISO 8601 time with a UTC offset; any other time is refused with `bad_since`.
+- **`time.cycles` in every run of `tdd metrics` and `tdd ledger metrics`** (#185): each
+  cycle's `opened_at`, `closed_at`, wall clock, suite time and suite runs.
 - **`tdd init --skill claude-code`** (#114). Scaffolds the agent harness from the copies
   installed with the binary, so it matches the `tdd` that drives it:
   `.claude/skills/tdd-drive/SKILL.md`, `.claude/hooks/tdd_stop_hook.py` and

@@ -698,6 +698,8 @@ cannot become:
   source of the socket it came in on, refuses a guest anything but its own open runs, and
   gives the operator one history and one worker budget for every guest. The operator binds
   or unbinds each source's model, and can give an orchestrator a socket that does only that.
+  An optional read-only report socket gives a dashboard every source's metrics, fleet and
+  logs, and nothing else.
 
 `tdd docs split` ([docs/split-runner.md](docs/split-runner.md)) has the setup, the
 verification checklist, and what split mode does not protect against.
