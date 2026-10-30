@@ -18,6 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from conftest import run_cli
 from tddcli import service, wire
 
 
@@ -169,3 +170,14 @@ def test_a_bind_group_that_does_not_exist_is_refused(tmp_path):
 
     with pytest.raises(service.ServiceConfigError, match="no-such-group-179"):
         service.load_config(path)
+
+
+def test_bind_and_unbind_use_an_explicit_socket(repo, bind_service):
+    bind_service.service.add_source("vm-1", bind_service.dir / "vm-1.sock")
+    missing = bind_service.dir / "missing.sock"
+
+    reasons = [
+        run_cli(repo, "ledger", *verb, "--socket", str(missing))["result"].get("reason")
+        for verb in (("bind", "vm-1", "--executor", "m"), ("unbind", "vm-1"))
+    ]
+    assert reasons == ["ledger_unreachable", "ledger_unreachable"]
