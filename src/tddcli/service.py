@@ -480,7 +480,11 @@ class Service:
         """A dashboard's request, from the report socket: the admin socket's reads alone."""
         if method not in REPORT_METHODS:
             return _refusal("method_not_allowed", f"{method} is not answered on the report socket")
-        return self.admin(method, args, kwargs)
+        if method == "metrics":
+            return _ok(self.metrics(*args))
+        if method == "fleet":
+            return _ok(self.fleet())
+        return self.log(*args)
 
     def admin(self, method: str, args: list, kwargs: dict) -> dict:
         """An operator's request, from the admin socket."""
