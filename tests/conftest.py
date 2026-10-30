@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import pwd
@@ -61,17 +62,35 @@ def _single_user_mode(tmp_path, monkeypatch):
     actor.install(actor.LocalActor())
 
 
+ABSENT = object()
+
+
+def agent_context(monkeypatch, umask: object = ABSENT, **env: str) -> None:
+    """What a client writes to the runner's stdin, for the next `--agent-context-stdin`
+    invocation: the agent's environment and, from a client that sends one, its umask.
+    `env` is laid over this process's environment."""
+    context: dict[str, object] = {"env": {**os.environ, **env}}
+    if umask is not ABSENT:
+        context["umask"] = umask
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(context)))
+
+
 #: A stand-in for sudo. It logs what it was asked, then runs the command as the same
-#: uid — everything about split mode except the uid change itself. `SUDO_DENY` names
-#: commands it refuses, which is how "the agent cannot" is reached without a second uid.
-#: Its umask 002 stands in for the PAM session a real sudo opens (`pam_umask`), which
-#: leaves a umask the agent's own shell does not have.
+#: uid — everything about split mode except the uid change itself. With a `refuse` file
+#: beside it, it refuses every command, as a real sudo does when the sudoers line for
+#: the hop is missing: that is how "the runner cannot become the agent" is reached
+#: without a second uid. It never looks at the command, so it knows nothing of how the
+#: runner wraps one. Its umask 002 stands in for the PAM session a real sudo opens
+#: (`pam_umask`), which leaves a umask the agent's own shell does not have.
 SUDO_SHIM = """\
 #!/bin/sh
 echo "MARK=$MARK $@" >> "$SUDO_LOG"
+if [ -e "$(dirname "$0")/refuse" ]; then
+  echo "sudo: a password is required" >&2
+  exit 1
+fi
 umask 002
 while [ "$1" != "--" ]; do shift; done; shift
-case " $SUDO_DENY " in *" $(basename "$1") "*) exit 1;; esac
 exec "$@"
 """
 
@@ -89,7 +108,12 @@ def sudo_shim(tmp_path, monkeypatch):
     log = tmp_path / "sudo.log"
     log.write_text("")
     monkeypatch.setenv("SUDO_LOG", str(log))
-    return SimpleNamespace(path=shim, log=log, lines=lambda: log.read_text().splitlines())
+    return SimpleNamespace(
+        path=shim,
+        log=log,
+        lines=lambda: log.read_text().splitlines(),
+        refuse=lambda: (shim.parent / "refuse").touch(),
+    )
 
 
 @pytest.fixture

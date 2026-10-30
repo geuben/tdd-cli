@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import io
-import json
 import os
 import stat
-import sys
 
 import pytest
 
-from conftest import current_user, git, run_cli, write_plan
+from conftest import ABSENT, agent_context, current_user, git, run_cli, write_plan
 from tddcli import actor
 
 MINIMAL_PLAN = """\
@@ -43,20 +40,8 @@ def test_run_start_spawns_git_and_the_suite_as_the_agent(repo, split_runner):
     assert spawned == (True, True, True)
 
 
-_ABSENT = object()
-
-
-def _agent_context(monkeypatch, umask: object = _ABSENT, **extra: str) -> None:
-    """What the client writes to the runner's stdin: the agent's environment and,
-    from a client that sends one, its umask."""
-    context: dict[str, object] = {"env": {**os.environ, **extra}}
-    if umask is not _ABSENT:
-        context["umask"] = umask
-    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(context)))
-
-
 def test_agent_context_on_stdin_reaches_spawned_commands(repo, split_runner, monkeypatch):
-    _agent_context(monkeypatch, MARK="from-agent")
+    agent_context(monkeypatch, MARK="from-agent")
 
     run_cli(repo, "--agent-context-stdin", "doctor")
 
@@ -73,7 +58,7 @@ def test_the_suite_runs_under_the_agents_umask(repo, split_runner, monkeypatch, 
     git(repo, "commit", "-qam", "the suite writes a file")
     plan = write_plan(repo, MINIMAL_PLAN)
     run_cli(repo, "plan", "register", plan)
-    _agent_context(monkeypatch, umask=0o022)
+    agent_context(monkeypatch, umask=0o022)
 
     run_cli(repo, "--agent-context-stdin", "run", "start", "--plan", plan)
 
@@ -92,12 +77,12 @@ def test_only_a_umask_in_range_is_applied(repo, split_runner, monkeypatch):
         "negative": -1,
         "too wide": 0o1000,
         "null": None,
-        "absent": _ABSENT,
+        "absent": ABSENT,
     }
     applied = {}
     for name, form in forms.items():
         split_runner.shim.log.write_text("")
-        _agent_context(monkeypatch, umask=form)
+        agent_context(monkeypatch, umask=form)
         run_cli(repo, "--agent-context-stdin", "doctor")
         lines = split_runner.shim.lines()
         applied[name] = (bool(lines), any(" -c umask " in line for line in lines))

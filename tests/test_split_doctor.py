@@ -8,7 +8,11 @@ rather than in a test's imagination.
 
 from __future__ import annotations
 
-from conftest import run_cli
+import os
+
+import pytest
+
+from conftest import ABSENT, agent_context, run_cli
 
 
 def _check(out: dict, name: str) -> dict:
@@ -21,44 +25,135 @@ def test_single_mode_doctor_says_the_agent_can_reach_the_ledger(repo):
     out = run_cli(repo, "doctor")
 
     isolation = _check(out, "ledger isolation")
-    said = (out["result"]["mode"], isolation["ok"], "same uid" in isolation["detail"])
-    assert said == ("single", True, True)
+    probed = any(c["check"] == "runs as the agent" for c in out["result"]["checks"])
+    said = (out["result"]["mode"], isolation["ok"], "same uid" in isolation["detail"], probed)
+    assert said == ("single", True, True, False)
 
 
-def _probe(repo, monkeypatch, name: str, deny: str) -> tuple[list[bool], str]:
-    """One split-mode check across two machines: one where sudo lets the agent run
-    `deny`, and one where it does not. Returns both verdicts and the second detail."""
-    allowed = _check(run_cli(repo, "doctor"), name)
-    monkeypatch.setenv("SUDO_DENY", deny)
-    refused = _check(run_cli(repo, "doctor"), name)
-    return [allowed["ok"], refused["ok"]], refused["detail"]
+def test_a_split_runner_that_can_act_reports_its_checks_once_and_in_order(
+    repo, split_runner, monkeypatch
+):
+    """Probing the drop to the agent first must not change what a healthy runner's
+    doctor says: the same checks, in the same order, with `id -u` asked once."""
+    agent_context(monkeypatch, umask=0o022)
+
+    out = run_cli(repo, "--agent-context-stdin", "doctor")
+
+    names = [c["check"] for c in out["result"]["checks"] if "project" not in c]
+    asked = sum(line.endswith(" id -u") for line in split_runner.shim.lines())
+    assert (names, asked) == (
+        [
+            "worktree resolvable",
+            "tdd.toml valid",
+            "ledger reachable",
+            "ledger outside worktree",
+            "runs as the agent",
+            "ledger out of the agent's reach",
+            "install not writable by the agent",
+            "executor identity",
+            "no legacy state artifacts",
+            "worktree clean",
+        ],
+        1,
+    )
 
 
-def test_split_doctor_checks_the_drop_to_the_agent(repo, split_runner, monkeypatch):
-    """Everything else in split mode assumes the runner can become the agent. When it
-    cannot, the fix is one sudoers line, so the check quotes it."""
-    verdicts, detail = _probe(repo, monkeypatch, "runs as the agent", deny="id")
-
-    assert (verdicts, "NOPASSWD:SETENV" in detail) == ([True, False], True)
+#: An older client sends no umask, so the runner spawns each command as it is. A
+#: current one sends its own, and the runner wraps each command to apply it. Both are
+#: in the field, so each split check is probed through both spawn forms.
+CLIENTS = pytest.mark.parametrize("umask", [ABSENT, 0o022], ids=["older-client", "current-client"])
 
 
-def test_split_doctor_ledger_check_follows_what_the_agent_can_read(repo, split_runner, monkeypatch):
+def _refuse_sudo(split_runner, tmp_path) -> dict[str, str]:
+    """No sudoers line for the hop: sudo refuses every command, whatever it is."""
+    split_runner.shim.refuse()
+    return {}
+
+
+def _refuse_test(split_runner, tmp_path) -> dict[str, str]:
+    """The filesystem says no to the agent: a `test` that fails, first on the `PATH`
+    the agent's processes get. Doctor names `test` bare, so it is found there."""
+    stub = tmp_path / "agent-bin"
+    stub.mkdir()
+    (stub / "test").write_text("#!/bin/sh\nexit 1\n")
+    (stub / "test").chmod(0o755)
+    return {"PATH": f"{stub}{os.pathsep}{os.environ['PATH']}"}
+
+
+def _probe(
+    repo, monkeypatch, split_runner, tmp_path, name: str, refuse, umask
+) -> tuple[list[bool], dict, bool]:
+    """One split-mode check across two machines: one where the agent may do what the
+    check asks, and one where `refuse` says it may not. Returns both verdicts, the
+    second doctor's whole answer, and whether the runner wrapped its commands to apply
+    a umask."""
+    agent_context(monkeypatch, umask=umask)
+    allowed = _check(run_cli(repo, "--agent-context-stdin", "doctor"), name)
+    wrapped = any(" -c umask " in line for line in split_runner.shim.lines())
+    agent_context(monkeypatch, umask=umask, **refuse(split_runner, tmp_path))
+    refused = run_cli(repo, "--agent-context-stdin", "doctor")
+    return [allowed["ok"], _check(refused, name)["ok"]], refused, wrapped
+
+
+@CLIENTS
+def test_split_doctor_checks_the_drop_to_the_agent(
+    repo, split_runner, monkeypatch, tmp_path, umask
+):
+    """Everything else in split mode assumes the runner can become the agent, so when
+    sudo refuses the hop that is the one thing doctor reports: the sudoers line that
+    fixes it, and what sudo itself said."""
+    verdicts, refused, wrapped = _probe(
+        repo, monkeypatch, split_runner, tmp_path, "runs as the agent", _refuse_sudo, umask
+    )
+
+    detail = _check(refused, "runs as the agent")["detail"]
+    said = (
+        verdicts,
+        len(refused["result"]["checks"]),
+        "NOPASSWD:SETENV" in detail,
+        "a password is required" in detail,
+        wrapped,
+    )
+    assert said == ([True, False], 1, True, True, umask is not ABSENT)
+
+
+@CLIENTS
+def test_split_doctor_ledger_check_follows_what_the_agent_can_read(
+    repo, split_runner, monkeypatch, tmp_path, umask
+):
     """In this suite the agent and the runner are one uid, so the agent *can* read the
     ledger and the check must say so. It passes only once `test -r`, asked as the
     agent, is refused: the check reports what is true, not what was configured."""
-    verdicts, _ = _probe(repo, monkeypatch, "ledger out of the agent's reach", deny="test")
+    verdicts, _, wrapped = _probe(
+        repo,
+        monkeypatch,
+        split_runner,
+        tmp_path,
+        "ledger out of the agent's reach",
+        _refuse_test,
+        umask,
+    )
 
-    assert verdicts == [False, True]
+    assert (verdicts, wrapped) == ([False, True], umask is not ABSENT)
 
 
+@CLIENTS
 def test_split_doctor_install_check_follows_what_the_agent_can_write(
-    repo, split_runner, monkeypatch
+    repo, split_runner, monkeypatch, tmp_path, umask
 ):
     """A runner whose code the agent can edit is the agent. This suite runs from a
     checkout its own uid owns, so the check must fail here until `test -w` is refused."""
-    verdicts, _ = _probe(repo, monkeypatch, "install not writable by the agent", deny="test")
+    verdicts, _, wrapped = _probe(
+        repo,
+        monkeypatch,
+        split_runner,
+        tmp_path,
+        "install not writable by the agent",
+        _refuse_test,
+        umask,
+    )
 
-    assert verdicts == [False, True]
+    assert (verdicts, wrapped) == ([False, True], umask is not ABSENT)
 
 
 def test_socket_mode_doctor_names_the_source_it_reaches(repo, split_guest):

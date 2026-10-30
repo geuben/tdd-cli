@@ -24,6 +24,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   (002 under Ubuntu's `pam_umask`), so a suite that cared about file modes failed under
   `tdd` and passed in the agent's own shell. Mixed versions work: an older runner ignores
   the umask, and a runner given none by an older client behaves as before.
+- **`tdd doctor` on a split runner names a refused sudo hop** (#211). It now checks that
+  the runner can act as the agent before anything else it runs as the agent. When sudo
+  refuses (a missing or wrong sudoers line), doctor answers with only the `runs as the
+  agent` check, which quotes the sudoers line to add and what sudo said. Before, it failed
+  on resolving the worktree with `git rev-parse --show-toplevel failed`, and the hint was
+  never shown.
 
 ## [0.15.0] - 2026-10-14
 

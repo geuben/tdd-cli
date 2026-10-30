@@ -313,30 +313,45 @@ def _cleanliness_detail(blocking: list[str], unrelated: list[str]) -> str:
     return ""
 
 
+def _drop_to_the_agent(split: runner_mod.RunnerConfig) -> tuple[bool, str]:
+    """Whether the runner can act as the agent, and if not, what fixes it.
+
+    Probed before anything else doctor asks of the actor: everything else goes through
+    the same sudo hop, and a refused hop would otherwise surface as whichever of them
+    ran first. From `/`, so it cannot fail for a reason in the worktree.
+    """
+    agent = os.environ.get("SUDO_USER", "")
+    asked = actor.current().run_argv(["id", "-u"], cwd=Path("/"))
+    try:
+        dropped = int(asked.stdout.strip()) == pwd.getpwnam(agent).pw_uid
+    except (ValueError, KeyError):
+        dropped = False
+    if dropped:
+        return True, ""
+    said = asked.stderr.strip()
+    return False, (
+        f"the runner could not run `id -u` as {agent!r}. Add to sudoers:"
+        f" `{split.user} ALL=({agent}) NOPASSWD:SETENV: ALL`"
+        + (f" (sudo said: {said})" if said else "")
+    )
+
+
 def _split_checks(
-    check: Callable, split: runner_mod.RunnerConfig, ledger_file: Path | None
+    check: Callable,
+    split: runner_mod.RunnerConfig,
+    ledger_file: Path | None,
+    dropped: tuple[bool, str],
 ) -> None:
     """What split mode rests on, probed live and as the agent.
 
     Each probe goes through the installed actor, so on a real machine it is answered
     by the real sudo and the real accounts: that is the one place the uid change
-    itself is ever verified. `ledger_file` is None when the ledger is on the host's
-    ledger service: there is then no file here for the agent to reach.
+    itself is ever verified. `dropped` is `_drop_to_the_agent`'s answer, asked before
+    anything else. `ledger_file` is None when the ledger is on the host's ledger
+    service: there is then no file here for the agent to reach.
     """
     agent = os.environ.get("SUDO_USER", "")
-    asked = actor.current().run_argv(["id", "-u"])
-    try:
-        dropped = int(asked.stdout.strip()) == pwd.getpwnam(agent).pw_uid
-    except (ValueError, KeyError):
-        dropped = False
-    check(
-        "runs as the agent",
-        dropped,
-        ""
-        if dropped
-        else f"the runner could not run `id -u` as {agent!r}. Add to sudoers:"
-        f" `{split.user} ALL=({agent}) NOPASSWD:SETENV: ALL`",
-    )
+    check("runs as the agent", *dropped)
 
     if ledger_file is not None:
         readable = actor.current().run_argv(["test", "-r", str(ledger_file)]).returncode == 0
@@ -363,8 +378,18 @@ def _split_checks(
 
 
 def cmd_doctor(args) -> Envelope:
-    worktree = _worktree()
     checks, check = _doctor_checklist()
+    split = runner_mod.load()
+    dropped = (True, "") if split is None else _drop_to_the_agent(split)
+    if not dropped[0]:
+        check("runs as the agent", *dropped)
+        return Envelope(
+            ok=False,
+            error="the runner cannot act as the agent",
+            result={"checks": checks, "projects": {}, "healthy": False, "mode": "split"},
+            next_action=NextAction(Verb.RESOLVE_BLOCKER, "Resolve the failing checks above."),
+        )
+    worktree = _worktree()
 
     check("worktree resolvable", True, str(worktree))
     try:
@@ -385,7 +410,6 @@ def cmd_doctor(args) -> Envelope:
     check(
         "ledger outside worktree", not str(ledger.path).startswith(str(worktree)), str(ledger.path)
     )
-    split = runner_mod.load()
     mode = "single" if split is None else "split"
     if split is None:
         # A notice, never a blocker: single-user installs must keep working. What it
@@ -398,7 +422,7 @@ def cmd_doctor(args) -> Envelope:
             " cannot reach.",
         )
     else:
-        _split_checks(check, split, None if remote else ledger.path)
+        _split_checks(check, split, None if remote else ledger.path, dropped)
 
     ex = identity.resolve(worktree)
     ex_detail = f"{ex.source}: {ex.model}"
