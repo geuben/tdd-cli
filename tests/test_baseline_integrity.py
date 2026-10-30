@@ -55,6 +55,13 @@ def set_test_command(repo, command: str) -> None:
     git(repo, "commit", "-q", "-m", "tdd.toml")
 
 
+NO_REPORT = "python -m pytest -p no:pytest_jsonreport tests/"
+NO_REPORT_DEFECT = (
+    "`python -m pytest -p no:pytest_jsonreport tests/` produced no JSON report"
+    " (is pytest-json-report installed?): "
+)
+
+
 def test_run_start_refuses_when_nothing_could_be_collected(repo):
     """The motivating failure: node_modules were absent, so every frontend test file
     failed to collect, the baseline recorded no failures, and a real pre-existing
@@ -629,3 +636,15 @@ def test_run_start_probes_concurrently_under_a_bounded_pool(repo_three, monkeypa
     assert out["ok"], out
     assert out["result"]["baselines"] == {"backend": 0, "svc": 0}, out["result"]["baselines"]
     assert peak == 2, f"expected peak concurrency of 2, got {peak}"
+
+
+def test_a_project_with_no_tests_is_not_refused_when_its_suite_writes_no_report(repo):
+    """Issue #99 — R9.5a's "no suite yet" stays startable: with no tests there is no
+    pre-existing failure for an unreadable report to hide."""
+    (repo / "backend" / "tests" / "test_smoke.py").unlink()
+    set_test_command(repo, NO_REPORT)
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+
+    assert (out["ok"], out["result"]["baselines"]) == (True, {"backend": 0})
