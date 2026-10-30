@@ -9,6 +9,8 @@ subsequent phase commit re-flagged the file as `undeclared_file_touched`.
 
 from __future__ import annotations
 
+import shutil
+
 from conftest import git, run_cli, write_plan
 from tddcli import gitutil
 from tddcli.ledger import Ledger
@@ -436,3 +438,27 @@ def test_run_start_still_regenerates_an_artifact_outside_the_runs_projects(repo)
         git(repo, "status", "--porcelain").strip(),
         _artifact_events(repo, out["run"]["id"]),
     ) == (True, "", [])
+
+
+def test_a_cycle_close_checks_an_outside_artifact_only_when_the_cycle_touched_its_producer(
+    repo, tmp_path
+):
+    """Issue #99 — an artifact the run cannot reach is not re-checked every cycle, unless the
+    cycle edited its producer anyway (then the staleness is the run's own)."""
+    _add_svc(repo, OUTSIDE_CHECK_TOML)
+    plan = write_plan(repo, PLAN)
+    seen = {}
+    for case in ("untouched", "touched"):
+        r = shutil.copytree(repo, tmp_path / case)
+        run_cli(r, "plan", "register", plan)
+        out = run_cli(r, "run", "start", "--plan", plan)
+        if case == "touched":
+            (r / "svc" / "extra.py").write_text("X = 1\n")
+        run_cli(r, "advance")
+        seen[case] = [
+            (kind, detail)
+            for kind, cycle_id, detail in _artifact_events(r, out["run"]["id"])
+            if cycle_id is not None
+        ]
+
+    assert seen == {"untouched": [], "touched": [("stale_artifact", "client")]}
