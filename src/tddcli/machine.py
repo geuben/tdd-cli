@@ -290,10 +290,14 @@ class Engine:
 
         scan_cache: dict = {}
         declared = self._plan_paths(scan_cache)
+        collected = self.ledger.collection(self.run["id"])
         remaining: list[str] = []
         reruns: dict[str, list[str]] = {}
         for test_id in failures:
             name, native = test_id.split("::", 1)
+            if test_id not in collected.get(name, set()):
+                remaining.append(test_id)
+                continue
             project = self.config.project(name)
             adapter = adapters.build(project, self.worktree)
             path, _ = plan_paths.locate(adapter, project, native, scan_cache)
