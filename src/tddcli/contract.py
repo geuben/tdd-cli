@@ -211,10 +211,56 @@ def _in_scope(entry: str | dict, cycle: DeclaredCycle) -> bool:
     return any(p in _scope_list(entry.get("projects")) for p in cycle.projects)
 
 
+def _check_annotation_scope(entry: dict, cycles: list[DeclaredCycle]) -> None:
+    name = entry["name"]
+    if "applies_to" in entry and "projects" in entry:
+        raise ContractError(f"annotation key {name!r}: applies_to and projects are exclusive")
+    field_name = "applies_to" if "applies_to" in entry else "projects"
+    scope = _scope_list(entry.get(field_name))
+    if not scope or scope == [None]:
+        raise ContractError(
+            f"annotation key {name!r} names no scope: give applies_to or projects,"
+            " or use the plain string form"
+        )
+    if field_name == "applies_to":
+        if not all(isinstance(v, int) and not isinstance(v, bool) for v in scope):
+            raise ContractError(
+                f"annotation key {name!r}: applies_to must be a cycle ordinal or a list of them"
+            )
+    elif not all(isinstance(v, str) for v in scope):
+        raise ContractError(
+            f"annotation key {name!r}: projects must be a project name or a list of them"
+        )
+    ordinals = {c.ordinal for c in cycles}
+    projects = {p for c in cycles for p in c.projects}
+    for v in scope:
+        if field_name == "applies_to" and v not in ordinals:
+            raise ContractError(
+                f"annotation key {name!r}: applies_to names cycle {v},"
+                " which the plan does not declare"
+            )
+        if field_name == "projects" and v not in projects:
+            raise ContractError(
+                f"annotation key {name!r}: projects names {v!r}, which no declared cycle uses"
+            )
+
+
 def _resolve_annotation_keys(entries, cycles: list[DeclaredCycle]) -> list[str]:
     """Set each cycle's required keys; return the names in declaration order."""
     if not isinstance(entries, list) or not all(isinstance(e, str | dict) for e in entries):
         raise ContractError("annotation_keys must be a list of strings or mappings")
+    for e in entries:
+        if isinstance(e, dict) and not (isinstance(e.get("name"), str) and e["name"]):
+            raise ContractError("every annotation key mapping needs a string `name`")
+    seen: set[str] = set()
+    for e in entries:
+        name = e if isinstance(e, str) else e["name"]
+        if name in seen:
+            raise ContractError(f"annotation key {name!r} is declared twice")
+        seen.add(name)
+    for e in entries:
+        if isinstance(e, dict):
+            _check_annotation_scope(e, cycles)
     for c in cycles:
         c.annotation_keys = [
             e if isinstance(e, str) else e["name"] for e in entries if _in_scope(e, c)
