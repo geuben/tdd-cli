@@ -470,6 +470,10 @@ class Service:
             name, executor = args
             if name not in self.executors:
                 return _refusal("unknown_source", f"no source named {name!r}")
+            if not isinstance(executor, str) or not executor.strip():
+                return _refusal(
+                    "bad_executor", "an executor names a model: `tdd ledger unbind` clears a binding"
+                )
             self.bind(name, executor)
             return _ok({"name": name, "executor": executor})
         if method == "unbind":
