@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -79,7 +80,9 @@ class Engine:
         self.config = config
         self.worktree = worktree
         self.run = run_row
-        self.contract_row = ledger.contract(run_row["plan_contract_id"])
+        contract_row = ledger.contract(run_row["plan_contract_id"])
+        assert contract_row is not None  # a run's contract is a foreign key
+        self.contract_row: sqlite3.Row = contract_row
         self.declared = contract_mod.cycles_from_json(self.contract_row["declared_cycles"])
         self.annotation_keys = json.loads(self.contract_row["annotation_keys"])
         self.ancillary_files = json.loads(self.contract_row["ancillary_files"])

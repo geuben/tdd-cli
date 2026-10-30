@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from datetime import datetime
+from typing import Any
 
 from .contract import required_annotation_keys
 from .ledger import PRE_SPLIT_IMPORT, Ledger
@@ -30,6 +31,7 @@ def _unblocks(ledger: Ledger, run_id: int) -> list:
 
 def friction_log(ledger: Ledger, run) -> str:
     contract = ledger.contract(run["plan_contract_id"])
+    assert contract is not None  # a run's contract is a foreign key
     cycles = ledger.cycles(run["id"])
     lines: list[str] = []
     a = lines.append
@@ -224,6 +226,7 @@ def _elapsed(start: str, end: str | None) -> str:
 def progress(ledger: Ledger, run) -> str:
     """A human's view of where the run is. Never consulted by an agent."""
     contract = ledger.contract(run["plan_contract_id"])
+    assert contract is not None  # a run's contract is a foreign key
     declared = json.loads(contract["declared_cycles"])
     rows = {c["ordinal"]: c for c in ledger.cycles(run["id"])}
 
@@ -394,7 +397,7 @@ def metrics(ledger: Ledger, worktree: str | None, since: datetime | None = None)
         or run["ended_at"] is None
         or datetime.fromisoformat(run["ended_at"]) >= since
     ]
-    out = {
+    out: dict[str, Any] = {
         "runs": [],
         "note": (
             "Cross-plan aggregates are not comparable: cycle difficulty varies too much."
@@ -415,7 +418,9 @@ def metrics(ledger: Ledger, worktree: str | None, since: datetime | None = None)
             _impl_attempts(ledger.invocations(c["id"], "AWAITING_IMPL")) for c in cycles
         ]
         blockers = ledger.blocker_counts(run["id"])
-        by_project = defaultdict(int)
+        contract = ledger.contract(run["plan_contract_id"])
+        assert contract is not None  # a run's contract is a foreign key
+        by_project: defaultdict[str, int] = defaultdict(int)
         for c in cycles:
             for p in json.loads(c["projects"]):
                 by_project[p] += 1
@@ -427,9 +432,7 @@ def metrics(ledger: Ledger, worktree: str | None, since: datetime | None = None)
                 "executor": run["executor_model"],
                 "executor_source": run["executor_source"],
                 "outcome": run["outcome"],
-                "cycles_declared": len(
-                    json.loads(ledger.contract(run["plan_contract_id"])["declared_cycles"])
-                ),
+                "cycles_declared": len(json.loads(contract["declared_cycles"])),
                 "cycles_closed": sum(1 for c in cycles if c["phase"] == "CLOSED"),
                 "cycles_skipped": sum(1 for c in cycles if c["phase"] == "SKIPPED"),
                 # R6.2 — pin cycles pass on arrival by design and are excluded.
