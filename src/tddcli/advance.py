@@ -105,6 +105,7 @@ def _stage_and_commit(
         declared,
         engine.excluded,
         ancillary=set(engine.ancillary_files),
+        ignored=gitutil.ignored_paths(engine.worktree, sorted(changed)),
     )
     if phase == staging.RED:
         adopted = _sanctioned_stubs(engine, cycle, classification.implementation)

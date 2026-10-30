@@ -630,6 +630,12 @@ class Engine:
         dropped = sorted(p for p in flagged if p not in dirty and p not in tracked)
         if dropped:
             self.ledger.event(self.run["id"], None, "undeclared_file_dropped", json.dumps(dropped))
+        # Never staged nor flagged (#98), so named here, once, on the closing cycle.
+        ignored = gitutil.ignored_paths(self.worktree, sorted(dirty))
+        if ignored:
+            self.ledger.event(
+                self.run["id"], cycle_row["id"], "ignored_paths_dirty", json.dumps(sorted(ignored))
+            )
         return sorted(p for p in flagged if p in dirty)
 
     def record_commit(self, cycle_row, phase: str, sha: str, message: str, files: list[str]):

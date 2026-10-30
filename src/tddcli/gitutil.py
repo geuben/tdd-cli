@@ -15,14 +15,20 @@ class GitError(RuntimeError):
     pass
 
 
-def git(worktree: Path, *args: str, check: bool = True, env: dict[str, str] | None = None) -> str:
+def git(
+    worktree: Path,
+    *args: str,
+    check: bool = True,
+    env: dict[str, str] | None = None,
+    input: str | None = None,
+) -> str:
     argv = ["git", "-C", str(worktree), *args]
     if env:
         # On the command line, not in the process environment: a SudoActor with no
         # agent environment runs `sudo -H`, which resets the environment, and a lost
         # GIT_INDEX_FILE would point `git add` at the agent's real index.
         argv = ["env", *(f"{k}={v}" for k, v in env.items()), *argv]
-    proc = actor.current().run_argv(argv)
+    proc = actor.current().run_argv(argv, input=input)
     if check and proc.returncode != 0:
         raise GitError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
     return proc.stdout
@@ -97,6 +103,26 @@ def status_porcelain(worktree: Path) -> list[tuple[str, str]]:
             continue
         entries.append((line[:2], line[3:].strip()))
     return entries
+
+
+def ignored_paths(worktree: Path, paths: Sequence[str]) -> set[str]:
+    """Which of `paths` git's ignore rules match, tracked or not (#98).
+
+    `--no-index` because check-ignore otherwise never reports a tracked path. No `-v`:
+    it would print negated (`!`) matches too. Exit 1 means nothing matched.
+    """
+    if not paths:
+        return set()
+    out = git(
+        worktree,
+        "check-ignore",
+        "--no-index",
+        "--stdin",
+        "-z",
+        check=False,
+        input="".join(f"{p}\0" for p in paths),
+    )
+    return {p for p in out.split("\0") if p}
 
 
 def is_dirty(worktree: Path) -> bool:

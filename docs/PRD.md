@@ -205,7 +205,7 @@ an auditor compares them against reality.
 Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mismatch`,
 `off_protocol_invocation`, `stale_artifact`, `artifact_stale_inherited`, `plan_blob_changed`,
 `executor_unknown`, `artifact_regenerate_failed`, `baseline_late_probe`,
-`baseline_late_probe_unobserved`, `flaky_pre_existing`.
+`baseline_late_probe_unobserved`, `flaky_pre_existing`, `ignored_paths_dirty`.
 
 `flaky_pre_existing` is an untouched pre-existing failure that passed when rerun alone (R9.1f).
 
@@ -847,6 +847,9 @@ The CLI stages; it never delegates staging to the agent, and it never runs `git 
 - **R9.16** Files modified inside a project root matching neither classification are left
   unstaged and recorded as `undeclared_file_touched`, and named in `next_action`. Per P2 this
   does not block.
+  A path git's ignore rules match is build output whether or not it is tracked (`git
+  check-ignore --no-index`). Like a `config.is_ignored` path, it is never staged and never
+  recorded as `undeclared_file_touched`, so the run-close gate never sees it (#98).
 - **R9.17** Commit messages come from the plan front-matter where declared, falling back to a
   `--message` argument. Plans already specify them; this places them under plan review.
 - **R9.18** Ordering within `advance` is: run suites → verdict → stage → commit → record
