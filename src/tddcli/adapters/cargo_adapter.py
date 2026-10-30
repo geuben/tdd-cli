@@ -71,6 +71,7 @@ from .base import (
     GateResult,
     Verdict,
     clip_failure,
+    command_failure,
 )
 
 # `     Running unittests src/lib.rs (target/debug/deps/x-abc)` → target "lib"
@@ -339,12 +340,14 @@ class CargoAdapter(Adapter):
         return tests
 
     def collectable(self) -> GateResult:
-        code, out, err = self._run_suite(
-            f"{self._targeted_prefix()} --no-run 2>&1", self._suite_env(None)
-        )
+        cmd = f"{self._targeted_prefix()} --no-run 2>&1"
+        code, out, err = self._run_suite(cmd, self._suite_env(None))
         if code == 0:
             return GateResult(ok=True)
-        return GateResult(ok=False, output=clip_failure(self._errors(out + err)))
+        return GateResult(
+            ok=False,
+            output=clip_failure(self._errors(out + err)) or command_failure(cmd, code),
+        )
 
     # ------------------------------------------------------------------
     # Results
