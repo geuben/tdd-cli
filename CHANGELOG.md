@@ -6,6 +6,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-30
+
 ### Added
 
 - **An untouched pre-existing failure is rerun before it blocks** (#73). When GREEN's
