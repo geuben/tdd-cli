@@ -525,3 +525,17 @@ def test_stale_artifact_whose_hook_commits_nothing_replies_fix_regression(repo, 
         "fix_regression",
         ["spec"],
     )
+
+
+def test_cycle_closes_once_the_stale_artifact_is_fresh_again(repo, tmp_path):
+    marker = tmp_path / "stale"
+    plan = _register_spec_artifact(repo, f'check       = "test ! -f {marker}"\n')
+    assert run_cli(repo, "run", "start", "--plan", plan)["ok"]
+    marker.touch()
+    first = run_cli(repo, "advance")
+    assert first["next_action"]["verb"] == "fix_regression", first
+
+    marker.unlink()
+    second = run_cli(repo, "advance")
+
+    assert second["next_action"]["verb"] == "complete"
