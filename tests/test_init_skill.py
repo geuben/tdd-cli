@@ -258,3 +258,11 @@ def test_doctor_checks_the_driving_skills_declared_versions(repo):
         "not a mapping": True,
         "remedy named": True,
     }
+
+
+def test_the_hooks_readme_shows_the_stanza_init_writes():
+    from tddcli import harness
+
+    text = (REPO_ROOT / "examples/claude-code-hooks/README.md").read_text()
+    block = text.split("```json\n", 1)[1].split("```", 1)[0]
+    assert json.loads(block) == harness.HARNESSES["claude-code"].settings
