@@ -429,8 +429,9 @@ def _handle_impl(engine: Engine, cycle, retried: bool) -> Envelope:
     outcomes, others, _, failure = engine.run_projects(
         projects, targets, cycle, AWAITING_IMPL, retried
     )
+    reruns: dict[str, list[str]] = {}
     if others:
-        others, _ = engine.rerun_untouched(cycle, AWAITING_IMPL, others)
+        others, reruns = engine.rerun_untouched(cycle, AWAITING_IMPL, others)
 
     if others:
         return _reply(
@@ -439,6 +440,7 @@ def _handle_impl(engine: Engine, cycle, retried: bool) -> Envelope:
             Verb.FIX_REGRESSION,
             f"The implementation broke {len(others)} test(s) elsewhere.",
             other_failures=others,
+            **({"rerun_outcomes": reruns} if reruns else {}),
         )
     if not all(o == PASSED for o in outcomes.values()):
         return _reply(

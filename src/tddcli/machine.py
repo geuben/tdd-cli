@@ -271,22 +271,23 @@ class Engine:
         """R9.1f — rerun each failure alone before it is reported. Returns the failures
         still failing and the rerun outcomes of those that never passed."""
         remaining: list[str] = []
+        reruns: dict[str, list[str]] = {}
         for test_id in failures:
             name = test_id.split("::", 1)[0]
             adapter = adapters.build(self.config.project(name), self.worktree)
             verdict = adapter.run(test_id, target_only=True)
+            outcomes = ["failed", verdict.target_outcome]
             if verdict.target_outcome != "passed":
                 remaining.append(test_id)
+                reruns[test_id] = outcomes
                 continue
             self.ledger.event(
                 self.run["id"],
                 cycle_row["id"],
                 "flaky_pre_existing",
-                json.dumps(
-                    {"test": test_id, "phase": phase, "outcomes": ["failed", verdict.target_outcome]}
-                ),
+                json.dumps({"test": test_id, "phase": phase, "outcomes": outcomes}),
             )
-        return remaining, {}
+        return remaining, reruns
 
     def sweep(self, cycle_row, touched: set[str], skip_own: bool = False) -> SweepOutcome:
         """R9.2 — cycle projects plus anything downstream of an artifact it touched.
