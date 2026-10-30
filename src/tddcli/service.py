@@ -269,6 +269,17 @@ def _well_formed_repo(repo) -> bool:
     )
 
 
+def _view(repo: str, path: Path, readonly: bool) -> ledger_mod.Ledger | None:
+    """A host ledger, opened to read every source's runs.
+
+    Read-only opens it as `fleet` does, so it is never written, nor migrated: None when
+    it has gone. Otherwise it is opened as a `Ledger`, which migrates an old one.
+    """
+    if readonly:
+        return ledger_mod.open_readonly(path, source=None)
+    return ledger_mod.Ledger(Path(repo), path=path, source=None)
+
+
 def _ok(result) -> dict:
     return {"ok": True, "result": wire.encode(result)}
 
@@ -437,12 +448,12 @@ class Service:
         out["suites"] = self.lease_snapshot()
         return out
 
-    def log(self, repo: str, run_id: int) -> dict:
+    def log(self, repo: str, run_id: int, *, readonly: bool = False) -> dict:
         """Any source's run, rendered as the friction log its guest would render."""
         path = self.host_files(repo).get(repo)
-        if path is None:
+        view = None if path is None else _view(repo, path, readonly)
+        if view is None:
             return _refusal("unknown_repo", f"no ledger for {repo!r} on this host")
-        view = ledger_mod.Ledger(Path(repo), path=path, source=None)
         try:
             run = view.run(run_id)
             if run is None:
@@ -465,11 +476,13 @@ class Service:
         marker = ledger_mod.import_as_source(source, target, name)
         return _ok({"imported": str(target), "pre_split_import": marker})
 
-    def metrics(self, repo: str | None = None) -> dict:
+    def metrics(self, repo: str | None = None, *, readonly: bool = False) -> dict:
         """`tdd metrics`, over every source's runs, for each repository on the host."""
         out = {}
         for slug, path in self.host_files(repo).items():
-            view = ledger_mod.Ledger(Path(slug), path=path, source=None)
+            view = _view(slug, path, readonly)
+            if view is None:
+                continue
             try:
                 out[slug] = render.metrics(view, None)
             finally:
@@ -481,10 +494,10 @@ class Service:
         if method not in REPORT_METHODS:
             return _refusal("method_not_allowed", f"{method} is not answered on the report socket")
         if method == "metrics":
-            return _ok(self.metrics(*args))
+            return _ok(self.metrics(*args, readonly=True))
         if method == "fleet":
             return _ok(self.fleet())
-        return self.log(*args)
+        return self.log(*args, readonly=True)
 
     def admin(self, method: str, args: list, kwargs: dict) -> dict:
         """An operator's request, from the admin socket."""
