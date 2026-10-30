@@ -36,6 +36,8 @@ def test_a_split_runner_that_can_act_reports_its_checks_once_and_in_order(
     """Probing the drop to the agent first must not change what a healthy runner's
     doctor says: the same checks, in the same order, with `id -u` asked once."""
     agent_context(monkeypatch, umask=0o022)
+    # `uv run pytest` exports one; its informational check is not under test here.
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
 
     out = run_cli(repo, "--agent-context-stdin", "doctor")
 

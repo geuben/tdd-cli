@@ -430,6 +430,27 @@ def cmd_doctor(args) -> Envelope:
         ex_detail += f" — {ex.reason}"
     check("executor identity", True, ex_detail)
 
+    # Issue #99 — a notice, never a blocker: a VIRTUAL_ENV leaked from the launching
+    # harness makes a runner that honours it use another environment's packages.
+    venv = os.environ.get("VIRTUAL_ENV")
+    if venv:
+        try:
+            rel = Path(venv).resolve().relative_to(worktree.resolve())
+            owner = cfg.owning_project(rel.as_posix())
+        except ValueError:
+            owner = None
+        if owner is not None:
+            check("VIRTUAL_ENV", True, f"VIRTUAL_ENV={venv} is inside project {owner.name}'s root")
+        else:
+            check(
+                "VIRTUAL_ENV",
+                True,
+                f"VIRTUAL_ENV={venv} is outside every project root in tdd.toml, so it was"
+                " inherited from whatever launched this shell. A suite runner that honours"
+                " VIRTUAL_ENV runs in that environment instead of the project's own, where the"
+                " reporter or the dependencies may be missing. Unset it before `tdd run start`.",
+            )
+
     projects: dict[str, dict] = {}
     for name, project in cfg.projects.items():
         before = len(checks)

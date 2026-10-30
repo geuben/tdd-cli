@@ -526,6 +526,11 @@ recorder rather than by each call site. A blocker with an empty `detail` is
 unfalsifiable — `resolve_blocker` with nothing to resolve — and an agent that meets
 one has no move left but to re-run doctor and read the same output again.
 
+When `VIRTUAL_ENV` is set, doctor records an informational `VIRTUAL_ENV` check (always
+`ok: true`). It names the project whose root holds the environment, or warns that the variable
+points outside every project root in `tdd.toml` and was inherited from whatever launched the
+shell, so a runner that honours it would run the suite in another environment (issue #99).
+
 ### 8.2 Registration
 | Command | Behaviour |
 |---|---|
