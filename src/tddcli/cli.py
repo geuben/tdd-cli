@@ -172,6 +172,11 @@ def _project_key(name: str) -> str:
 
 def cmd_init(args) -> Envelope:
     worktree = _worktree()
+    if args.update_skill and not args.skill:
+        return failure(
+            "--update-skill replaces a harness's files: name the harness with --skill",
+            reason="skill_required",
+        )
     chosen = None
     if args.skill:
         chosen = harness.HARNESSES.get(args.skill)
