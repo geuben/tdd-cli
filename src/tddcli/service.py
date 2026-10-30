@@ -86,6 +86,9 @@ def load_config(path: Path | None = None) -> ServiceConfig:
         raise ServiceConfigError(f"{path}: [service] needs `admin_socket`")
     home = section.get("home")
     report = section.get("report_socket")
+    if report and Path(report) == Path(section["admin_socket"]):
+        # A listener replaces any socket at its path: the admin socket would be lost.
+        raise ServiceConfigError(f"{path}: [service] report_socket must not be admin_socket")
     return ServiceConfig(
         admin_socket=Path(section["admin_socket"]),
         home=Path(home) if home else Path.home() / ".local" / "share" / "tdd-cli",
