@@ -811,7 +811,9 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   array of those artifact names, and no cycle checks them again (issue #99). When the tool cannot resolve staleness itself (no `regenerate`
   command, or the regenerate hook produced no commit), it emits `stale_artifact` and blocks the
   close — this is one of the few hard gates (§12), because a stale contract produces a *green*
-  wrong answer. When the tool resolves staleness by regenerating and committing, it records
+  wrong answer. At cycle close the block is surfaced as `fix_regression` with
+  `result.stale_artifacts` naming the artifacts. The cycle stays open until the check passes or
+  the hook produces a commit. When the tool resolves staleness by regenerating and committing, it records
   resolution in `artifact_check.regenerated` and the friction log surfaces it as a benign
   "Artifacts auto-regenerated" header line; no `stale_artifact` event is emitted. A non-zero exit
   from a `regenerate` hook is a hard close-sweep failure: the tool cannot answer "is it stale?"
