@@ -64,7 +64,7 @@ def friction_log(ledger: Ledger, run) -> str:
     missing = sorted({d["n"] for d in declared} - delivered - skipped)
     a(f"- Never reached: {missing or 'none'}")
     interventions = ledger.interventions(run["id"])
-    a(f"- Human interventions: {len(interventions)}")
+    a(f"- Unblocks: {len(interventions)}")
     for i in interventions:
         a(f"  - {i['at']}: {i['note']}")
     for amended in ledger.event_details(run["id"], "baseline_amended"):
