@@ -6,7 +6,8 @@ The CLI cannot compel an agent to keep going — only the harness can (README,
 stop, it asks `tdd status`, and blocks the stop unless the run is complete or
 blocked (a typed blocker is the sanctioned way to release this hook).
 
-Wire it up in `.claude/settings.json` — see README.md in this directory.
+`tdd init --skill claude-code` installs and wires it; `tdd docs hooks` shows the manual
+setup.
 """
 
 import json

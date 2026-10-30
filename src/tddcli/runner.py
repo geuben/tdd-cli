@@ -36,6 +36,8 @@ class RunnerConfig:
     ledger_home: Path | None = None
     #: A ledger service's socket: the ledger is kept on the host, never here.
     ledger_socket: Path | None = None
+    #: A guest's own worker budget: it caps the share the ledger service leases it.
+    core_budget: int | None = None
     executors: dict[str, str] = field(default_factory=dict)
 
 
@@ -113,6 +115,14 @@ def load() -> RunnerConfig | None:
             f"{path}: [runner] names both `ledger_socket` and `ledger_home`; a runner keeps"
             " its ledger in one place"
         )
+    core_budget = section.get("core_budget")
+    # TOML `true` loads as a bool, which Python counts as an int.
+    if core_budget is not None and (
+        isinstance(core_budget, bool) or not isinstance(core_budget, int) or core_budget < 1
+    ):
+        raise RunnerConfigError(
+            f"{path}: [runner] core_budget must be a positive integer, not {core_budget!r}"
+        )
     return RunnerConfig(
         user=section["user"],
         command=section["command"],
@@ -120,5 +130,6 @@ def load() -> RunnerConfig | None:
         sudo=section.get("sudo", DEFAULT_SUDO),
         ledger_home=Path(ledger_home) if ledger_home else None,
         ledger_socket=Path(ledger_socket) if ledger_socket else None,
+        core_budget=core_budget,
         executors=dict(raw.get("executor") or {}),
     )

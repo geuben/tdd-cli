@@ -96,6 +96,11 @@ class LocalActor:
         """The environment the agent's commands run with."""
         return self._env({}) or dict(os.environ)
 
+    def provenance(self) -> str:
+        """Where a command ran, for a failure the agent may not reproduce in its own
+        shell. Nothing to say when the actor is the process itself."""
+        return ""
+
     @staticmethod
     def _env(extra: dict[str, str] | None) -> dict[str, str] | None:
         """`extra` is laid over the inherited environment, never in place of it."""
@@ -125,6 +130,14 @@ class SudoActor(LocalActor):
 
     def run_shell(self, command, *, cwd, env=None, timeout=None):
         return self.run_argv(["/bin/sh", "-c", command], cwd=cwd, env=env, timeout=timeout)
+
+    def provenance(self) -> str:
+        """The sudo hop is where a PATH or environment difference comes from (issue 184)."""
+        return (
+            f"This ran through the split-mode runner, as {self.agent} (`{self.sudo} -u {self.agent}`):"
+            f" its PATH and environment are the ones sudo gives {self.agent}, which can differ from"
+            f" {self.agent}'s own shell."
+        )
 
     def _env(self, extra):  # type: ignore[override]
         """The agent's environment, never the runner's: `-E` hands sudo exactly this."""

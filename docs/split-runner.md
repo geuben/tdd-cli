@@ -312,6 +312,7 @@ The guest's `runner.toml` names the forwarded socket instead of a ledger home:
     user          = "tdd-runner"
     command       = "/opt/tdd-cli/bin/tdd"
     ledger_socket = "/run/tdd-cli/ledger.sock"   # instead of ledger_home
+    # core_budget = 4   # caps this guest's worker lease; defaults to the CPUs the runner may use
 
 Naming both `ledger_socket` and `ledger_home` is refused. In the guest, `tdd doctor`'s
 `ledger reachable` check pings the service and names the source it reached:
@@ -355,18 +356,79 @@ runs record the guest's claim again; `bind` refuses an empty or blank executor w
 
 On the host, the operator reads every source together through the admin socket:
 
-    tdd ledger metrics [--repo <slug>]              # `tdd metrics` over every source, per repository
-    tdd ledger fleet                                # active runs of every source, and the host's suites
+    tdd ledger metrics [--repo <slug>] [--since <time>]   # `tdd metrics` over every source, per repository
+    tdd ledger fleet                                      # active runs of every source, and the host's suites
     tdd ledger log --repo <slug> --run <id> [--out FILE]
 
 Every run in them carries its `source`. Inside a guest, `tdd metrics`, `tdd fleet`,
 `tdd log render` and `tdd invocation show` still work, and see only that guest's source.
+
+`--since` is for a poller: it keeps only the runs whose figures can have changed since its
+last poll, those still open and those that ended at or after the given time. A resumed run
+is open again, so it comes back. The time is ISO 8601 with a UTC offset
+(`2026-09-01T10:20:00+00:00`, `2026-09-01T10:20:00Z`, `2026-09-01T11:20:00+01:00`); one
+with no offset, a bare date or anything else is refused with `reason: "bad_since"`, never
+read as local time. Every run in `metrics`, here and in `tdd metrics`, carries
+`time.cycles`: each cycle's `ordinal`, `opened_at`, `closed_at`, `wall_clock_s`, `suite_s`
+and suite `runs`, with `closed_at` and `wall_clock_s` null while the cycle is open.
+
+### A read-only report socket for dashboards
+
+A dashboard that charts cycle and suite time across the host needs those three reads and
+nothing else. The admin socket would also give it `add-source`, `remove-source`, `import`
+and `bind`. Give it a report socket instead:
+
+    [service]
+    admin_socket  = "/run/tdd-cli/admin.sock"
+    report_socket = "/var/lib/tdd-cli/report/report.sock"
+
+With no `report_socket` there is no report socket, and nothing changes. It must not be
+`admin_socket`'s path: the service refuses that config, because the report listener would
+replace the admin socket.
+
+- It answers `metrics`, `fleet` and `log` only, with the same results the admin socket
+  gives. Every other request, `ping` included, is refused with `method_not_allowed`.
+- It opens every ledger read-only (SQLite's `mode=ro`), so no request on it can write, nor
+  migrate an old ledger.
+- It is mode 660, like a source's, with the group a new file gets. The unit's `Group=` is
+  the guests' group, so the mode alone does not keep it to one account.
+
+**Whose it is.** It is the dashboard's account's, and nobody else's. Put it in a directory
+of its own that only the service account and that account can traverse, and admit the
+account with an inherited (default) ACL on the directory, so the socket the service
+recreates on every start gets it too:
+
+    install -d -o tdd-ledger -g tdd-ledger -m 700 /var/lib/tdd-cli/report
+    setfacl -m u:orchestrator:rx,d:u:orchestrator:rw /var/lib/tdd-cli/report
+
+`tdd ledger metrics`, `fleet` and `log` fall back to the report socket when the admin
+socket cannot be opened, so the dashboard's account runs the same commands as the operator.
+Only a failed connect falls back; every other `tdd ledger` verb still needs the admin
+socket. That account must be able to read `/etc/tdd-cli/ledger.toml`, which stays owned by
+root or the service account.
+
+A client that speaks the wire itself sends one JSON line per request, and reads one back:
+
+    {"method": "metrics", "args": [<slug or null>], "kwargs": {"since": <time>}}
+    {"method": "fleet"}
+    {"method": "log", "args": [<slug>, <run id>]}
 
 **Worker leases are the host's.** A socket-mode runner takes each suite's worker lease
 from the service, which splits the host's cores across every guest's running suites. A
 lease ends when its connection closes, which is also what a dead VM does, and one older
 than the stale limit is not counted. Named leases stay in the guest: they guard
 resources the guest's suites run against.
+
+The guest caps that share at its own budget: a suite gets `min(the service's share, the
+guest's budget)` workers. The guest's budget is `core_budget` in its runner.toml's
+`[runner]`, otherwise the CPUs the runner may run on (`len(os.sched_getaffinity(0))`), or
+`os.cpu_count()` where the platform has no affinity. So a 6-core, 4 GB guest on a 10-core
+host no longer runs `-n 10`. `core_budget` replaces the affinity rather than adding to it,
+and it only ever lowers the share. Runner.toml is root's, so the operator sets it and the
+agent cannot; `TDD_CORE_BUDGET` is never read in a guest. A `core_budget` that is not a
+positive integer is refused. Only a runner with `ledger_socket` reads it: a runner that
+keeps its own ledger splits its own cores as before. `tdd fleet` still shows the host's
+split.
 
 ### Existing ledgers
 

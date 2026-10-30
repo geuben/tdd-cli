@@ -594,5 +594,9 @@ class Engine:
     def missing_annotations(self, cycle_row) -> list[str]:
         if not self.annotation_keys:
             return []
+        declared = self.declared_for(cycle_row["ordinal"])
+        required = contract_mod.required_annotation_keys(
+            declared.annotation_keys if declared else None, self.annotation_keys
+        )
         present = self.ledger.annotation_keys_of(cycle_row["id"])
-        return [k for k in self.annotation_keys if k not in present]
+        return [k for k in required if k not in present]

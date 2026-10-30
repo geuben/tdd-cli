@@ -2,6 +2,9 @@
 name: tdd-drive
 description: Drive a tdd-cli run to completion. Dispatches on next_action.verb from each JSON envelope, writes only tests and implementation, and lets the tool run suites, decide phase, and commit.
 argument-hint: [<plan-path>]
+metadata:
+  verb_set_version: "2"
+  envelope_version: "1"
 ---
 
 You are driving a `tdd-cli` run. The tool decides everything about process state; you
@@ -98,5 +101,5 @@ Three unchanged retries produce `resolve_blocker`; do not try to outlast it.
 
 After any interruption (crash, compaction, inherited worktree): `tdd status`, then
 re-enter the loop at step 2. Never reconstruct position from conversation memory —
-the ledger's answer is the only true one. `tdd resume` handles a run interrupted by a
-human intervention.
+the ledger's answer is the only true one. `tdd resume` handles a run that was unblocked or
+otherwise changed from outside the session.

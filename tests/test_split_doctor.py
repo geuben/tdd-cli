@@ -12,7 +12,7 @@ import os
 
 import pytest
 
-from conftest import ABSENT, agent_context, run_cli
+from conftest import ABSENT, agent_context, current_user, git, run_cli
 
 
 def _check(out: dict, name: str) -> dict:
@@ -179,3 +179,19 @@ def test_a_split_runner_notes_the_agents_virtual_env_not_its_own(
     assert _check(out, "VIRTUAL_ENV")["detail"].startswith(
         f"VIRTUAL_ENV={outside} is outside every project root"
     )
+
+
+def test_split_doctor_says_a_failed_collection_ran_through_the_runner_as_the_agent(
+    repo, split_runner
+):
+    """Issue 184: the runner's sudo hop replaced the agent's PATH, so the probe failed
+    where the agent's own shell could not reproduce it. The detail says where it ran."""
+    (repo / "tdd.toml").write_text(
+        (repo / "tdd.toml").read_text() + 'collect_command = "tdd-184-no-such-tool pytest"\n'
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "a collect command that is not installed")
+
+    detail = _check(run_cli(repo, "doctor"), "collectable")["detail"]
+
+    assert f"ran through the split-mode runner, as {current_user()}" in detail, detail

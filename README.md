@@ -49,6 +49,7 @@ uv run tdd --help
 
 ```sh
 tdd init                       # scaffold tdd.toml from detected projects — then review it
+tdd init --skill claude-code   # also scaffold the Claude Code skill and hooks; see tdd docs hooks
 tdd doctor                     # environment preflight
 tdd plan register tasks/my-plan.md
 tdd run start --plan tasks/my-plan.md
@@ -247,8 +248,22 @@ ancillary_files:
 
 **Top-level keys:**
 
-`annotation_keys` — a list of judgement-annotation keys the plan requires; the run close
-gate checks that every key is present before the plan can be marked complete.
+`annotation_keys` — a list of judgement-annotation keys the plan requires; a cycle cannot
+close until it carries every key that applies to it. A plain string applies to every
+cycle. A key that only some cycles concern is scoped with a mapping, so the other cycles
+are not forced to record `n/a`:
+
+```yaml
+annotation_keys:
+  - plan_defect_seen                       # every cycle
+  - {name: artifact_verify, applies_to: [12, 19]}
+  - {name: device_log, projects: [device-suite]}
+```
+
+`applies_to` takes cycle ordinals and `projects` takes project names; each accepts a
+scalar or a list, and they are exclusive on one entry. A contract cycle is in a `projects`
+scope when any of its projects is listed. An ordinal the plan does not declare, a project
+no declared cycle uses, a duplicate name or a mapping with no scope fails registration.
 
 `ancillary_files` — a plan-level list of repo-root-relative paths the plan is known to
 touch outside any registered project root (cross-project ripples, companion documents).
@@ -279,9 +294,10 @@ A run that will not be finished — stopped on purpose, or blocked for good — 
 live run, else its most recent blocked run. It sets the run's `outcome` to `abandoned`,
 records the reason and who abandoned it (the account, and the executor identity as `run
 start` resolves it; on a split runner the account is the calling agent's `SUDO_USER`),
-records a `human_intervention`, and releases the worktree's baseline and advance claims.
+and releases the worktree's baseline and advance claims.
 `tdd fleet` stops listing the run, `tdd metrics` reports it as `abandoned` with an
-`abandoned: {reason, by}` entry, and a new run can start at the same worktree path.
+`abandoned: {reason, by}` entry, and a new run can start at the same worktree path. The
+friction log names the reason on an `Abandoned:` line in its header.
 
 When the worktree is gone, abandon by id from any worktree of the repo: `tdd run abandon
 --run <id> --reason "<why>"`. `--run` is accepted only for a run whose worktree no longer
@@ -324,11 +340,15 @@ cycle's RED path empirically, assigns cycle kinds, and authors the contract — 
 
 `tdd log render` projects the ledger into a markdown friction log — the feedback channel
 back to the **planning** process. It reports plan fidelity (declared vs delivered vs
-skipped vs never-reached cycles, human interventions) and, per cycle: the target, suite
+skipped vs never-reached cycles, and unblocks with their notes) and, per cycle: the target, suite
 runs by phase, the first-run outcome against expectation, sensitivity checks, commits,
 and integrity events, and the failures each suite invocation saw, with the phase that
 failed and the first line of its message. A `## Time` section says where the run's time went: the wall clock,
 suite time and its share, per phase and per cycle.
+Plan fidelity also warns, one line per key, of a declared check that never ran: an
+`annotation_keys` entry none of whose cycles was delivered (skipped and never-reached
+cycles do not count), e.g. ``- **Declared check never ran:** `artifact_verify` (applies to
+cycles 12, 19)``.
 
 Every observable fact in it is projected from recorded events. The agent that did the
 work cannot compose it — that is what makes it worth reading, and why the log is
@@ -353,7 +373,7 @@ rendered, never written. Judgement enters in exactly two ways:
   narrative as the agent's opinion.
 
 `tdd metrics` is the quantitative companion: attempts per cycle, RED-first violation
-rate, fidelity, blockers, interventions, and suite time per phase against the run's wall
+rate, fidelity, blockers, unblocks, and suite time per phase against the run's wall
 clock. Cross-plan aggregates are deliberately labelled
 non-comparable — cycle difficulty varies too much — so compare runs of the same contract
 only (e.g. the same plan executed by two models).
@@ -480,7 +500,7 @@ and is never reclassified as a pin.
 | Command | Purpose |
 |---|---|
 | `tdd docs [topic]` | print the documentation shipped with this version; no network |
-| `tdd init` / `tdd doctor` | scaffold config; environment preflight |
+| `tdd init [--skill claude-code [--update-skill]]` / `tdd doctor` | scaffold config (and the agent harness); environment preflight |
 | `tdd plan register <path>` | parse and hash the contract |
 | `tdd plan paths <path>` | resolve a plan's test ids to repository file paths |
 | `tdd run start --plan <path>` | capture baselines, resolve executor, open cycle 1 |
@@ -491,11 +511,11 @@ and is never reclassified as a pin.
 | `tdd annotate --key --value` | attach judgement to the current cycle |
 | `tdd note "<text>"` | attach a free-text narrative note to the current cycle or run |
 | `tdd blocker --kind --detail` | typed blocker; releases the stop hook |
-| `tdd resume [--unblock --note]` | reconstruct position; human intervention |
-| `tdd run abandon --reason <text> [--run <id>]` | end a run that will not be finished; human only |
+| `tdd resume [--unblock --note]` | reconstruct position; `--unblock` reopens a blocked run and records an unblock |
+| `tdd run abandon --reason <text> [--run <id>]` | end a run that will not be finished; for whoever supervises the run |
 | `tdd log render [--out]` | project the ledger into a friction log |
 | `tdd invocation show <id>` | an invocation's recorded failures: phase, message, detail |
-| `tdd metrics` | fidelity, attempts, violations, interventions, time |
+| `tdd metrics` | fidelity, attempts, violations, unblocks, time |
 | `tdd fleet [--json]` | all active runs across every worktree; read-only |
 
 ## Scoped baseline capture (R9.5c)
@@ -704,8 +724,11 @@ cannot become:
 - across a VM boundary, the runner in each guest keeps no ledger at all: it reads and writes
   the host's through a socket served by `tdd ledger serve`, which records every run under the
   source of the socket it came in on, refuses a guest anything but its own open runs, and
-  gives the operator one history and one worker budget for every guest. The operator binds
-  or unbinds each source's model, and can give an orchestrator a socket that does only that.
+  gives the operator one history and one worker budget for every guest. Each guest caps its
+  share at its own cores (`core_budget` in its runner.toml). The operator binds or unbinds
+  each source's model, and can give an orchestrator a socket that does only that. An optional
+  read-only report socket gives a dashboard every source's metrics, fleet and logs, and
+  nothing else.
 
 `tdd docs split` ([docs/split-runner.md](docs/split-runner.md)) has the setup, the
 verification checklist, and what split mode does not protect against.
@@ -727,7 +750,8 @@ see the run-close gate above.
 **Delegated to hooks:** a Stop hook that queries `tdd status` and refuses to let an agent
 stop while a run is live; a Bash hook redirecting bare `pytest`/`vitest` through `tdd advance`.
 Ready-made Claude Code implementations of both live in
-[`examples/claude-code-hooks/`](./examples/claude-code-hooks/).
+[`examples/claude-code-hooks/`](./examples/claude-code-hooks/), and `tdd init --skill
+claude-code` installs and wires them, from the copies shipped with the binary.
 
 **Delegated to the skill:** how to respond to each `next_action` verb — writing the test,
 the stub, the implementation. [`docs/harness-integration.md`](./docs/harness-integration.md)
