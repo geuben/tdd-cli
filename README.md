@@ -695,7 +695,8 @@ cannot become:
 - across a VM boundary, the runner in each guest keeps no ledger at all: it reads and writes
   the host's through a socket served by `tdd ledger serve`, which records every run under the
   source of the socket it came in on, refuses a guest anything but its own open runs, and
-  gives the operator one history and one worker budget for every guest.
+  gives the operator one history and one worker budget for every guest. The operator binds
+  or unbinds each source's model, and can give an orchestrator a socket that does only that.
 
 `tdd docs split` ([docs/split-runner.md](docs/split-runner.md)) has the setup, the
 verification checklist, and what split mode does not protect against.

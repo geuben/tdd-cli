@@ -1780,13 +1780,43 @@ def _ledger_sources(args, cfg) -> Envelope:
     )
 
 
+def _bind_call(args, cfg, method: str, *call_args):
+    """A `bind` or `unbind`, on the socket the operator named, or else the admin socket.
+
+    An admin socket this account cannot open falls back to the bind socket, when there
+    is one. Only a failed connect does: a request the admin socket took is never resent.
+    """
+    if args.socket:
+        return wire.call(Path(args.socket), method, *call_args)
+    try:
+        conn = wire.Connection(cfg.admin_socket)
+    except wire.LedgerUnreachable:
+        if cfg.bind_socket is None:
+            raise
+        conn = wire.Connection(cfg.bind_socket)
+    try:
+        return conn.request(method, *call_args)
+    finally:
+        conn.close()
+
+
 def _ledger_bind(args, cfg) -> Envelope:
-    bound = wire.call(cfg.admin_socket, "bind", args.name, args.executor)
+    bound = _bind_call(args, cfg, "bind", args.name, args.executor)
     return Envelope(
         result=bound,
         next_action=NextAction(
             Verb.COMPLETE,
             f"Source {args.name}'s next runs record {args.executor}, as said by the operator.",
+        ),
+    )
+
+
+def _ledger_unbind(args, cfg) -> Envelope:
+    unbound = _bind_call(args, cfg, "unbind", args.name)
+    return Envelope(
+        result=unbound,
+        next_action=NextAction(
+            Verb.COMPLETE, f"Source {args.name}'s next runs record the guest's own claim."
         ),
     )
 
@@ -2029,7 +2059,12 @@ def build_parser() -> argparse.ArgumentParser:
     s = ledger_p.add_parser("bind", help="set the executor a source's next runs record")
     s.add_argument("name")
     s.add_argument("--executor", required=True)
+    s.add_argument("--socket", help="the socket to bind through: the admin or the bind socket")
     s.set_defaults(fn=_ledger_verb(_ledger_bind))
+    s = ledger_p.add_parser("unbind", help="clear the executor a source's next runs record")
+    s.add_argument("name")
+    s.add_argument("--socket", help="the socket to unbind through: the admin or the bind socket")
+    s.set_defaults(fn=_ledger_verb(_ledger_unbind))
     s = ledger_p.add_parser("fleet", help="active runs of every source")
     s.set_defaults(fn=_ledger_verb(_ledger_fleet))
     s = ledger_p.add_parser("metrics", help="metrics over every source's runs")

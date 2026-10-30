@@ -6,6 +6,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **A bind-only socket, and `tdd ledger unbind`** (#179). An optional `[service]
+  bind_socket`, with `bind_group`, is a second operator socket, mode 660 and owned by that
+  group, that answers `bind` and `unbind` for existing sources and refuses everything else
+  with `method_not_allowed`. An orchestrator that starts each guest can now say which model
+  it runs without the admin socket. `tdd ledger bind` and `unbind` take `--socket`, and
+  without it fall back to the bind socket when the admin socket cannot be opened.
+  `tdd ledger unbind <source>` clears a binding, so the source's next runs record the
+  guest's claim again instead of the previous run's model.
+
+### Fixed
+
+- **`tdd ledger bind --executor ""` bound an empty model** (#179), which every later run
+  recorded as operator-attested. An empty or blank executor is now refused with
+  `reason: "bad_executor"`.
+
 ## [0.16.0] - 2026-10-30
 
 ### Added

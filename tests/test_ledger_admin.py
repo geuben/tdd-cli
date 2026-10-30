@@ -16,6 +16,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import pytest
+
 from conftest import run_cli
 from tddcli import service, wire
 
@@ -89,6 +91,46 @@ def test_sources_survive_a_service_restart(ledger_service):
     finally:
         restarted.stop()
     assert reply == {"source": "vm-1", "executor": "m"}
+
+
+def test_an_unbinding_survives_a_service_restart(repo, ledger_service):
+    socket_path = ledger_service.dir / "vm-1.sock"
+    ledger_service.service.add_source("vm-1", socket_path, executor="m")
+    run_cli(repo, "ledger", "unbind", "vm-1")
+    ledger_service.service.stop()
+
+    restarted = service.Service(service.load_config(ledger_service.config))
+    restarted.start()
+    try:
+        reply = ping_or_unreachable(socket_path)
+    finally:
+        restarted.stop()
+    assert reply == {"source": "vm-1", "executor": None}
+
+
+def test_unbind_refuses_an_unknown_source(repo, ledger_service):
+    out = run_cli(repo, "ledger", "unbind", "nope")
+
+    assert out["result"].get("reason") == "unknown_source"
+
+
+def test_bind_refuses_an_empty_executor(repo, ledger_service):
+    ledger_service.service.add_source("vm-1", ledger_service.dir / "vm-1.sock", executor="m")
+
+    reasons = [
+        run_cli(repo, "ledger", "bind", "vm-1", "--executor", e)["result"].get("reason")
+        for e in ("", "   ")
+    ]
+    assert reasons == ["bad_executor", "bad_executor"]
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root connects to a mode-000 socket")
+def test_a_forbidden_admin_socket_with_no_bind_socket_is_unreachable(repo, ledger_service):
+    ledger_service.service.add_source("vm-1", ledger_service.dir / "vm-1.sock")
+    (ledger_service.dir / "admin.sock").chmod(0)
+
+    out = run_cli(repo, "ledger", "bind", "vm-1", "--executor", "m")
+    assert out["result"].get("reason") == "ledger_unreachable"
 
 
 def test_socket_modes(ledger_service):
