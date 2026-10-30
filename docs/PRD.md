@@ -651,7 +651,11 @@ For the passed-on-arrival case, which occurred in 4 of 8 executed cycles in the 
   merely looks clean is worse than no run at all — every pre-existing failure reads as a
   regression, at every close sweep, for the life of the run. The check runs before the run row
   is written, so a refusal leaves nothing behind to block the next attempt. A project with no
-  test files and no collection errors is not an error; it simply has no suite yet.
+  test files and no collection errors is not an error; it simply has no suite yet. The
+  nothing-collected refusal quotes the first failed file's recorded reason (the command, its exit
+  status and its output, issue #184), and in split mode says the command ran through the runner,
+  as the agent: that hop is where a PATH or environment difference from the agent's own shell
+  comes from.
 - **R9.5b** `resume --unblock --accept-failures` folds pre-existing failures into the baseline,
   recorded as a `baseline_amended` integrity event alongside the mandatory `--note`. For each
   candidate failure (present in the last close sweep but absent from the current baseline row),

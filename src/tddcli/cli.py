@@ -916,7 +916,8 @@ def cmd_run_start(args) -> Envelope:
                     f" file(s) failed to collect, starting with {sample}. The baseline"
                     " would record no failures and every pre-existing failure would then"
                     " read as a regression. Fix the environment (dependencies"
-                    " installed?) and retry.",
+                    " installed?) and retry."
+                    f"\n{sample}: {collection.failed_files[sample]}",
                     project=name,
                     failed_files=sorted(collection.failed_files),
                 )
