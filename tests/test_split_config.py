@@ -87,3 +87,12 @@ def test_a_core_budget_that_is_not_a_positive_integer_is_refused(tmp_path, monke
         return False
 
     assert {raw: refused(raw) for raw in values} == dict.fromkeys(values, True)
+
+
+def test_a_core_budget_of_one_is_accepted(tmp_path, monkeypatch):
+    cfg = tmp_path / "runner.toml"
+    monkeypatch.setenv("TDD_RUNNER_CONFIG", str(cfg))
+    _write_config(cfg, _current_user())
+    cfg.write_text(cfg.read_text() + "core_budget = 1\n")
+
+    assert runner.load().core_budget == 1
