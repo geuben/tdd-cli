@@ -71,3 +71,24 @@ def test_the_bind_socket_binds_a_source(bind_service):
     answer(bind_service.bind_socket, "bind", "vm-1", "m")
 
     assert wire.call(vm1, "ping")["executor"] == "m"
+
+
+def test_the_bind_socket_refuses_every_other_method(bind_service, tmp_path):
+    bind_service.service.add_source("vm-1", bind_service.dir / "vm-1.sock")
+    other = [
+        ("ping", ()),
+        ("sources", ()),
+        ("add_source", ("vm-x", str(bind_service.dir / "vm-x.sock"))),
+        ("remove_source", ("vm-1",)),
+        ("import", (str(tmp_path / "x.sqlite3"), "legacy")),
+        ("metrics", ()),
+        ("fleet", ()),
+        ("log", ("slug", 1)),
+        ("open", (str(tmp_path),)),
+        ("lease", ()),
+        ("lease_snapshot", ()),
+        ("run", (1,)),
+    ]
+
+    answers = {m: answer(bind_service.bind_socket, m, *a) for m, a in other}
+    assert answers == {m: "method_not_allowed" for m, _ in other}
