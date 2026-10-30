@@ -100,3 +100,15 @@ def test_the_bind_socket_unbinds_a_source(bind_service):
     answer(bind_service.bind_socket, "unbind", "vm-1")
 
     assert wire.call(vm1, "ping")["executor"] is None
+
+
+def test_the_bind_socket_keeps_the_admin_refusals(bind_service):
+    bind_service.service.add_source("vm-1", bind_service.dir / "vm-1.sock")
+    b = bind_service.bind_socket
+
+    answers = [
+        answer(b, "bind", "nope", "m"),
+        answer(b, "unbind", "nope"),
+        answer(b, "bind", "vm-1", ""),
+    ]
+    assert answers == ["unknown_source", "unknown_source", "bad_executor"]
