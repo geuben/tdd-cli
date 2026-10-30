@@ -279,12 +279,15 @@ class Config:
         """R9.2 — the cycle's own projects, plus anything downstream of an artifact it touched."""
         names = {n for n in cycle_projects}
         for art in self.artifacts.values():
-            if self._artifact_touched(art, touched):
+            if self.artifact_touched(art, touched):
                 names.update(art.consumed_by)
         return [n for n in sorted(names) if self.projects[n].in_close_sweep]
 
-    def _artifact_touched(self, art: Artifact, touched: set[str]) -> bool:
-        root = self._root_project(art.produced_by)
+    def producer_root(self, art: Artifact) -> str | None:
+        return self._root_project(art.produced_by)
+
+    def artifact_touched(self, art: Artifact, touched: set[str]) -> bool:
+        root = self.producer_root(art)
         if root is None:
             return False
         return any(self.projects[root].owns(p) for p in touched)

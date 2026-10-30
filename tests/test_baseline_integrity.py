@@ -5,6 +5,7 @@ merely *looks* clean turns every pre-existing failure into a permanent regressio
 from __future__ import annotations
 
 import re
+import shutil
 import threading
 
 from conftest import git, run_cli, write_plan
@@ -54,6 +55,13 @@ def set_test_command(repo, command: str) -> None:
     (repo / "tdd.toml").write_text(toml + f'test_command = "{command}"\n')
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "tdd.toml")
+
+
+NO_REPORT = "python -m pytest -p no:pytest_jsonreport tests/"
+NO_REPORT_DEFECT = (
+    "`python -m pytest -p no:pytest_jsonreport tests/` produced no JSON report"
+    " (is pytest-json-report installed?): "
+)
 
 
 def test_run_start_refuses_when_nothing_could_be_collected(repo):
@@ -650,3 +658,58 @@ def test_a_nothing_collected_refusal_quotes_the_first_failure(repo):
         r" tests/test_smoke\.py` exited 127: [^\n]*not found\Z",
         out["error"],
     ), out
+
+
+def test_a_project_with_no_tests_is_not_refused_when_its_suite_writes_no_report(repo):
+    """Issue #99 — R9.5a's "no suite yet" stays startable: with no tests there is no
+    pre-existing failure for an unreadable report to hide."""
+    (repo / "backend" / "tests" / "test_smoke.py").unlink()
+    set_test_command(repo, NO_REPORT)
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+
+    assert (out["ok"], out["result"]["baselines"]) == (True, {"backend": 0})
+
+
+def test_run_start_refuses_a_baseline_whose_suite_produced_no_report(repo, tmp_path):
+    """Issue #99 — a suite whose report cannot be read has produced no baseline at all,
+    whatever its failure ratio, and on either probe path."""
+    set_test_command(repo, NO_REPORT)
+    plan = write_plan(repo, PLAN)
+    seen = {}
+    for jobs in ("1", "2"):
+        r = shutil.copytree(repo, tmp_path / f"jobs{jobs}")
+        run_cli(r, "plan", "register", plan)
+        out = run_cli(
+            r, "run", "start", "--plan", plan, "--baseline-jobs", jobs, "--accept-baseline"
+        )
+        projects = out["result"].get("projects", [])
+        seen[jobs] = (
+            out["ok"],
+            out["result"].get("reason"),
+            [
+                (p.get("project"), str(p.get("defect", "")).startswith(NO_REPORT_DEFECT))
+                for p in projects
+            ],
+            "backend: the baseline run produced no report the tool could read — " + NO_REPORT_DEFECT
+            in (out.get("error") or ""),
+        )
+
+    assert seen == {
+        j: (False, "baseline_unreadable", [("backend", True)], True) for j in ("1", "2")
+    }
+
+
+def test_an_unreadable_baseline_is_not_cached_for_reuse(repo):
+    """Issue #99 — a refusal that a --reuse-baselines cache hit can undo is no refusal."""
+    set_test_command(repo, NO_REPORT)
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    first = run_cli(repo, "run", "start", "--plan", plan, "--reuse-baselines")
+    second = run_cli(repo, "run", "start", "--plan", plan, "--reuse-baselines")
+
+    assert (first["result"].get("reason"), second["result"].get("reason")) == (
+        "baseline_unreadable",
+        "baseline_unreadable",
+    )
