@@ -6,6 +6,24 @@ from pathlib import Path
 from .machine import Engine
 
 
+def locate(adapter, project, native: str, scan_cache: dict) -> tuple[str | None, str]:
+    """R7.14 — the repository-relative file of one native test id: `(path, "")`, or
+    `(None, reason)` when it cannot be placed in exactly one file."""
+    file_path = adapter.target_path(native)
+    if file_path is None:
+        if project.name not in scan_cache:
+            scan_cache[project.name] = adapter.scan_target_paths()
+        scan = scan_cache[project.name]
+        if scan is None:
+            return None, "no_path_in_id"
+        if native not in scan:
+            return None, "not_found_in_sources"
+        if len(scan[native]) > 1:
+            return None, "ambiguous_id"
+        file_path = scan[native][0]
+    return os.path.normpath(os.path.join(project.root, file_path)), ""
+
+
 def resolve(contract, cfg, worktree: Path) -> dict:
     from . import adapters
 
@@ -20,49 +38,12 @@ def resolve(contract, cfg, worktree: Path) -> dict:
                 project_name, native = qualified.split("::", 1)
                 project = cfg.project(project_name)
                 adapter = adapters.build(project, worktree)
-                file_path = adapter.target_path(native)
-                if file_path is None:
-                    if project_name not in _scan_cache:
-                        _scan_cache[project_name] = adapter.scan_target_paths()
-                    scan = _scan_cache[project_name]
-                    if scan is None:
-                        reason = "no_path_in_id"
-                    elif native not in scan:
-                        reason = "not_found_in_sources"
-                    elif len(scan[native]) > 1:
-                        reason = "ambiguous_id"
-                    else:
-                        joined = os.path.normpath(os.path.join(project.root, scan[native][0]))
-                        paths.append(
-                            {
-                                "cycle": cycle.ordinal,
-                                "field": field,
-                                "id": test_id,
-                                "project": project_name,
-                                "path": joined,
-                            }
-                        )
-                        continue
-                    unresolved.append(
-                        {
-                            "cycle": cycle.ordinal,
-                            "field": field,
-                            "id": test_id,
-                            "project": project_name,
-                            "reason": reason,
-                        }
-                    )
+                path, reason = locate(adapter, project, native, _scan_cache)
+                entry = {"cycle": cycle.ordinal, "field": field, "id": test_id}
+                if path is None:
+                    unresolved.append({**entry, "project": project_name, "reason": reason})
                 else:
-                    joined = os.path.normpath(os.path.join(project.root, file_path))
-                    paths.append(
-                        {
-                            "cycle": cycle.ordinal,
-                            "field": field,
-                            "id": test_id,
-                            "project": project_name,
-                            "path": joined,
-                        }
-                    )
+                    paths.append({**entry, "project": project_name, "path": path})
 
     return {"plan": contract.plan_path, "paths": paths, "unresolved": unresolved}
 
