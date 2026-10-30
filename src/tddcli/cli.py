@@ -596,7 +596,11 @@ def cmd_doctor(args) -> Envelope:
         # place a `ModuleNotFoundError` like the real `pyyaml` incident surfaces.
         adapter = adapters.build(project, worktree)
         gate = adapter.collectable()
-        check("collectable", gate.ok, gate.output, project=name)
+        detail = gate.output
+        provenance = actor.current().provenance()
+        if not gate.ok and provenance:
+            detail = f"{detail}\n{provenance}"
+        check("collectable", gate.ok, detail, project=name)
 
         # R7.13's premise — "files the default runner config cannot reach" — is
         # a config property nothing else enforces. Probe it at preflight so the
@@ -1012,12 +1016,19 @@ def cmd_run_start(args) -> Envelope:
                 continue
             if not collection.tests and collection.failed_files:
                 sample = sorted(collection.failed_files)[0]
-                return failure(
+                message = (
                     f"{name}: no test could be collected — {len(collection.failed_files)}"
                     f" file(s) failed to collect, starting with {sample}. The baseline"
                     " would record no failures and every pre-existing failure would then"
                     " read as a regression. Fix the environment (dependencies"
-                    " installed?) and retry.",
+                    " installed?) and retry."
+                    f"\n{sample}: {collection.failed_files[sample]}"
+                )
+                provenance = actor.current().provenance()
+                if provenance:
+                    message = f"{message}\n{provenance}"
+                return failure(
+                    message,
                     project=name,
                     failed_files=sorted(collection.failed_files),
                 )

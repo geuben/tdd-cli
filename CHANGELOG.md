@@ -41,6 +41,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **`tdd ledger bind --executor ""` bound an empty model** (#179), which every later run
   recorded as operator-attested. An empty or blank executor is now refused with
   `reason: "bad_executor"`.
+- **A collection probe that fails silently is reported, not crashed on** (#184). `tdd doctor`
+  raised an `AssertionError` when a `collectable` probe failed with nothing on stdout (a
+  command that is not found writes to stderr only); every adapter's probe now falls back to
+  the command, its exit status and the tail of its output. `run start`'s "no test could be
+  collected" refusal now quotes the first failed file's reason the same way. In split mode,
+  both messages say the command ran through the runner, as the agent, which is where a PATH
+  or environment difference from the agent's own shell comes from.
 
 ## [0.16.0] - 2026-10-30
 
