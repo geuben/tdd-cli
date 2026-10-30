@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
+
+import pytest
 
 from conftest import run_cli, write_plan
 from tddcli import gitutil
-from tddcli.contract import parse
+from tddcli.contract import ContractError, parse
 from tddcli.ledger import Ledger
 
 TWO_REFACTOR = """---
@@ -96,3 +99,54 @@ def test_a_scoped_key_is_required_only_on_the_cycles_it_applies_to(repo):
         closed["run"]["cycle"],
         second["result"]["missing_annotations"],
     ) == (["plan_wide"], 2, ["plan_wide", "k"])
+
+
+REJECTED: list[tuple[str, str]] = [
+    (
+        "[{name: k, applies_to: [7]}]",
+        "annotation key 'k': applies_to names cycle 7, which the plan does not declare",
+    ),
+    (
+        "[{name: k, projects: [frontend]}]",
+        "annotation key 'k': projects names 'frontend', which no declared cycle uses",
+    ),
+    (
+        "[{name: k, applies_to: [1], projects: [backend]}]",
+        "annotation key 'k': applies_to and projects are exclusive",
+    ),
+    (
+        "[{name: k}]",
+        "annotation key 'k' names no scope: give applies_to or projects, or use the plain string form",
+    ),
+    (
+        "[{name: k, applies_to: []}]",
+        "annotation key 'k' names no scope: give applies_to or projects, or use the plain string form",
+    ),
+    (
+        "[{name: k, projects: []}]",
+        "annotation key 'k' names no scope: give applies_to or projects, or use the plain string form",
+    ),
+    ("[{applies_to: [1]}]", "every annotation key mapping needs a string `name`"),
+    ("[{name: 3, applies_to: [1]}]", "every annotation key mapping needs a string `name`"),
+    (
+        "[{name: k, applies_to: [true]}]",
+        "annotation key 'k': applies_to must be a cycle ordinal or a list of them",
+    ),
+    (
+        '[{name: k, applies_to: ["1"]}]',
+        "annotation key 'k': applies_to must be a cycle ordinal or a list of them",
+    ),
+    (
+        "[{name: k, projects: [3]}]",
+        "annotation key 'k': projects must be a project name or a list of them",
+    ),
+    ('["k", {name: k, applies_to: [1]}]', "annotation key 'k' is declared twice"),
+    ("[3]", "annotation_keys must be a list of strings or mappings"),
+    ("k", "annotation_keys must be a list of strings or mappings"),
+]
+
+
+def test_malformed_annotation_key_entries_hard_fail():
+    for keys, message in REJECTED:
+        with pytest.raises(ContractError, match=re.escape(message)):
+            parse(_plan(keys), "p.md")
