@@ -4,6 +4,7 @@ __pycache__/
 dist/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
 build/
 *.egg-info/
 .claude/worktrees/

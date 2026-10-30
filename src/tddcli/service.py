@@ -191,6 +191,7 @@ class _Session:
             repo = args[0] if args else None
             if not _well_formed_repo(repo):
                 return _refusal("bad_repo", f"{repo!r} is not an absolute repository path")
+            assert isinstance(repo, str)
             self.ledger = ledger_mod.Ledger(
                 Path(repo),
                 source=self.source,
@@ -219,6 +220,12 @@ class _Session:
         except Exception as exc:  # the client gets the reason, the service keeps serving
             return {"ok": False, "error": f"{method}: {exc}"}
 
+    @property
+    def _open(self) -> ledger_mod.Ledger:
+        """The connection's ledger: these checks run only after `answer` has seen `open`."""
+        assert self.ledger is not None
+        return self.ledger
+
     def _foreign(self, arguments: dict) -> dict | None:
         """A refusal when the call names a run, cycle, contract or invocation of another
         source.
@@ -227,7 +234,7 @@ class _Session:
         which ids exist in other sources by probing for them.
         """
         owners = (
-            ("run_id", "run", self.ledger.run_source),
+            ("run_id", "run", self._open.run_source),
             ("cycle_id", "cycle", self._cycle_source),
             ("contract_id", "plan contract", self._contract_source),
             ("invocation_id", "invocation", self._invocation_source),
@@ -263,23 +270,23 @@ class _Session:
         """
         run_id = arguments.get("run_id")
         if run_id is None and arguments.get("cycle_id") is not None:
-            cycle = self.ledger.cycle(arguments["cycle_id"])
+            cycle = self._open.cycle(arguments["cycle_id"])
             run_id = cycle["run_id"] if cycle else None
-        run = self.ledger.run(run_id) if run_id is not None else None
+        run = self._open.run(run_id) if run_id is not None else None
         if run is not None and run["outcome"] in CLOSED_OUTCOMES:
             return _refusal("run_closed", f"run {run_id} is {run['outcome']}: it takes no writes")
         return None
 
     def _cycle_source(self, cycle_id: int) -> str | None:
-        cycle = self.ledger.cycle(cycle_id)
-        return None if cycle is None else self.ledger.run_source(cycle["run_id"])
+        cycle = self._open.cycle(cycle_id)
+        return None if cycle is None else self._open.run_source(cycle["run_id"])
 
     def _invocation_source(self, invocation_id: int) -> str | None:
-        invocation = self.ledger.invocation(invocation_id)
-        return None if invocation is None else self.ledger.run_source(invocation["run_id"])
+        invocation = self._open.invocation(invocation_id)
+        return None if invocation is None else self._open.run_source(invocation["run_id"])
 
     def _contract_source(self, contract_id: int) -> str | None:
-        contract = self.ledger.contract(contract_id)
+        contract = self._open.contract(contract_id)
         return None if contract is None else contract["source"]
 
     def close(self) -> None:
@@ -388,6 +395,7 @@ class _Listener(socketserver.ThreadingUnixStreamServer):
         # A socket's mode follows the umask unless it is set.
         if bind_only:
             path.chmod(BIND_MODE)
+            assert group is not None  # load_config refuses bind_socket without bind_group
             shutil.chown(path, group=group)
         else:
             path.chmod(ADMIN_MODE if source is None and not report_only else GUEST_MODE)
@@ -407,7 +415,7 @@ class Service:
         self.listeners: dict[str | None, _Listener] = {}
         self.report_listener: _Listener | None = None
         self.bind_listener: _Listener | None = None
-        self.executors: dict[str, str | None] = {}
+        self.executors: dict[str | None, str | None] = {}
         # Worker leases held by guests, across every source: one budget per host. A
         # lease is its connection, held open for as long as the suite runs.
         self.lock = threading.Lock()
@@ -589,7 +597,7 @@ class Service:
             )
         return _ok(self.metrics(*args, since=since, readonly=readonly))
 
-    def report(self, method: str, args: list, kwargs: dict) -> dict:
+    def report(self, method: str | None, args: list, kwargs: dict) -> dict:
         """A dashboard's request, from the report socket: the admin socket's reads alone."""
         if method not in REPORT_METHODS:
             return _refusal("method_not_allowed", f"{method} is not answered on the report socket")
@@ -599,7 +607,7 @@ class Service:
             return _ok(self.fleet())
         return self.log(*args, readonly=True)
 
-    def admin(self, method: str, args: list, kwargs: dict) -> dict:
+    def admin(self, method: str | None, args: list, kwargs: dict) -> dict:
         """An operator's request, from the admin socket."""
         if method == "metrics":
             return self._metrics(args, kwargs, readonly=False)

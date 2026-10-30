@@ -96,7 +96,7 @@ def _sanctioned_stubs(engine: Engine, cycle, implementation: list[str]) -> list[
 
 def _stage_and_commit(
     engine: Engine, cycle, phase: str, declared
-) -> tuple[str | None, list[str], object]:
+) -> tuple[str | None, list[str], staging.Classification]:
     changed = engine.authored_changes(cycle)
     classification = staging.classify(
         engine.config,

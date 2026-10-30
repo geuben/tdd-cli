@@ -102,6 +102,7 @@ def snapshot() -> dict:
     if guest is not None:
         from . import remote
 
+        assert guest.ledger_socket is not None  # _guest() requires it
         return remote.lease_snapshot(guest.ledger_socket)
     directory = lease_dir()
     total = _total_cores()
@@ -191,6 +192,7 @@ def worker_lease(total_cores: int | None = None) -> Iterator[int]:
         from . import remote
 
         budget = guest.core_budget or _usable_cpus()
+        assert guest.ledger_socket is not None  # _guest() requires it
         with remote.worker_lease(guest.ledger_socket) as workers:
             yield min(workers, budget)
         return

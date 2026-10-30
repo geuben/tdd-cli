@@ -79,7 +79,9 @@ class Engine:
         self.config = config
         self.worktree = worktree
         self.run = run_row
-        self.contract_row = ledger.contract(run_row["plan_contract_id"])
+        contract_row = ledger.contract(run_row["plan_contract_id"])
+        assert contract_row is not None  # a run's contract is a foreign key
+        self.contract_row = contract_row
         self.declared = contract_mod.cycles_from_json(self.contract_row["declared_cycles"])
         self.annotation_keys = json.loads(self.contract_row["annotation_keys"])
         self.ancillary_files = json.loads(self.contract_row["ancillary_files"])
@@ -406,7 +408,7 @@ class Engine:
                     self.ledger.record_baseline(
                         self.run["id"], name, sorted(probe.failing), source="late_probe"
                     )
-                    self.ledger.record_collection(self.run["id"], name, [], [])
+                    self.ledger.record_collection(self.run["id"], name, [], {})
                     self.ledger.event(
                         self.run["id"],
                         cycle_row["id"],

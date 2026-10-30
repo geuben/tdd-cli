@@ -65,7 +65,15 @@ packages = ["src/tddcli"]
 include = ["src", "tests", "docs", "examples", "README.md", "LICENSE", "CHANGELOG.md", "SECURITY.md"]
 
 [dependency-groups]
-dev = ["pytest>=8.0", "pytest-json-report>=1.5", "pytest-xdist>=3.5", "ruff>=0.5", "zizmor>=1.29"]
+dev = [
+    "pytest>=8.0",
+    "pytest-json-report>=1.5",
+    "pytest-xdist>=3.5",
+    "ruff>=0.5",
+    "zizmor>=1.29",
+    "mypy>=2.4",
+    "types-PyYAML>=6.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -77,3 +85,7 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src", "tests"]

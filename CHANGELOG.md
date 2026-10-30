@@ -80,6 +80,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   the plan under a new path. Blocked and abandoned runs do not count. With a ledger service,
   upgrade the host with or before its guests: a 0.16.0 host refuses the new `delivered_run`
   read with `method_not_allowed`.
+- The source and tests are type-checked with mypy (default mode, Python 3.11 semantics), in
+  CI and as this repo's own `typecheck` gate (#210).
 
 ### Fixed
 
@@ -121,6 +123,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   keeps its own ledger ignores it, and `tdd fleet` still shows the host's split.
 - **`tdd plan paths` resolves exec ids to their script** (#73), as R7.14 already stated. Before
   this it reported every exec id as `no_path_in_id`.
+- A late baseline probe records its collection's `failed_files` as an empty map, like every
+  other `collection_snapshot` row, instead of an empty list (#210).
 
 ## [0.16.0] - 2026-10-30
 
