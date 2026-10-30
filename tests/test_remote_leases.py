@@ -104,3 +104,14 @@ def test_core_budget_is_the_guests_own_budget(split_guest, monkeypatch):
             got[budget] = workers
 
     assert got == {4: 4, 64: 12, 10: 10}
+
+
+def test_a_guest_without_sched_getaffinity_falls_back_to_cpu_count(split_guest, monkeypatch):
+    monkeypatch.delattr(os, "sched_getaffinity", raising=False)
+    got = {}
+    for n in (2, None):
+        monkeypatch.setattr(os, "cpu_count", lambda n=n: n)
+        with leases.worker_lease() as workers:
+            got[n] = workers
+
+    assert got == {2: 2, None: 1}
