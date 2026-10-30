@@ -19,6 +19,7 @@ import pytest
 from conftest import current_user, guest_config, run_cli, run_cli_text, write_plan
 from tddcli import gitutil, service, wire
 from tddcli import ledger as ledger_mod
+from test_baseline_integrity import reach_refactor
 
 MINIMAL_PLAN = """\
 ---
@@ -140,6 +141,24 @@ def test_a_guest_naming_another_sources_invocation_is_refused(repo, split_guest,
         )
         == "foreign_run"
     )
+
+
+def test_a_guest_shows_its_own_invocations_failures(repo, split_guest, ledger_service):
+    reach_refactor(repo)
+    (repo / "backend" / "tests" / "test_smoke.py").write_text(
+        'def test_smoke():\n    assert 1 == 2, "smoke broke"\n'
+    )
+    run_cli(repo, "advance")
+    host = ledger_mod.open_readonly(host_file(ledger_service, repo), source=None)
+    run = host.active_runs()[0]
+    sweeps = [
+        inv for c in host.cycles(run["id"]) for inv in host.invocations(c["id"], "CLOSE_SWEEP")
+    ]
+    sweep_id = sweeps[-1]["id"]
+    assert [
+        (f["test"], f["phase"], f["message"])
+        for f in run_cli(repo, "invocation", "show", str(sweep_id))["result"]["failures"]
+    ] == [("backend::tests/test_smoke.py::test_smoke", "call", "AssertionError: smoke broke")]
 
 
 def refusal_of(socket_path, repo_path: str, method: str, *args, **kwargs) -> str:
