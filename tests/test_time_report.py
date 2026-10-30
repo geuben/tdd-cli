@@ -114,6 +114,7 @@ def test_metrics_reports_suite_time_by_phase_and_the_wall_clock(tmp_path, ledger
             "AWAITING_IMPL": {"runs": 3, "suite_s": 102.0},
             "CLOSE_SWEEP": {"runs": 2, "suite_s": 60.0},
         },
+        "cycles": CYCLES,
     }
 
 

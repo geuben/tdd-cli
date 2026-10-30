@@ -278,6 +278,8 @@ def _time_summary(ledger: Ledger, run) -> dict:
     cycles = [
         {
             "ordinal": c["ordinal"],
+            "opened_at": c["opened_at"],
+            "closed_at": c["closed_at"],
             # An open cycle has no wall clock yet; a blocked run's last cycle stays open.
             "wall_clock_s": _seconds(c["opened_at"], c["closed_at"]) if c["closed_at"] else None,
             "suite_s": c["ms"] / 1000,
@@ -332,6 +334,16 @@ def _time_json(summary: dict) -> dict:
             phase: {"runs": p["runs"], "suite_s": round(p["suite_s"], 1)}
             for phase, p in summary["by_phase"].items()
         },
+        "cycles": [
+            {
+                **c,
+                "wall_clock_s": round(c["wall_clock_s"], 1)
+                if c["wall_clock_s"] is not None
+                else None,
+                "suite_s": round(c["suite_s"], 1),
+            }
+            for c in summary["cycles"]
+        ],
     }
 
 
