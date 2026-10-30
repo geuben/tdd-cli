@@ -2053,6 +2053,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(fn=_ledger_verb(_ledger_fleet))
     s = ledger_p.add_parser("metrics", help="metrics over every source's runs")
     s.add_argument("--repo", help="one repository's ledger, by its slug")
+    s.add_argument(
+        "--since",
+        help="only runs still open, or ended at or after this ISO 8601 time with a UTC offset",
+    )
     s.set_defaults(fn=_ledger_verb(_ledger_metrics))
     s = ledger_p.add_parser("log", help="render any source's run as a friction log")
     s.add_argument("--repo", required=True, help="the repository's slug")

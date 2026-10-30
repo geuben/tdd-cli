@@ -80,6 +80,11 @@ def host_ledger(home: Path, runs) -> None:
         ledger.close()
 
 
+#: With since 10:20: run 1 (ended 10:10) is out; run 2 (started before, ended 10:30),
+#: run 3 (live) and run 4 (ended at 10:20 exactly) are in.
+SINCE_RUNS = [(0, 10, "complete"), (0, 30, "complete"), (25, None, None), (5, 20, "abandoned")]
+
+
 @pytest.fixture
 def report_service(tmp_path, monkeypatch):
     """A ledger service with a report socket beside its admin socket, under /tmp."""
@@ -211,3 +216,23 @@ def test_ledger_reads_fall_back_to_the_report_socket(repo, report_service, tmp_p
     ]
 
     assert [o.get("ok") for o in outs] == [True, True, True]
+
+
+#: The same instant, spelled four ways.
+ACCEPTED = [
+    "2026-09-01T10:20:00+00:00",
+    "2026-09-01T10:20:00Z",
+    "2026-09-01T11:20:00+01:00",
+    "2026-09-01T10:20:00.000000+00:00",
+]
+
+
+def test_metrics_since_keeps_runs_open_or_ended_since_then(repo, report_service):
+    host_ledger(report_service.home, SINCE_RUNS)
+
+    by_form = {
+        ts: run_ids(run_cli(repo, "ledger", "metrics", "--since", ts)["result"]) for ts in ACCEPTED
+    }
+    on_report = run_ids(answer(report_service.report, "metrics", None, since=ACCEPTED[0]))
+
+    assert (by_form, on_report) == ({ts: [2, 3, 4] for ts in ACCEPTED}, [2, 3, 4])
