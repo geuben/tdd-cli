@@ -244,3 +244,36 @@ def test_a_rerun_records_no_invocation_row(repo, tmp_path):
         ("AWAITING_IMPL", 0),
         ("AWAITING_IMPL", 1),
     ]
+
+
+def test_a_close_sweep_failure_with_reruns_off_carries_no_rerun_outcomes(repo, tmp_path):
+    _to_green(repo, tmp_path / "count", "n >= 3", toml="flaky_reruns = 0\n")
+    run_cli(repo, "advance")  # GREEN: execution 2
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    total = a + b\n    return total\n"
+    )
+    out = run_cli(repo, "advance")  # the close sweep: execution 3
+    assert (out["next_action"]["verb"], sorted(out["result"])) == (
+        "fix_regression",
+        ["commit", "failures"],
+    )
+
+
+def test_a_close_sweep_with_an_unbaselined_project_reruns_nothing(repo_schema_other, tmp_path):
+    from test_late_baseline import _drive_to_close, _pull_svc_into_the_sweep
+
+    repo = repo_schema_other
+    (repo / "backend" / "tests" / "test_legacy.py").write_text(_flaky(tmp_path / "count", "n == 3"))
+    (repo / "svc" / "tests" / "test_svc.py").write_text(
+        "import nope_missing\n\ndef test_svc_fails():\n    assert False\n"
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "flaky backend test; svc uncollectable at start sha")
+    run_id = _drive_to_close(repo)["run"]["id"]  # baseline: 1, GREEN: 2
+    (repo / "svc" / "tests" / "test_svc.py").write_text("def test_svc_fails():\n    assert False\n")
+    (repo / "backend" / "app" / "calc.py").write_text(
+        "def add(a, b):\n    total = a + b\n    return total\n"
+    )
+    _pull_svc_into_the_sweep(repo)
+    out = run_cli(repo, "advance")  # the close sweep: execution 3
+    assert (out["next_action"]["verb"], _flaky_events(repo, run_id)) == ("resolve_blocker", [])
