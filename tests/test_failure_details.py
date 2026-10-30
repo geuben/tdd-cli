@@ -374,3 +374,26 @@ def test_showing_an_unknown_invocation_is_refused(repo):
     assert (
         run_cli(repo, "invocation", "show", "999")["result"].get("reason") == "unknown_invocation"
     )
+
+
+def test_invocation_show_prints_the_stored_failure_details(repo):
+    reach_refactor(repo)
+    (repo / "backend" / "tests" / "test_smoke.py").write_text(SMOKE_BROKE)
+    run_cli(repo, "advance")
+    _, rows = _invocations(repo, "CLOSE_SWEEP")
+    sweep_id = rows[-1]["id"]
+
+    out = run_cli(repo, "invocation", "show", str(sweep_id))
+
+    assert (
+        out["result"].get("invocation"),
+        [
+            (f["test"], f["phase"], f["message"], "smoke broke" in f["detail"])
+            for f in out["result"].get("failures", [])
+        ],
+        (out["next_action"] or {}).get("terminal"),
+    ) == (
+        sweep_id,
+        [("backend::tests/test_smoke.py::test_smoke", "call", "AssertionError: smoke broke", True)],
+        False,
+    )
