@@ -9,6 +9,7 @@ sweep after a content edit is execution 3, and each rerun is the next one.
 from __future__ import annotations
 
 import json
+import shutil
 
 from conftest import git, run_cli, write_plan
 from tddcli import gitutil
@@ -122,3 +123,28 @@ def test_a_close_sweep_failure_that_fails_again_carries_its_rerun_outcomes(repo,
         out["result"]["failures"],
         out["result"].get("rerun_outcomes"),
     ) == ("fix_regression", [ID], {ID: ["failed", "failed"]})
+
+
+def test_a_failure_in_any_file_the_plan_declares_is_not_rerun(repo, tmp_path):
+    CASES = {
+        "files_project_relative": {"files": ', "tests/test_legacy.py"'},
+        "files_repo_relative": {"files": ', "backend/tests/test_legacy.py"'},
+        "stub_expected": {"extra": '    stub_expected: ["tests/test_legacy.py"]\n'},
+        "modifies_tests": {"extra": '    modifies_tests: ["tests/test_legacy.py::test_legacy"]\n'},
+        "target_file": {"where": "tests/test_add.py"},
+        "ancillary_files": {"more": 'ancillary_files: ["backend/tests/test_legacy.py"]\n'},
+        "later_cycle": {
+            "more": (
+                "  - n: 2\n    project: backend\n    title: \"later\"\n"
+                '    test: "tests/test_later.py::test_later"\n'
+                '    files: ["tests/test_legacy.py"]\n'
+                '    commit_red: "test: l"\n    commit_green: "feat: l"\n'
+            )
+        },
+    }
+    cases = {name: shutil.copytree(repo, tmp_path / name) for name in CASES}
+    verbs = {}
+    for name, kw in CASES.items():
+        _to_green(cases[name], tmp_path / f"{name}-count", "n == 2", **kw)
+        verbs[name] = run_cli(cases[name], "advance")["next_action"]["verb"]
+    assert verbs == dict.fromkeys(CASES, "fix_regression")
