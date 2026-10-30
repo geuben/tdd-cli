@@ -231,3 +231,16 @@ def test_green_on_an_exec_project_passes_when_an_untouched_script_passes_on_reru
     (repo / "gates" / "lib" / "answer.txt").write_text("42\n")
     out = run_cli(repo, "advance")
     assert out["next_action"]["verb"] == "refactor_or_advance"
+
+
+def test_a_rerun_records_no_invocation_row(repo, tmp_path):
+    _to_green(repo, tmp_path / "count", "n == 2")
+    run_cli(repo, "advance")
+    rows = Ledger(gitutil.repo_identity(repo)).all(
+        "SELECT phase_at, others_observed FROM invocation ORDER BY id", ()
+    )
+    assert [tuple(r) for r in rows] == [
+        ("AWAITING_TEST", 0),
+        ("AWAITING_IMPL", 0),
+        ("AWAITING_IMPL", 1),
+    ]
