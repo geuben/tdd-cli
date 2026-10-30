@@ -474,6 +474,8 @@ class Service:
             return _ok({"name": name, "executor": executor})
         if method == "unbind":
             (name,) = args
+            if name not in self.executors:
+                return _refusal("unknown_source", f"no source named {name!r}")
             self.unbind(name)
             return _ok({"name": name, "executor": None})
         if method == "remove_source":
