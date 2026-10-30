@@ -406,7 +406,7 @@ class Engine:
                     self.ledger.record_baseline(
                         self.run["id"], name, sorted(probe.failing), source="late_probe"
                     )
-                    self.ledger.record_collection(self.run["id"], name, [], [])
+                    self.ledger.record_collection(self.run["id"], name, [], {})
                     self.ledger.event(
                         self.run["id"],
                         cycle_row["id"],
