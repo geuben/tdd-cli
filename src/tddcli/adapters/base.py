@@ -287,6 +287,9 @@ class Adapter:
         result.per_file_collects = len(unaccounted)
         return self._collect_per_file(unaccounted, result)
 
+    def _test_files(self) -> list[Path]:
+        raise NotImplementedError
+
     def _collect_invocations(self) -> list[tuple]:
         """One collection command per declared suite: the default plus each
         override's (R7.13), so an override's files are enumerated with its own

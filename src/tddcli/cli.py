@@ -17,6 +17,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from . import (
     __version__,
@@ -579,7 +580,9 @@ def cmd_doctor(args) -> Envelope:
             # The probe runs in the project's own environment (uv, poetry, pipenv,
             # pdm or the active venv) — hardcoding `uv run` here failed the check
             # on any non-uv project even with the plugin installed.
-            probe = adapters.build(project, worktree).plugin_probe_cmd()
+            adapter = adapters.build(project, worktree)
+            assert isinstance(adapter, adapters.PytestAdapter)
+            probe = adapter.plugin_probe_cmd()
             code, out, err = adapters.base.run_command(probe, root, label="doctor")
             check("pytest-json-report installed", code == 0, (err or "")[:200], project=name)
 
@@ -982,7 +985,7 @@ def cmd_run_start(args) -> Envelope:
     else:
         probe_projects = cfg.projects
 
-    unreachable = []
+    unreachable: list[dict[str, Any]] = []
     for name, project in probe_projects.items():
         if not project.health_command:
             continue
@@ -1101,10 +1104,10 @@ def cmd_run_start(args) -> Envelope:
 
         implausible = []
         for name, (v, c) in probes.items():
-            project = probe_projects.get(name)
+            probed = probe_projects.get(name)
             threshold = (
-                project.baseline_max_failure_ratio
-                if project and project.baseline_max_failure_ratio is not None
+                probed.baseline_max_failure_ratio
+                if probed and probed.baseline_max_failure_ratio is not None
                 else BASELINE_MAX_FAILURE_RATIO_DEFAULT
             )
             if len(c.tests) >= BASELINE_MIN_COLLECTED and len(v.failed) / len(c.tests) > threshold:
@@ -1475,7 +1478,7 @@ def cmd_resume(args) -> Envelope:
             run={"id": run["id"], "phase": CLOSED},
             next_action=NextAction(Verb.COMPLETE, "Run complete."),
         )
-    result = {"resumed": True}
+    result: dict[str, object] = {"resumed": True}
     if accepted:
         result["accepted_into_baseline"] = accepted
     if refused_from_baseline:
@@ -2221,8 +2224,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.set_defaults(fn=cmd_log_render)
 
-    inv = sub.add_parser("invocation", help="one suite invocation's recorded failures")
-    inv = inv.add_subparsers(dest="invocation_command", required=True)
+    inv = sub.add_parser(
+        "invocation", help="one suite invocation's recorded failures"
+    ).add_subparsers(dest="invocation_command", required=True)
     s = inv.add_parser("show")
     s.add_argument("id", type=int)
     s.set_defaults(fn=cmd_invocation_show)

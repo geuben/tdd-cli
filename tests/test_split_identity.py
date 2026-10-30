@@ -37,6 +37,7 @@ def _start(repo, *flags: str) -> dict:
 
 def _recorded(repo) -> tuple[str, str]:
     row = Ledger(repo).one("SELECT executor_model, executor_source FROM run")
+    assert row is not None
     return row["executor_model"], row["executor_source"]
 
 

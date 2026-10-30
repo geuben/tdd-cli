@@ -248,7 +248,9 @@ def test_a_guest_may_still_note_a_completed_run(repo, split_guest, ledger_servic
 
 
 def host_run(ledger_service, repo, run_id: int):
-    return ledger_mod.open_readonly(host_file(ledger_service, repo), source=None).run(run_id)
+    host = ledger_mod.open_readonly(host_file(ledger_service, repo), source=None)
+    assert host is not None
+    return host.run(run_id)
 
 
 def test_a_bound_source_records_the_operator_assigned_executor(repo, split_guest, ledger_service):

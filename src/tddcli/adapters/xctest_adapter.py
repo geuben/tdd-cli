@@ -334,7 +334,8 @@ class XCTestAdapter(Adapter):
         start_marker = f"Test Case '-{bracket}' started."
         fail_marker = f"Test Case '-{bracket}' failed"
 
-        capturing, captured = False, []
+        capturing = False
+        captured: list[str] = []
         for line in combined.splitlines():
             if start_marker in line:
                 capturing, captured = True, []
