@@ -421,7 +421,23 @@ annotation_keys: ["literal_detail_handlers_kept"]
 - **R7.4** `modifies_tests` authorises changes to named existing tests, suppressing the
   test-weakening integrity event for exactly those.
 - **R7.5** `annotation_keys` lets a plan define its own judgement fields, which `log render`
-  emits per cycle.
+  emits per cycle. A cycle cannot close until it carries every key that applies to it. An
+  entry is either a plain string, required on every declared cycle, or a mapping that scopes
+  the key to some cycles: `{name: k, applies_to: [12, 19]}` by cycle ordinal, or
+  `{name: k, projects: [device-suite]}` by project. Scalars are accepted for either
+  (`applies_to: 12`). `applies_to` and `projects` are exclusive on one entry. A contract
+  cycle is in a `projects` scope when any of its projects is listed. Registration hard-fails
+  (R7.10) on an entry that is neither a string nor a mapping, a mapping without a string
+  `name`, a name declared twice, a mapping giving both scopes or neither (or an empty one),
+  an `applies_to` member that is not an integer, a `projects` member that is not a string,
+  an ordinal the plan does not declare, and a project no declared cycle uses. A contract
+  registered before scoping existed keeps requiring every key on every cycle.
+- **R7.5a** A declared check that never ran is surfaced, not hidden. For every name in
+  `annotation_keys`, in declaration order, its scope is the declared cycles that require it
+  (every cycle, for a plain key). When no cycle in that scope was delivered (skipped and
+  never-reached cycles count as not executed), the friction log's Plan fidelity section
+  carries, after `Never reached`, the line
+  ``- **Declared check never ran:** `<key>` (applies to cycles <n>, <n>)``, ordinals ascending.
 - **R7.9** **Absent** front-matter is legitimate (pre-existing plans, exploratory work). The
   contract is recorded as `undeclared`, plan-fidelity metrics are unavailable, and `run start`
   requires a human-supplied `--allow-undeclared`.

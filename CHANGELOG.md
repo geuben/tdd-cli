@@ -8,6 +8,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Annotation keys can be scoped to the cycles they apply to** (#76). An `annotation_keys`
+  entry may now be a mapping, `{name: k, applies_to: [12, 19]}` or
+  `{name: k, projects: [device-suite]}`, and the close gate demands it only on those cycles,
+  so the rest no longer fill the friction log with `n/a`. Malformed entries fail
+  registration. Plain string keys behave as before, and a contract registered by an older
+  `tdd` keeps requiring every key on every cycle. The friction log's Plan fidelity section
+  now warns of a declared check that never ran: a key none of whose cycles was delivered.
 - **A read-only report socket for dashboards** (#185). `[service] report_socket` opens a
   socket (mode 660) that answers `metrics`, `fleet` and `log` with the admin socket's
   results, opens every ledger read-only, and refuses every other request with

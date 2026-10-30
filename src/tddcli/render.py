@@ -10,6 +10,7 @@ import json
 from collections import defaultdict
 from datetime import datetime
 
+from .contract import required_annotation_keys
 from .ledger import PRE_SPLIT_IMPORT, Ledger
 
 
@@ -77,6 +78,16 @@ def friction_log(ledger: Ledger, run) -> str:
     a(f"- Delivered: {len(delivered)}   Skipped: {len(skipped)}")
     missing = sorted({d["n"] for d in declared} - delivered - skipped)
     a(f"- Never reached: {missing or 'none'}")
+    contract_keys = json.loads(contract["annotation_keys"])
+    for key in contract_keys:
+        scope = sorted(
+            d["n"]
+            for d in declared
+            if key in required_annotation_keys(d.get("annotation_keys"), contract_keys)
+        )
+        if not delivered.intersection(scope):
+            ordinals = ", ".join(str(n) for n in scope)
+            a(f"- **Declared check never ran:** `{key}` (applies to cycles {ordinals})")
     unblocks = _unblocks(ledger, run["id"])
     a(f"- Unblocks: {len(unblocks)}")
     for i in unblocks:

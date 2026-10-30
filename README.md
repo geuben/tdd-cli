@@ -248,8 +248,22 @@ ancillary_files:
 
 **Top-level keys:**
 
-`annotation_keys` — a list of judgement-annotation keys the plan requires; the run close
-gate checks that every key is present before the plan can be marked complete.
+`annotation_keys` — a list of judgement-annotation keys the plan requires; a cycle cannot
+close until it carries every key that applies to it. A plain string applies to every
+cycle. A key that only some cycles concern is scoped with a mapping, so the other cycles
+are not forced to record `n/a`:
+
+```yaml
+annotation_keys:
+  - plan_defect_seen                       # every cycle
+  - {name: artifact_verify, applies_to: [12, 19]}
+  - {name: device_log, projects: [device-suite]}
+```
+
+`applies_to` takes cycle ordinals and `projects` takes project names; each accepts a
+scalar or a list, and they are exclusive on one entry. A contract cycle is in a `projects`
+scope when any of its projects is listed. An ordinal the plan does not declare, a project
+no declared cycle uses, a duplicate name or a mapping with no scope fails registration.
 
 `ancillary_files` — a plan-level list of repo-root-relative paths the plan is known to
 touch outside any registered project root (cross-project ripples, companion documents).
@@ -331,6 +345,10 @@ runs by phase, the first-run outcome against expectation, sensitivity checks, co
 and integrity events, and the failures each suite invocation saw, with the phase that
 failed and the first line of its message. A `## Time` section says where the run's time went: the wall clock,
 suite time and its share, per phase and per cycle.
+Plan fidelity also warns, one line per key, of a declared check that never ran: an
+`annotation_keys` entry none of whose cycles was delivered (skipped and never-reached
+cycles do not count), e.g. ``- **Declared check never ran:** `artifact_verify` (applies to
+cycles 12, 19)``.
 
 Every observable fact in it is projected from recorded events. The agent that did the
 work cannot compose it — that is what makes it worth reading, and why the log is
