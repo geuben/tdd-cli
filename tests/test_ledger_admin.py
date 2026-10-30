@@ -91,6 +91,21 @@ def test_sources_survive_a_service_restart(ledger_service):
     assert reply == {"source": "vm-1", "executor": "m"}
 
 
+def test_an_unbinding_survives_a_service_restart(repo, ledger_service):
+    socket_path = ledger_service.dir / "vm-1.sock"
+    ledger_service.service.add_source("vm-1", socket_path, executor="m")
+    run_cli(repo, "ledger", "unbind", "vm-1")
+    ledger_service.service.stop()
+
+    restarted = service.Service(service.load_config(ledger_service.config))
+    restarted.start()
+    try:
+        reply = ping_or_unreachable(socket_path)
+    finally:
+        restarted.stop()
+    assert reply == {"source": "vm-1", "executor": None}
+
+
 def test_socket_modes(ledger_service):
     guest = ledger_service.dir / "vm-1.sock"
     ledger_service.service.add_source("vm-1", guest, executor=None)
