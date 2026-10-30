@@ -377,3 +377,62 @@ def test_friction_log_reports_regenerated_artifacts_benignly(repo):
     assert "auto-regenerated" in text, "expected 'auto-regenerated' in friction log"
     assert "openapi" in text, "expected 'openapi' in friction log"
     assert "stale_artifact" not in text, "stale_artifact must not appear in friction log"
+
+
+def _add_svc(repo, artifact_toml: str) -> None:
+    """A second pytest project, `svc`, that the module's `PLAN` (backend only) cannot reach."""
+    (repo / "svc" / "tests").mkdir(parents=True, exist_ok=True)
+    (repo / "svc" / "tests" / "test_smoke.py").write_text("def test_smoke():\n    assert True\n")
+    with (repo / "tdd.toml").open("a") as f:
+        f.write(
+            "\n[project.svc]\n"
+            'root       = "svc"\n'
+            'adapter    = "pytest"\n'
+            'test_paths = ["tests/"]\n'
+            "lint       = []\n"
+            "typecheck  = []\n" + artifact_toml
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "add svc")
+
+
+def _artifact_events(repo, run_id: int) -> list[tuple]:
+    ledger = Ledger(gitutil.repo_identity(repo))
+    return [
+        (r["kind"], r["cycle_id"], r["detail"])
+        for r in ledger.all(
+            "SELECT kind, cycle_id, detail FROM integrity_event WHERE run_id = ?"
+            " AND kind IN ('stale_artifact', 'artifact_stale_inherited') ORDER BY id",
+            (run_id,),
+        )
+    ]
+
+
+OUTSIDE_CHECK_TOML = (
+    "\n[artifact.client]\n"
+    'path        = "svc/client.txt"\n'
+    'produced_by = "svc"\n'
+    'check       = "false"\n'
+)
+
+
+def test_run_start_still_regenerates_an_artifact_outside_the_runs_projects(repo):
+    """Issue #99 — scoping the per-cycle check must not stop run start fixing what it can."""
+    (repo / "svc").mkdir()
+    (repo / "svc" / "client.txt").write_text("v1\n")
+    _add_svc(
+        repo,
+        "\n[artifact.client]\n"
+        'path        = "svc/client.txt"\n'
+        'produced_by = "svc"\n'
+        "regenerate  = \"printf 'v2\\\\n' > svc/client.txt\"\n",
+    )
+    plan = write_plan(repo, PLAN)
+    run_cli(repo, "plan", "register", plan)
+    out = run_cli(repo, "run", "start", "--plan", plan)
+
+    assert (
+        "chore(client): regenerate" in git(repo, "log", "--pretty=%s"),
+        git(repo, "status", "--porcelain").strip(),
+        _artifact_events(repo, out["run"]["id"]),
+    ) == (True, "", [])
