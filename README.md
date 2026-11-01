@@ -516,7 +516,9 @@ and is never reclassified as a pin.
 
 - **Stages and commits.** The staged set is derived from the phase: RED takes tests and
   declared stubs, GREEN takes the rest. This makes "implementation written during RED" an
-  exact, language-independent detection with no source parsing.
+  exact, language-independent detection with no source parsing. A GREEN that stages only test
+  files (golden files filled with the producer's own output look exactly like this) records a
+  `green_without_implementation` nudge, and the reply asks for a `tdd note` saying why.
 - **Regenerates stale artifacts**, in their own commit, so hand-written and generated changes
   stay separately reviewable.
 - **Resolves executor identity** from the session transcript. It is never an argument.

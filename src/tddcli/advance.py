@@ -21,7 +21,12 @@ from .machine import (
     Engine,
 )
 
-NUDGE_KINDS = {"red_first_violation", "undeclared_file_touched", "implementation_during_red"}
+NUDGE_KINDS = {
+    "red_first_violation",
+    "undeclared_file_touched",
+    "implementation_during_red",
+    "green_without_implementation",
+}
 
 
 def _note_nudge(engine: Engine, cycle) -> str:

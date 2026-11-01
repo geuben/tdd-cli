@@ -6,6 +6,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **A GREEN that stages only test files is flagged** (#235). When every path GREEN commits
+  is a test, as when golden files are filled with the producer's own output, the cycle
+  records a `green_without_implementation` integrity event listing them. It is a nudge: the
+  reply asks for a `tdd note` saying why, and nothing is blocked. A declared stub, an
+  implementation file or an ancillary file in the commit means implementation was written,
+  so it does not fire.
+
 ### Fixed
 
 - **A `commit_*` key a cycle never uses is refused at registration** (#231). A pin cycle
