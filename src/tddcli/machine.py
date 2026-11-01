@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -648,11 +649,24 @@ class Engine:
         start_sha = self.run["start_sha"]
         if not start_sha:
             return []
-        declared = set(self.ancillary_files)
+        # Each declared path, as the plan writes it, with every form it may be committed
+        # under: a cycle's path may be written from its project root (decision 3).
+        forms: dict[str, set[str]] = {p: {os.path.normpath(p)} for p in self.ancillary_files}
+        skipped = {
+            c["ordinal"] for c in self.ledger.cycles(self.run["id"]) if c["phase"] == SKIPPED
+        }
         for cycle in self.declared:
-            declared.update(cycle.files, cycle.stub_expected)
-        committed = gitutil.paths_committed_since(self.worktree, start_sha)
-        untouched = sorted(declared - committed)
+            if cycle.ordinal in skipped:
+                continue
+            roots = self.roots(cycle.projects)
+            for p in [*cycle.files, *cycle.stub_expected]:
+                forms.setdefault(p, set()).update(
+                    {os.path.normpath(p)} | {os.path.normpath(os.path.join(r, p)) for r in roots}
+                )
+        every_form = sorted(set().union(*forms.values()))
+        seen = gitutil.paths_committed_since(self.worktree, start_sha)
+        seen |= gitutil.ignored_paths(self.worktree, every_form)
+        untouched = sorted(p for p, f in forms.items() if not f & seen)
         if untouched:
             self.ledger.event(
                 self.run["id"], None, "declared_file_untouched", json.dumps(untouched)
