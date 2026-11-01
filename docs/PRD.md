@@ -205,7 +205,8 @@ an auditor compares them against reality.
 Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mismatch`,
 `off_protocol_invocation`, `stale_artifact`, `artifact_stale_inherited`, `plan_blob_changed`,
 `executor_unknown`, `artifact_regenerate_failed`, `baseline_late_probe`,
-`baseline_late_probe_unobserved`, `flaky_pre_existing`, `ignored_paths_dirty`.
+`baseline_late_probe_unobserved`, `flaky_pre_existing`, `ignored_paths_dirty`,
+`green_without_implementation`.
 
 `flaky_pre_existing` is an untouched pre-existing failure that passed when rerun alone (R9.1f).
 
@@ -850,6 +851,12 @@ The CLI stages; it never delegates staging to the agent, and it never runs `git 
   existing file remains implementation. Without this, an undeclared `stub_expected` makes the
   tool instruct the agent and then convict it for complying, and an alarm that fires on correct
   work is one that gets ignored.
+- **R9.14b** If GREEN's staged set is non-empty and every path in it is a test (R9.13's
+  `test_paths`), the cycle records `green_without_implementation` with the staged paths. A
+  declared stub, an implementation file or an ancillary file in the set is implementation, so it
+  does not fire. It is a nudge, not a gate: a cycle whose fix really is test support is legitimate
+  (#141), so the reply asks for a `tdd note` saying why. A GREEN that fills golden files with the
+  producer's own output looks exactly like this (#235).
 - **R9.15** Nothing outside a registered project root is ever staged. Plan files, friction logs
   and repository documentation are committed separately, at plan completion. Paths the agent
   supplies for these — `log render --out` — are resolved from the worktree root, never the

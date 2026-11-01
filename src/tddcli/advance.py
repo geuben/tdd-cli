@@ -453,7 +453,12 @@ def _handle_impl(engine: Engine, cycle, retried: bool) -> Envelope:
             failure=failure,
         )
 
-    sha, staged, _ = _stage_and_commit(engine, cycle, staging.GREEN, declared)
+    sha, staged, classification = _stage_and_commit(engine, cycle, staging.GREEN, declared)
+    # R9.14b: every staged path a test means no implementation was written (#235).
+    if staged and set(staged) <= set(classification.tests):
+        engine.ledger.event(
+            engine.run["id"], cycle["id"], "green_without_implementation", json.dumps(staged)
+        )
     engine.transition(cycle, AWAITING_REFACTOR)
     return _reply(
         engine,
