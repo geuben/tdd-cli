@@ -317,22 +317,21 @@ def parse(text: str, plan_path: str, config: Config | None = None) -> PlanContra
 
     keys = _resolve_annotation_keys(data.get("annotation_keys", []), cycles)
 
-    anc = data.get("ancillary_files", [])
-    if not isinstance(anc, list) or not all(isinstance(p, str) for p in anc):
-        raise ContractError("ancillary_files must be a list of strings")
-
-    refs = data.get("reference_paths", [])
-    if not isinstance(refs, list) or not all(isinstance(p, str) for p in refs):
-        raise ContractError("reference_paths must be a list of strings")
-
     return PlanContract(
         plan_path=plan_path,
         status="declared",
         cycles=cycles,
         annotation_keys=keys,
-        ancillary_files=anc,
-        reference_paths=refs,
+        ancillary_files=_path_list(data, "ancillary_files"),
+        reference_paths=_path_list(data, "reference_paths"),
     )
+
+
+def _path_list(data: dict, key: str) -> list[str]:
+    paths = data.get(key, [])
+    if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
+        raise ContractError(f"{key} must be a list of strings")
+    return paths
 
 
 def register(worktree: Path, plan_rel: str, config: Config | None) -> PlanContract:
