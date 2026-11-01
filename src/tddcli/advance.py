@@ -620,14 +620,7 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     if nxt is None:
         if blocking:
             return Envelope(
-                run={
-                    "id": engine.run["id"],
-                    "plan": engine.contract_row["plan_path"],
-                    "cycle": cycle["ordinal"],
-                    "of": len(engine.declared),
-                    "phase": "BLOCKED",
-                    "executor": engine.run["executor_model"],
-                },
+                run=_blocked_run(engine, cycle),
                 result={
                     "kind": "undeclared_file_uncommitted",
                     "paths": blocking,
@@ -700,6 +693,17 @@ def _check_config_drift(engine: Engine, cycle) -> None:
         )
 
 
+def _blocked_run(engine: Engine, cycle) -> dict:
+    return {
+        "id": engine.run["id"],
+        "plan": engine.contract_row["plan_path"],
+        "cycle": cycle["ordinal"],
+        "of": len(engine.declared),
+        "phase": "BLOCKED",
+        "executor": engine.run["executor_model"],
+    }
+
+
 def _reference_paths_blocked(engine: Engine, cycle, touched: list[str]) -> Envelope:
     """R7.11a: the run changed a path its plan declares read-only; stop before staging."""
     engine.ledger.add_blocker(
@@ -707,14 +711,7 @@ def _reference_paths_blocked(engine: Engine, cycle, touched: list[str]) -> Envel
     )
     engine.ledger.end_run(engine.run["id"], "blocked")
     return Envelope(
-        run={
-            "id": engine.run["id"],
-            "plan": engine.contract_row["plan_path"],
-            "cycle": cycle["ordinal"],
-            "of": len(engine.declared),
-            "phase": "BLOCKED",
-            "executor": engine.run["executor_model"],
-        },
+        run=_blocked_run(engine, cycle),
         result={"kind": "reference_path_touched", "paths": touched},
         next_action=NextAction(
             Verb.BLOCKED,
