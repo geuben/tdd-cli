@@ -205,9 +205,13 @@ an auditor compares them against reality.
 Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mismatch`,
 `off_protocol_invocation`, `stale_artifact`, `artifact_stale_inherited`, `plan_blob_changed`,
 `executor_unknown`, `artifact_regenerate_failed`, `baseline_late_probe`,
-`baseline_late_probe_unobserved`, `flaky_pre_existing`, `ignored_paths_dirty`.
+`baseline_late_probe_unobserved`, `flaky_pre_existing`, `ignored_paths_dirty`,
+`red_on_dirty_tree`.
 
 `flaky_pre_existing` is an untouched pre-existing failure that passed when rerun alone (R9.1f).
+`red_on_dirty_tree` names the changed paths a RED commit left out, so the RED verdict
+was taken on a tree that differs from the RED commit (#234). It leaves out paths git or
+`tdd.toml` ignores, and dirt that was there before the run.
 
 ### Blocker
 Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `context_exhausted`,
@@ -857,6 +861,13 @@ The CLI stages; it never delegates staging to the agent, and it never runs `git 
 - **R9.16** Files modified inside a project root matching neither classification are left
   unstaged and recorded as `undeclared_file_touched`, and named in `next_action`. Per P2 this
   does not block.
+  A flagged path still dirty when its cycle closes is the exception (#234). Unless the
+  cycle is the run's last, `advance` records an `undeclared_file_uncommitted` blocker
+  naming the paths and ends the run `blocked`. The cycle stays open in `AWAITING_REFACTOR`.
+  Whoever unblocks it commits each path in a commit of its own or discards it, then
+  `tdd resume --unblock --note ...`. The next `advance` checks again. At the last cycle the
+  run-close gate decides, over every path the run flagged, and an unblock completes the
+  run.
   A path git's ignore rules match is build output whether or not it is tracked (`git
   check-ignore --no-index`). Like a `config.is_ignored` path, it is never staged and never
   recorded as `undeclared_file_touched`, so the run-close gate never sees it (#98).
@@ -1030,7 +1041,8 @@ The CLI cannot compel an agent. Only the harness can. The division:
 - `advance` refuses when nothing changed since the previous invocation.
 
 **Recorded, never blocked** (per P2): non-stub writes during RED, undeclared file touches,
-scope divergence, test modifications, extra attempts.
+scope divergence, test modifications, extra attempts. A flagged path still uncommitted
+when its cycle or the run closes is the exception (R9.16).
 
 **Delegated to harness hooks** (specified here, implemented by the consumer):
 - **H1 — Stop hook.** On agent stop, query `tdd status`; if the run is live, block and return

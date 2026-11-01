@@ -8,7 +8,7 @@ set changes — a genuinely new path appeared).
 
 from __future__ import annotations
 
-from conftest import run_cli, write_plan
+from conftest import git, run_cli, write_plan
 
 # ---------------------------------------------------------------------------
 # Shared plan bodies
@@ -149,9 +149,13 @@ def test_dedup_is_per_cycle_not_per_run(repo):
     run_cli(repo, "advance")  # RED → AWAITING_IMPL
     (repo / "backend" / "app" / "calc.py").write_text("def add(a, b):\n    return a + b\n")
     run_cli(repo, "advance")  # GREEN → AWAITING_REFACTOR
+    # A flagged path still dirty would hold the close (#234): commit it first.
+    git(repo, "add", "shared.md")
+    git(repo, "commit", "-q", "-m", "docs: shared scratch")
     run_cli(repo, "advance")  # REFACTOR → cycle 2
 
     # -- Cycle 2: subtract --
+    (repo / "shared.md").write_text("shared scratch, again\n")
     (repo / "backend" / "tests" / "test_sub.py").write_text(TEST_SUB)
     (repo / "backend" / "app" / "calc.py").write_text(
         "def add(a, b):\n    return a + b\n\ndef subtract(a, b):\n    raise NotImplementedError\n"

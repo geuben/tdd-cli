@@ -643,6 +643,19 @@ class Engine:
             )
         return sorted(p for p in flagged if p in dirty)
 
+    def cycle_undeclared_gate(self, cycle_row) -> list[str]:
+        """Paths this cycle flagged `undeclared_file_touched` that are still dirty (#234).
+
+        Holds an earlier cycle's close so a stray edit cannot carry into the next
+        cycle's RED run or GREEN commit. Emits nothing: the run-close gate does that.
+        """
+        flagged: set[str] = set()
+        for row in self.ledger.cycle_events(cycle_row["id"]):
+            if row["kind"] == "undeclared_file_touched":
+                flagged.update(json.loads(row["detail"]))
+        dirty = gitutil.dirty_paths(self.worktree)
+        return sorted(p for p in flagged if p in dirty)
+
     def record_commit(self, cycle_row, phase: str, sha: str, message: str, files: list[str]):
         self.ledger.record_commit(
             self.run["id"], cycle_row["id"], phase=phase, sha=sha, message=message, files=files
