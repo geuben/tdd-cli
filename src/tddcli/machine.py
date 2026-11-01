@@ -106,7 +106,10 @@ class Engine:
         refs = self.ledger.reference_paths(self.contract_row["id"])
         if not refs:
             return []
-        return sorted(set(refs) & self.authored_changes(cycle_row))
+        changed = self.authored_changes(cycle_row)
+        if self.run["start_sha"]:
+            changed |= gitutil.committed_since(self.worktree, self.run["start_sha"])
+        return sorted(set(refs) & changed)
 
     def trailers(self, cycle_row, phase: str) -> dict[str, str]:
         return {

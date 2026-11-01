@@ -138,6 +138,12 @@ def changed_paths(worktree: Path) -> set[str]:
     return dirty_paths(worktree)
 
 
+def committed_since(worktree: Path, base: str) -> set[str]:
+    """Paths that differ between `base` and HEAD, relative to the worktree root."""
+    out = git(worktree, "diff", "--name-only", base, "HEAD")
+    return {line for line in out.splitlines() if line}
+
+
 def diff_text(worktree: Path) -> str:
     return git(worktree, "diff")
 
