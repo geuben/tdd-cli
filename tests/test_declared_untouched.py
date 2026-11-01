@@ -156,3 +156,11 @@ def test_a_run_that_committed_every_declared_path_records_no_untouched_event(rep
         "advance": [],
         "skip": [],
     }
+
+
+def test_the_complete_reply_is_unchanged_when_every_declared_path_was_committed(repo, tmp_path):
+    out = _both_endings(repo, tmp_path)
+    assert {e: o["next_action"]["detail"] for e, o in out.items()} == {
+        "advance": ADVANCE_DONE,
+        "skip": SKIP_DONE,
+    }
