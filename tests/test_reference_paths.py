@@ -40,6 +40,18 @@ reference_paths: ["backend/tests/expected/out.txt"]
 # Plan
 """
 
+PLAN_REFACTOR = """---
+cycles:
+  - n: 1
+    project: backend
+    refactor_cycle: true
+    title: "behaviour-preserving cleanup"
+reference_paths: ["schema/openapi.json"]
+---
+
+# Plan
+"""
+
 
 def _commit_reference(repo):
     (repo / "backend" / "tests" / "expected").mkdir(parents=True)
@@ -181,3 +193,27 @@ def test_a_reference_path_committed_behind_the_tool_blocks_the_next_advance(repo
         out["result"].get("kind"),
         out["result"].get("paths"),
     ) == ("blocked", "reference_path_touched", [REFERENCE])
+
+
+def test_a_reference_path_regenerated_at_close_blocks_the_run(repo, tmp_path):
+    marker = tmp_path / "stale-marker"
+    (repo / "schema").mkdir()
+    (repo / "schema" / "openapi.json").write_text("v1\n")
+    with (repo / "tdd.toml").open("a") as toml:
+        toml.write(
+            "\n[artifact.openapi]\n"
+            'path        = "schema/openapi.json"\n'
+            'produced_by = "backend"\n'
+            f'check       = "test ! -f {marker}"\n'
+            f"regenerate  = \"printf 'v2\\\\n' > schema/openapi.json && rm -f {marker}\"\n"
+        )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "declare the openapi artifact")
+    _start(repo, PLAN_REFACTOR)
+    marker.write_text("")
+    out = run_cli(repo, "advance")
+    assert (
+        out["next_action"]["verb"],
+        out["result"].get("kind"),
+        out["result"].get("paths"),
+    ) == ("blocked", "reference_path_touched", ["schema/openapi.json"])
