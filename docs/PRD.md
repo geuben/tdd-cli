@@ -206,7 +206,7 @@ Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mism
 `off_protocol_invocation`, `stale_artifact`, `artifact_stale_inherited`, `plan_blob_changed`,
 `executor_unknown`, `artifact_regenerate_failed`, `baseline_late_probe`,
 `baseline_late_probe_unobserved`, `flaky_pre_existing`, `ignored_paths_dirty`,
-`green_without_implementation`.
+`green_without_implementation`, `reference_path_touched`.
 
 `flaky_pre_existing` is an untouched pre-existing failure that passed when rerun alone (R9.1f).
 

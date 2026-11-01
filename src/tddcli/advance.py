@@ -711,6 +711,9 @@ def _blocked_run(engine: Engine, cycle) -> dict:
 
 def _reference_paths_blocked(engine: Engine, cycle, touched: list[str]) -> Envelope:
     """R7.11a: the run changed a path its plan declares read-only; stop before staging."""
+    engine.ledger.event(
+        engine.run["id"], cycle["id"], "reference_path_touched", json.dumps(touched)
+    )
     engine.ledger.add_blocker(
         engine.run["id"], cycle["id"], "reference_path_touched", json.dumps(touched)
     )
