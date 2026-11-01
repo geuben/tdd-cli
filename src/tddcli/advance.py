@@ -484,6 +484,22 @@ def _handle_sensitivity(engine: Engine, cycle) -> Envelope:
     )
 
 
+def _undeclared_blocked(engine: Engine, cycle, paths: list[str], sha, detail: str) -> Envelope:
+    """The `undeclared_file_uncommitted` envelope, from a cycle close or the run close."""
+    return Envelope(
+        run={
+            "id": engine.run["id"],
+            "plan": engine.contract_row["plan_path"],
+            "cycle": cycle["ordinal"],
+            "of": len(engine.declared),
+            "phase": "BLOCKED",
+            "executor": engine.run["executor_model"],
+        },
+        result={"kind": "undeclared_file_uncommitted", "paths": paths, "commit": sha},
+        next_action=NextAction(Verb.BLOCKED, detail),
+    )
+
+
 def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     declared = engine.declared_for(cycle["ordinal"])
     missing = engine.missing_annotations(cycle)
@@ -608,23 +624,15 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
                 engine.run["id"], cycle["id"], "undeclared_file_uncommitted", json.dumps(held)
             )
             engine.ledger.end_run(engine.run["id"], "blocked")
-            return Envelope(
-                run={
-                    "id": engine.run["id"],
-                    "plan": engine.contract_row["plan_path"],
-                    "cycle": cycle["ordinal"],
-                    "of": len(engine.declared),
-                    "phase": "BLOCKED",
-                    "executor": engine.run["executor_model"],
-                },
-                result={"kind": "undeclared_file_uncommitted", "paths": held, "commit": sha},
-                next_action=NextAction(
-                    Verb.BLOCKED,
-                    f"Cycle {cycle['ordinal']} cannot close: {len(held)} file(s) it flagged"
-                    f" are uncommitted: {held}. Commit each in a commit of its own, or discard"
-                    " it (revert or delete it), then `tdd resume --unblock --note ...`, then"
-                    " `tdd advance`.",
-                ),
+            return _undeclared_blocked(
+                engine,
+                cycle,
+                held,
+                sha,
+                f"Cycle {cycle['ordinal']} cannot close: {len(held)} file(s) it flagged"
+                f" are uncommitted: {held}. Commit each in a commit of its own, or discard"
+                " it (revert or delete it), then `tdd resume --unblock --note ...`, then"
+                " `tdd advance`.",
             )
     blocking = engine.close_undeclared_gate(cycle) if last else []
     if blocking:
@@ -634,26 +642,14 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     nxt = engine.close_cycle(cycle, outcome="blocked" if blocking else "complete")
     if nxt is None:
         if blocking:
-            return Envelope(
-                run={
-                    "id": engine.run["id"],
-                    "plan": engine.contract_row["plan_path"],
-                    "cycle": cycle["ordinal"],
-                    "of": len(engine.declared),
-                    "phase": "BLOCKED",
-                    "executor": engine.run["executor_model"],
-                },
-                result={
-                    "kind": "undeclared_file_uncommitted",
-                    "paths": blocking,
-                    "commit": sha,
-                },
-                next_action=NextAction(
-                    Verb.BLOCKED,
-                    f"Run reached its last cycle but {len(blocking)} flagged file(s) are"
-                    f" uncommitted: {blocking}. Commit them, or"
-                    " `tdd resume --unblock --note ...` to discard.",
-                ),
+            return _undeclared_blocked(
+                engine,
+                cycle,
+                blocking,
+                sha,
+                f"Run reached its last cycle but {len(blocking)} flagged file(s) are"
+                f" uncommitted: {blocking}. Commit them, or"
+                " `tdd resume --unblock --note ...` to discard.",
             )
         return Envelope(
             run={
