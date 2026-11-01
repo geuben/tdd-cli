@@ -339,6 +339,12 @@ round-tripped intact through `cycles_to_json`/`cycles_from_json`. Use it for
 authored-at-plan-time metadata that external tooling (e.g. a behaviour-coverage checker)
 needs to read back. Other unknown per-cycle keys are silently ignored.
 
+A cycle commits only in the phases its kind has, so it may declare only those phases'
+messages: `commit_red`, `commit_green` and `commit_refactor` on a standard or contract
+cycle, `commit_pin` and `commit_refactor` on a pin cycle, and `commit_refactor` on a
+refactor cycle. Any other `commit_*` key would never be used, so `tdd plan register`
+refuses the plan as malformed and names the key to use.
+
 Absent front-matter is legitimate — the run proceeds as `undeclared` with
 `--allow-undeclared`, and fidelity metrics are unavailable. **Malformed** front-matter
 hard-fails registration: it is almost always a defect in the planning process, and that
