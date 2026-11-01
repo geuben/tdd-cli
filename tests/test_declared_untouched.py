@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import shutil
 
-from conftest import run_cli, write_plan
+from conftest import git, run_cli, write_plan
 from tddcli import gitutil
 from tddcli.ledger import Ledger
 
@@ -176,3 +176,14 @@ def test_a_run_with_no_recorded_start_sha_still_ends_complete(repo, tmp_path):
         "advance": "complete",
         "skip": "complete",
     }
+
+
+def test_the_last_close_records_the_declared_paths_no_commit_of_the_run_touched(repo):
+    def by_hand(r):
+        (r / "backend/app/by_hand.py").write_text("VALUE = 1\n")
+        git(r, "add", "backend/app/by_hand.py")
+        git(r, "commit", "-q", "-m", "by hand")
+
+    _start(repo, BY_HAND)
+    _deliver_add(repo, during_green=by_hand)
+    assert _untouched(repo) == [(None, ["backend/app/never.py", "docs/never.md"])]
