@@ -304,6 +304,23 @@ def test_a_pin_message_is_left_alone_unless_its_default_title_leads_with_the_wor
     ] == [expected for *_, expected in rows]
 
 
+def test_the_default_pin_message_drops_a_leading_pin_from_the_title():
+    rows = [
+        (
+            "pin: an unknown payload routes to the default action",
+            "test: pin an unknown payload routes to the default action",
+        ),
+        ("pin:x", "test: pin x"),
+        ("Pin x", "test: pin x"),
+        ("PIN - x", "test: pin x"),
+        ("pin -x", "test: pin x"),
+        ("pin  :  x", "test: pin x"),
+    ]
+    assert [
+        staging.default_message(staging.PIN, declared(kind="pin", title=t), 1) for t, _ in rows
+    ] == [expected for _, expected in rows]
+
+
 def test_upstream_producer_roots_includes_self_and_upstream_producers(cfg):
     assert cfg.upstream_producer_roots("frontend") == ["backend", "frontend"]
     assert cfg.upstream_producer_roots("backend") == ["backend"]
