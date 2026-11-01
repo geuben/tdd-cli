@@ -11,6 +11,7 @@ event, named in the `complete` reply and rendered in the friction log.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 
 from conftest import git, run_cli, write_plan
@@ -197,3 +198,23 @@ def test_a_last_close_that_blocks_still_records_the_untouched_paths(repo):
         "blocked",
         [(None, ["backend/app/never.py"])],
     )
+
+
+def test_paths_committed_under_the_project_root_removed_skipped_or_ignored_are_not_reported(repo):
+    (repo / "backend/app/old.py").write_text("OLD = 1\n")
+    (repo / "backend/app/gone.py").write_text("GONE = 1\n")
+    with (repo / ".gitignore").open("a") as f:
+        f.write("generated/\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "files the plan removes, and ignored build output")
+
+    def green(r):
+        os.rename(r / "backend/app/old.py", r / "backend/app/renamed.py")
+        (r / "backend/app/gone.py").unlink()
+        (r / "backend/generated").mkdir()
+        (r / "backend/generated/out.txt").write_text("built\n")
+
+    _start(repo, EXCLUSIONS)
+    run_cli(repo, "cycle", "skip", "--reason", "does not apply")
+    _deliver_add(repo, during_green=green)
+    assert _untouched(repo) == [(None, ["backend/app/never.py"])]
