@@ -14,7 +14,7 @@ import json
 import os
 import shutil
 
-from conftest import git, run_cli, write_plan
+from conftest import git, run_cli, run_cli_text, write_plan
 from tddcli import gitutil
 from tddcli.ledger import Ledger
 
@@ -246,3 +246,15 @@ def test_the_final_skip_reply_names_the_untouched_paths_and_asks_for_a_note(repo
         + UNTOUCHED.format("`backend/app/never.py`")
         + SKIP_DONE.removeprefix("Final cycle skipped; run complete.")
     )
+
+
+def test_the_friction_log_names_untouched_paths_per_cycle_and_for_ancillary_files(repo):
+    _start(repo, NEVER_ANCILLARY)
+    _deliver_add(repo)
+    lines = run_cli_text(repo, "log", "render").splitlines()
+    picked = [ln for ln in lines if ln.startswith("### Cycle") or "Declared but untouched" in ln]
+    assert picked == [
+        "- **Declared but untouched (ancillary_files):** `docs/never.md`",
+        "### Cycle 1: adding two numbers  _(standard)_",
+        "- **Declared but untouched:** `backend/app/never.py`",
+    ]
