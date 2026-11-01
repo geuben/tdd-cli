@@ -72,3 +72,22 @@ def test_the_last_cycle_keeps_the_run_close_gate(repo):
     resumed = run_cli(repo, "resume", "--unblock", "--note", "discarding scratch notes")
 
     assert (close["next_action"]["verb"], resumed["next_action"]["verb"]) == ("blocked", "complete")
+
+
+def _metrics(repo):
+    return run_cli(repo, "metrics")["result"]["runs"][0]
+
+
+def test_a_dirty_flagged_path_holds_the_cycle_close(repo):
+    """An earlier cycle's close is held while a path it flagged is still dirty."""
+    _start(repo, TWO)
+    close = _close_cycle_one(repo)
+    run = _metrics(repo)
+
+    assert (
+        close["next_action"]["verb"],
+        close["result"].get("kind"),
+        close["result"].get("paths"),
+        run["outcome"],
+        run["cycles_closed"],
+    ) == ("blocked", "undeclared_file_uncommitted", ["notes.md"], "blocked", 0)
