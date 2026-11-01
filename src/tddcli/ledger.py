@@ -479,6 +479,7 @@ GUEST_READS = frozenset(
         "open_cycle",
         "open_sensitivity",
         "previous_baseline",
+        "reference_paths",
         "regenerated_artifacts",
         "run",
         "run_events",
@@ -1083,6 +1084,9 @@ class Ledger:
             registered_at=now(),
             **self._stamp(),
         )
+
+    def reference_paths(self, contract_id: int) -> list[str]:
+        return []
 
     # -- runs ----------------------------------------------------------------
 
