@@ -9,6 +9,7 @@ RED — detected exactly, in every language, without parsing a line of source.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -103,13 +104,19 @@ def paths_for_phase(phase: str, classification: Classification) -> list[str]:
     )
 
 
+# A title that already leads with the word `pin` (`pin`, `pin:`, `pin -`, any case) would
+# double it in `test: pin {title}`. Each separator is only stripped when text follows, and
+# `-` is tried before bare whitespace so `pin - x` loses its dash too.
+_LEADING_PIN = re.compile(r"^pin(?:\s*:\s*(?=\S)|\s+-\s*(?=\S)|\s+(?=[^\s:-]))", re.IGNORECASE)
+
+
 def default_message(phase: str, declared: DeclaredCycle | None, ordinal: int) -> str:
     if declared and phase in declared.commit_messages:
         return declared.commit_messages[phase]
     title = (declared.title if declared else "") or f"cycle {ordinal}"
     return {
         RED: f"test: {title}",
-        PIN: f"test: pin {title}",
+        PIN: "test: pin " + _LEADING_PIN.sub("", title, count=1),
         GREEN: f"feat: {title}",
         REFACTOR: f"refactor: {title}",
     }[phase]

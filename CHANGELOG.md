@@ -6,6 +6,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A `commit_*` key a cycle never uses is refused at registration** (#231). A pin cycle
+  commits only under `commit_pin` and `commit_refactor`, a refactor cycle only under
+  `commit_refactor`, and a standard or contract cycle never under `commit_pin`. A plan
+  that declared another key, most often a pin's message under `commit_red`, registered
+  and then committed with the default message instead. `tdd plan register` now refuses it
+  as a malformed contract and names the key to use.
+- **The default pin commit message no longer doubles `pin`** (#231). A pin cycle with no
+  `commit_pin` whose title starts with `pin`, `pin:` or `pin -` commits as
+  `test: pin <rest of the title>`, not `test: pin pin: …`.
+
 ## [0.17.0] - 2026-10-30
 
 ### Added

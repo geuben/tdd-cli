@@ -18,9 +18,6 @@ cycles:
     project: {project}
     {kind}title: "t"
     test: "{test}"
-    commit_red: "test: t"
-    commit_green: "feat: t"
-    commit_pin: "test: pin"
 ---
 """
 

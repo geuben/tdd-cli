@@ -23,6 +23,15 @@ PIN = "pin"
 CONTRACT = "contract"
 REFACTOR = "refactor"
 
+# The phases each kind commits in (the `machine.py` docstring), so the only `commit_*`
+# keys it may declare. Any other key would never be read (R7.10a).
+_COMMIT_PHASES = {
+    STANDARD: ("red", "green", "refactor"),
+    CONTRACT: ("red", "green", "refactor"),
+    PIN: ("pin", "refactor"),
+    REFACTOR: ("refactor",),
+}
+
 
 class ContractError(RuntimeError):
     """Malformed front-matter. Hard-fails registration (R7.10)."""
@@ -171,6 +180,16 @@ def parse_cycle(raw: dict, config: Config | None) -> DeclaredCycle:
             if not isinstance(msg, str):
                 raise ContractError(f"cycle {ordinal}: commit_{phase_key} must be a string")
             commits[phase_key] = msg
+    accepted = _COMMIT_PHASES[kind]
+    for phase_key in commits:
+        if phase_key not in accepted:
+            keys = [f"commit_{p}" for p in accepted]
+            listed = keys[0] if len(keys) == 1 else ", ".join(keys[:-1]) + " and " + keys[-1]
+            raise ContractError(
+                f"cycle {ordinal}: commit_{phase_key} has no effect on a {kind} cycle,"
+                f" which commits only under {listed}."
+                f" Declare the message as {keys[0]}."
+            )
 
     meta_raw = raw.get("meta")
     if meta_raw is not None and not isinstance(meta_raw, dict):
