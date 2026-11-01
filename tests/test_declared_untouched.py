@@ -218,3 +218,10 @@ def test_paths_committed_under_the_project_root_removed_skipped_or_ignored_are_n
     run_cli(repo, "cycle", "skip", "--reason", "does not apply")
     _deliver_add(repo, during_green=green)
     assert _untouched(repo) == [(None, ["backend/app/never.py"])]
+
+
+def test_skipping_the_last_cycle_records_the_untouched_paths(repo):
+    _start(repo, NEVER_THEN_SUB)
+    _deliver_add(repo)
+    run_cli(repo, "cycle", "skip", "--reason", "not needed")
+    assert _untouched(repo) == [(None, ["backend/app/never.py"])]
