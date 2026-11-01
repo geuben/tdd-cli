@@ -7,7 +7,9 @@ run-close gate (#69) stays the final backstop.
 
 from __future__ import annotations
 
-from conftest import run_cli, write_plan
+import shutil
+
+from conftest import git, run_cli, write_plan
 
 ONE = """---
 cycles:
@@ -91,3 +93,29 @@ def test_a_dirty_flagged_path_holds_the_cycle_close(repo):
         run["outcome"],
         run["cycles_closed"],
     ) == ("blocked", "undeclared_file_uncommitted", ["notes.md"], "blocked", 0)
+
+
+def test_committing_or_discarding_the_held_path_lets_the_cycle_close(repo, tmp_path):
+    """Once the held path is clean and the run unblocked, the next advance closes the cycle."""
+    copies = {case: tmp_path / case for case in ("commit", "discard")}
+    for r in copies.values():
+        shutil.copytree(repo, r, symlinks=True)
+
+    outcomes = {}
+    for case, r in copies.items():
+        _start(r, TWO)
+        _close_cycle_one(r)
+        if case == "commit":
+            git(r, "add", "notes.md")
+            git(r, "commit", "-q", "-m", "docs: scratch notes")
+        else:
+            (r / "notes.md").unlink()
+        run_cli(r, "resume", "--unblock", "--note", f"{case} notes.md")
+        after = run_cli(r, "advance")
+        outcomes[case] = (
+            after["run"]["cycle"],
+            after["next_action"]["verb"],
+            after["next_action"]["detail"].startswith("Cycle 1 closed."),
+        )
+
+    assert outcomes == {"commit": (2, "write_test", True), "discard": (2, "write_test", True)}
