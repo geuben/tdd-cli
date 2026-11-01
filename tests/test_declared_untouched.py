@@ -164,3 +164,15 @@ def test_the_complete_reply_is_unchanged_when_every_declared_path_was_committed(
         "advance": ADVANCE_DONE,
         "skip": SKIP_DONE,
     }
+
+
+def _forget_start_sha(repo, run_id: int) -> None:
+    Ledger(gitutil.repo_identity(repo)).update("run", run_id, start_sha=None)
+
+
+def test_a_run_with_no_recorded_start_sha_still_ends_complete(repo, tmp_path):
+    out = _both_endings(repo, tmp_path, before_end=_forget_start_sha)
+    assert {e: (o["next_action"] or {}).get("verb") for e, o in out.items()} == {
+        "advance": "complete",
+        "skip": "complete",
+    }
