@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from conftest import run_cli, write_plan
+import shutil
+
+from conftest import git, run_cli, write_plan
 from tddcli import gitutil
 from tddcli.contract import ContractError, parse
 from tddcli.ledger import Ledger
@@ -24,6 +26,48 @@ reference_paths: ["backend/tests/expected/out.txt"]
 
 # Plan
 """
+
+PLAN_PIN = """---
+cycles:
+  - n: 1
+    project: backend
+    pin_cycle: true
+    title: "smoke still passes"
+    test: "tests/test_pin.py::test_pin"
+reference_paths: ["backend/tests/expected/out.txt"]
+---
+
+# Plan
+"""
+
+
+def _commit_reference(repo):
+    (repo / "backend" / "tests" / "expected").mkdir(parents=True)
+    (repo / REFERENCE).write_text("reference\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "an independently produced reference file")
+
+
+def _start(repo, plan_text):
+    plan = write_plan(repo, plan_text)
+    assert run_cli(repo, "plan", "register", plan)["ok"]
+    started = run_cli(repo, "run", "start", "--plan", plan)
+    assert started["ok"], started
+    return started
+
+
+def _red(repo):
+    (repo / "backend" / "tests" / "test_add.py").write_text(TEST_ADD)
+    (repo / "backend" / "app" / "calc.py").write_text(STUB)
+
+
+def _touch(repo):
+    (repo / REFERENCE).write_text("overwritten by the run\n")
+
+
+def _advance_expecting(repo, verb):
+    out = run_cli(repo, "advance")
+    assert out["next_action"]["verb"] == verb, out
 
 
 def _contract_text(value: str | None) -> str:
@@ -65,3 +109,58 @@ def test_plan_register_stores_reference_paths(repo):
     assert Ledger(gitutil.repo_identity(repo)).reference_paths(
         registered["result"]["contract_id"]
     ) == [REFERENCE]
+
+
+def _drive_red(repo):
+    _start(repo, PLAN_ADD)
+    _red(repo)
+    _touch(repo)
+
+
+def _drive_green(repo):
+    _start(repo, PLAN_ADD)
+    _red(repo)
+    _advance_expecting(repo, "write_implementation")
+    (repo / "backend" / "app" / "calc.py").write_text(REAL)
+    _touch(repo)
+
+
+def _drive_refactor(repo):
+    _start(repo, PLAN_ADD)
+    _red(repo)
+    _advance_expecting(repo, "write_implementation")
+    (repo / "backend" / "app" / "calc.py").write_text(REAL)
+    _advance_expecting(repo, "refactor_or_advance")
+    _touch(repo)
+
+
+def _drive_pin(repo):
+    _start(repo, PLAN_PIN)
+    (repo / "backend" / "tests" / "test_pin.py").write_text("def test_pin():\n    assert True\n")
+    _touch(repo)
+
+
+def test_touching_a_reference_path_blocks_the_run_in_every_phase(repo, tmp_path):
+    _commit_reference(repo)
+    drives = {
+        "red": _drive_red,
+        "green": _drive_green,
+        "refactor": _drive_refactor,
+        "pin": _drive_pin,
+    }
+    seen = {}
+    for name, drive in drives.items():
+        copy = tmp_path / name
+        shutil.copytree(repo, copy, symlinks=True)
+        drive(copy)
+        head = git(copy, "rev-parse", "HEAD")
+        out = run_cli(copy, "advance")
+        seen[name] = (
+            out["next_action"]["verb"],
+            out["result"].get("kind"),
+            out["result"].get("paths"),
+            git(copy, "rev-parse", "HEAD") == head,
+            run_cli(copy, "metrics")["result"]["runs"][0]["outcome"],
+        )
+    blocked = ("blocked", "reference_path_touched", [REFERENCE], True, "blocked")
+    assert seen == {"red": blocked, "green": blocked, "refactor": blocked, "pin": blocked}
