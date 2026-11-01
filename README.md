@@ -292,6 +292,15 @@ never fire `undeclared_file_touched`, and so never reach this gate. When the las
 closes, any of them still dirty are named once, in an `ignored_paths_dirty` event on that
 cycle. It is an informational line in the friction log and blocks nothing.
 
+The reverse is reported too. When the last cycle closes, by `tdd advance` or by a final
+`tdd cycle skip`, any path the plan declares that no commit since `run start` touched is
+recorded in one `declared_file_untouched` event. The declared paths are a delivered
+cycle's `files` or `stub_expected`, written from the repository or the project root,
+and `ancillary_files`. A commit made by hand counts, and so does removing or renaming
+the file. Paths git ignores are left out. The `complete` reply names the paths and asks
+for a `tdd note` on why each was not needed. A plan may over-declare, so this blocks
+nothing.
+
 ### Abandoning a run
 
 A run that will not be finished — stopped on purpose, or blocked for good — is ended with
@@ -367,7 +376,9 @@ suite time and its share, per phase and per cycle.
 Plan fidelity also warns, one line per key, of a declared check that never ran: an
 `annotation_keys` entry none of whose cycles was delivered (skipped and never-reached
 cycles do not count), e.g. ``- **Declared check never ran:** `artifact_verify` (applies to
-cycles 12, 19)``.
+cycles 12, 19)``. It also names each declared path no commit of the run touched, in the cycle
+that declared it (``- **Declared but untouched:** `src/x.py` ``), or, for an
+`ancillary_files` path, on a ``- **Declared but untouched (ancillary_files):** `` line.
 
 Every observable fact in it is projected from recorded events. The agent that did the
 work cannot compose it — that is what makes it worth reading, and why the log is

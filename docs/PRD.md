@@ -205,7 +205,8 @@ an auditor compares them against reality.
 Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mismatch`,
 `off_protocol_invocation`, `stale_artifact`, `artifact_stale_inherited`, `plan_blob_changed`,
 `executor_unknown`, `artifact_regenerate_failed`, `baseline_late_probe`,
-`baseline_late_probe_unobserved`, `flaky_pre_existing`, `ignored_paths_dirty`.
+`baseline_late_probe_unobserved`, `flaky_pre_existing`, `ignored_paths_dirty`,
+`declared_file_untouched`.
 
 `flaky_pre_existing` is an untouched pre-existing failure that passed when rerun alone (R9.1f).
 
@@ -445,6 +446,18 @@ annotation_keys: ["literal_detail_handlers_kept"]
   never-reached cycles count as not executed), the friction log's Plan fidelity section
   carries, after `Never reached`, the line
   ``- **Declared check never ran:** `<key>` (applies to cycles <n>, <n>)``, ordinals ascending.
+- **R7.5b** A declared file no commit touched is surfaced, not hidden (#232). When the
+  last cycle closes, by `tdd advance` (whether the run completes or blocks) or by
+  `tdd cycle skip`, the tool takes every declared path. These are each delivered cycle's
+  `files` and `stub_expected`, read as written and under each of the cycle's project
+  roots, and `ancillary_files`. It drops the paths git's ignore rules match, and those
+  that any commit from `run.start_sha` to `HEAD` touched, a removal or rename included.
+  What is left, as the plan writes it, is recorded in one run-level
+  `declared_file_untouched` event. The `complete` reply names it and asks for a closing
+  note on why each path was not needed. It blocks nothing. The friction log's Plan
+  fidelity section carries ``- **Declared but untouched:** `<path>` `` in each cycle that
+  declares the path, and ``- **Declared but untouched (ancillary_files):** `<path>` ``,
+  before `Unblocks`, for a path no delivered cycle declares.
 - **R7.9** **Absent** front-matter is legitimate (pre-existing plans, exploratory work). The
   contract is recorded as `undeclared`, plan-fidelity metrics are unavailable, and `run start`
   requires a human-supplied `--allow-undeclared`.

@@ -90,6 +90,22 @@ def friction_log(ledger: Ledger, run) -> str:
         if not delivered.intersection(scope):
             ordinals = ", ".join(str(n) for n in scope)
             a(f"- **Declared check never ran:** `{key}` (applies to cycles {ordinals})")
+    # Declared paths no commit of the run touched (#232): in the cycle that declares
+    # them, or here when only `ancillary_files` does.
+    untouched = sorted(
+        {
+            p
+            for d in ledger.event_details(run["id"], "declared_file_untouched")
+            for p in json.loads(d)
+        }
+    )
+    declared_paths = {
+        d["n"]: set(d.get("files") or []) | set(d.get("stub_expected") or []) for d in declared
+    }
+    in_cycles = set().union(*(paths for n, paths in declared_paths.items() if n not in skipped))
+    plan_level = [p for p in untouched if p not in in_cycles]
+    if plan_level:
+        a(f"- **Declared but untouched (ancillary_files):** {_fmt_list(plan_level)}")
     unblocks = _unblocks(ledger, run["id"])
     a(f"- Unblocks: {len(unblocks)}")
     for i in unblocks:
@@ -166,6 +182,9 @@ def friction_log(ledger: Ledger, run) -> str:
                 a(f"  - `{c['sha'][:9]}` [{c['phase']}] {c['message']} ({len(files)} files)")
         else:
             a("- **Commits:** none")
+        cycle_untouched = [p for p in untouched if p in declared_paths.get(cycle["ordinal"], set())]
+        if cycle_untouched:
+            a(f"- **Declared but untouched:** {_fmt_list(cycle_untouched)}")
 
         for e in events.get(cycle["id"], []):
             a(f"- **Event — {e['kind']}:** {e['detail'][:300]}")

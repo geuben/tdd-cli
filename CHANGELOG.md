@@ -6,6 +6,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Declared files no commit touched are reported** (#232). When the last cycle closes,
+  by `tdd advance` or a final `tdd cycle skip`, every path the plan declares (`files`,
+  `stub_expected`, `ancillary_files`) that no commit since `run start` touched is recorded
+  in a new run-level `declared_file_untouched` event. Hand commits, removals and renames
+  count as touched; skipped cycles' paths and paths git ignores are left out. The
+  `complete` reply names them and asks for a `tdd note` on why each was not needed, and
+  the friction log's Plan fidelity section lists them per cycle. It blocks nothing.
+
 ## [0.17.0] - 2026-10-30
 
 ### Added
