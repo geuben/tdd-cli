@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 
-from conftest import run_cli, write_plan
+from conftest import run_cli, run_cli_text, write_plan
 from tddcli import gitutil
 from tddcli.ledger import Ledger
 
@@ -200,3 +200,11 @@ def test_green_without_implementation_fires_only_when_every_staged_path_is_a_tes
 def test_a_green_of_only_test_files_asks_for_a_note(repo, tmp_path):
     _, green = _tests_only(repo, tmp_path)
     assert "tdd note" in green["next_action"]["detail"]
+
+
+def test_the_friction_log_shows_green_without_implementation_in_the_cycle_section(repo, tmp_path):
+    _tests_only(repo, tmp_path)
+    run_cli(repo, "advance")
+    text = run_cli_text(repo, "log", "render")
+    section = text.split("### Cycle 1", 1)[1].split("\n## ", 1)[0]
+    assert f'- **Event — green_without_implementation:** ["{EXPECTED}"]' in section
