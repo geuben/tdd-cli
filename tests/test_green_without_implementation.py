@@ -195,3 +195,8 @@ def test_green_without_implementation_fires_only_when_every_staged_path_is_a_tes
         "ancillary_only": ("refactor_or_advance", []),
         "nothing_staged": ("refactor_or_advance", []),
     }
+
+
+def test_a_green_of_only_test_files_asks_for_a_note(repo, tmp_path):
+    _, green = _tests_only(repo, tmp_path)
+    assert "tdd note" in green["next_action"]["detail"]
