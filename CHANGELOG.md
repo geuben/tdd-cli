@@ -14,6 +14,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   that declared another key, most often a pin's message under `commit_red`, registered
   and then committed with the default message instead. `tdd plan register` now refuses it
   as a malformed contract and names the key to use.
+- **The default pin commit message no longer doubles `pin`** (#231). A pin cycle with no
+  `commit_pin` whose title starts with `pin`, `pin:` or `pin -` commits as
+  `test: pin <rest of the title>`, not `test: pin pin: …`.
 
 ## [0.17.0] - 2026-10-30
 

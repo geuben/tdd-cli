@@ -343,7 +343,10 @@ A cycle commits only in the phases its kind has, so it may declare only those ph
 messages: `commit_red`, `commit_green` and `commit_refactor` on a standard or contract
 cycle, `commit_pin` and `commit_refactor` on a pin cycle, and `commit_refactor` on a
 refactor cycle. Any other `commit_*` key would never be used, so `tdd plan register`
-refuses the plan as malformed and names the key to use.
+refuses the plan as malformed and names the key to use. With no message declared, a phase
+commits as `test: <title>`, `feat: <title>`, `refactor: <title>` or `test: pin <title>`. The
+pin default first drops a leading `pin`, `pin:` or `pin -` (any case) from the title, so
+`pin: x` commits as `test: pin x`.
 
 Absent front-matter is legitimate — the run proceeds as `undeclared` with
 `--allow-undeclared`, and fidelity metrics are unavailable. **Malformed** front-matter

@@ -862,6 +862,9 @@ The CLI stages; it never delegates staging to the agent, and it never runs `git 
   recorded as `undeclared_file_touched`, so the run-close gate never sees it (#98).
 - **R9.17** Commit messages come from the plan front-matter where declared, falling back to a
   `--message` argument. Plans already specify them; this places them under plan review.
+  With no message declared, a phase commits as `test: <title>` (RED), `feat: <title>`,
+  `refactor: <title>` or `test: pin <title>`. The pin default first drops a leading `pin`,
+  `pin:` or `pin -` (any case) from the title (#231).
 - **R9.18** Ordering within `advance` is: run suites → verdict → stage → commit → record
   transition. A failed commit means no transition, so the ledger cannot record progress that is
   absent from git.
