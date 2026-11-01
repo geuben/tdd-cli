@@ -235,3 +235,14 @@ def test_the_complete_reply_names_the_untouched_paths_and_asks_for_a_note(repo):
         + UNTOUCHED.format("`backend/app/never.py`, `docs/never.md`")
         + ADVANCE_DONE.removeprefix("All declared cycles are complete.")
     )
+
+
+def test_the_final_skip_reply_names_the_untouched_paths_and_asks_for_a_note(repo):
+    _start(repo, NEVER_THEN_SUB)
+    _deliver_add(repo)
+    out = run_cli(repo, "cycle", "skip", "--reason", "not needed")
+    assert out["next_action"]["detail"] == (
+        "Final cycle skipped; run complete."
+        + UNTOUCHED.format("`backend/app/never.py`")
+        + SKIP_DONE.removeprefix("Final cycle skipped; run complete.")
+    )
