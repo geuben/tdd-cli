@@ -14,6 +14,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   reply asks for a `tdd note` saying why, and nothing is blocked. A declared stub, an
   implementation file or an ancillary file in the commit means implementation was written,
   so it does not fire.
+- **Plan-level `reference_paths` are read-only to the run** (#235). A plan can list golden
+  or reference files its tests compare against. If one differs from the run's start at any
+  `tdd advance` (edited, deleted, committed by hand, or rewritten by an artifact
+  regeneration), the run is blocked before anything is staged, with a
+  `reference_path_touched` blocker and integrity event naming the paths. Restore them, then
+  `tdd resume --unblock`. Plans without the key behave as before. With a ledger service,
+  upgrade the host with or before its guests: a 0.17.0 host refuses the new
+  `reference_paths` read, made on every `advance`, with `method_not_allowed`.
 
 ### Fixed
 

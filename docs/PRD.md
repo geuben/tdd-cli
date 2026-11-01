@@ -212,7 +212,10 @@ Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mism
 
 ### Blocker
 Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `context_exhausted`,
-`pre_existing_failure`.
+`pre_existing_failure`, `reference_path_touched`.
+
+`reference_path_touched` is raised by the tool, not filed with `tdd blocker`: the run changed a
+path its plan declares read-only (R7.11a).
 
 `pre_existing_failure` is failing-but-not-caused-here: a flake, or something the baseline missed.
 Without it the only available label is `regression`, which records a defect the run introduced —
@@ -1043,6 +1046,7 @@ The CLI cannot compel an agent. Only the harness can. The division:
 - A cycle cannot close with a stale declared artifact.
 - A cycle that passed on arrival cannot close without a sensitivity check or waiver.
 - `advance` refuses when nothing changed since the previous invocation.
+- A plan's `reference_paths` cannot change during its run (R7.11a).
 
 **Recorded, never blocked** (per P2): non-stub writes during RED, undeclared file touches,
 scope divergence, test modifications, extra attempts.

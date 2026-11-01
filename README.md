@@ -297,6 +297,19 @@ never fire `undeclared_file_touched`, and so never reach this gate. When the las
 closes, any of them still dirty are named once, in an `ignored_paths_dirty` event on that
 cycle. It is an informational line in the friction log and blocks nothing.
 
+### Reference paths are read-only
+
+A plan that lists `reference_paths` relies on files produced independently of the code
+under test. At every `tdd advance`, any of them that differs from the run's start (changed
+in the worktree, or committed since the run started) stops the run before anything is
+staged. The cycle records a `reference_path_touched` integrity event and a blocker of the
+same kind, the run outcome is `blocked`, and `next_action.verb` is `"blocked"`, with
+`result.kind` and `result.paths`. The same check runs again after a close regenerates
+artifacts. To go on, restore the paths to their content at the run's start, then
+`tdd resume --unblock --note "..."`; while a path still differs, the next `advance` blocks
+again. A sensitivity check may mutate a reference file: `advance` is refused while the check
+is open, and `sensitivity end` restores it.
+
 ### Abandoning a run
 
 A run that will not be finished — stopped on purpose, or blocked for good — is ended with
@@ -796,7 +809,8 @@ The CLI cannot compel an agent — only the harness can.
 
 **Hard gates here:** phase is never caller-supplied; a cycle cannot close over a stale
 artifact; a passed-on-arrival cycle cannot close without a verified sensitivity check;
-`advance` refuses an unchanged tree unless `--retry`.
+`advance` refuses an unchanged tree unless `--retry`; a path in the plan's
+`reference_paths` cannot change during its run.
 
 **Recorded, never blocked mid-run:** non-stub writes during RED, undeclared file touches,
 scope divergence, extra attempts. Prevention rules with edge cases produce false denials,

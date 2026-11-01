@@ -700,6 +700,31 @@ def _check_config_drift(engine: Engine, cycle) -> None:
         )
 
 
+def _reference_paths_blocked(engine: Engine, cycle, touched: list[str]) -> Envelope:
+    """R7.11a: the run changed a path its plan declares read-only; stop before staging."""
+    engine.ledger.add_blocker(
+        engine.run["id"], cycle["id"], "reference_path_touched", json.dumps(touched)
+    )
+    engine.ledger.end_run(engine.run["id"], "blocked")
+    return Envelope(
+        run={
+            "id": engine.run["id"],
+            "plan": engine.contract_row["plan_path"],
+            "cycle": cycle["ordinal"],
+            "of": len(engine.declared),
+            "phase": "BLOCKED",
+            "executor": engine.run["executor_model"],
+        },
+        result={"kind": "reference_path_touched", "paths": touched},
+        next_action=NextAction(
+            Verb.BLOCKED,
+            f"The plan declares {touched} read-only (reference_paths), and the run changed"
+            " them. Restore them to their content at the run's start, then"
+            " `tdd resume --unblock --note ...`.",
+        ),
+    )
+
+
 def advance(engine: Engine, cycle, retry: bool = False) -> Envelope:
     _check_config_drift(engine, cycle)
 
@@ -711,6 +736,10 @@ def advance(engine: Engine, cycle, retry: bool = False) -> Envelope:
             "A sensitivity check is open. Close it with `tdd sensitivity end` before"
             " advancing — the tree is deliberately mutated.",
         )
+
+    touched = engine.touched_reference_paths(cycle)
+    if touched:
+        return _reference_paths_blocked(engine, cycle, touched)
 
     phase = cycle["phase"]
     if phase in (AWAITING_TEST, AWAITING_PIN, AWAITING_IMPL):
