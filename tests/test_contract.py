@@ -257,3 +257,39 @@ ancillary_files: [1, 2]
 """
     with pytest.raises(ContractError, match="ancillary_files must be a list of strings"):
         parse(body_nonstr, "tasks/p.md")
+
+
+def test_every_commit_key_a_cycle_kind_commits_under_is_kept():
+    body = """---
+cycles:
+  - n: 1
+    project: backend
+    test: "tests/a.py::test_s"
+    commit_red: "r"
+    commit_green: "g"
+    commit_refactor: "f"
+  - n: 2
+    projects: ["backend", "frontend"]
+    contract_cycle: true
+    tests: ["backend::tests/a.py::test_c", "frontend::b.test.ts > c"]
+    commit_red: "r"
+    commit_green: "g"
+    commit_refactor: "f"
+  - n: 3
+    project: backend
+    pin_cycle: true
+    test: "tests/a.py::test_p"
+    commit_pin: "p"
+    commit_refactor: "f"
+  - n: 4
+    project: backend
+    refactor_cycle: true
+    commit_refactor: "f"
+---
+"""
+    assert {c.ordinal: c.commit_messages for c in parse(body, "tasks/p.md").cycles} == {
+        1: {"red": "r", "green": "g", "refactor": "f"},
+        2: {"red": "r", "green": "g", "refactor": "f"},
+        3: {"pin": "p", "refactor": "f"},
+        4: {"refactor": "f"},
+    }
