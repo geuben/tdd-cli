@@ -164,3 +164,20 @@ def test_touching_a_reference_path_blocks_the_run_in_every_phase(repo, tmp_path)
         )
     blocked = ("blocked", "reference_path_touched", [REFERENCE], True, "blocked")
     assert seen == {"red": blocked, "green": blocked, "refactor": blocked, "pin": blocked}
+
+
+def test_a_reference_path_committed_behind_the_tool_blocks_the_next_advance(repo):
+    _commit_reference(repo)
+    _start(repo, PLAN_ADD)
+    _red(repo)
+    _advance_expecting(repo, "write_implementation")
+    _touch(repo)
+    git(repo, "add", REFERENCE)
+    git(repo, "commit", "-q", "-m", "regenerate the golden from the producer")
+    (repo / "backend" / "app" / "calc.py").write_text(REAL)
+    out = run_cli(repo, "advance")
+    assert (
+        out["next_action"]["verb"],
+        out["result"].get("kind"),
+        out["result"].get("paths"),
+    ) == ("blocked", "reference_path_touched", [REFERENCE])
