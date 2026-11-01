@@ -456,6 +456,11 @@ annotation_keys: ["literal_detail_handlers_kept"]
   parse is almost always a defect in the planning skill, and that signal must surface rather than
   degrade silently into a metrics-free run. This does not conflict with P3, which governs
   divergence *during* a run, not whether a contract parses.
+- **R7.10a** A cycle may declare a `commit_*` message only for a phase its kind enters:
+  `commit_red`, `commit_green` and `commit_refactor` for standard and contract cycles,
+  `commit_pin` and `commit_refactor` for pin cycles, `commit_refactor` for refactor
+  cycles. Any other is malformed (R7.10), even beside a valid key, because a key the run
+  never reads breaks R9.17 without a word. The refusal names the key to use (#231).
 - **R7.11** Editing front-matter mid-run changes the plan blob and raises `plan_blob_changed`,
   which is the backstop against escaping a contract by corrupting it.
 
@@ -868,6 +873,9 @@ The CLI stages; it never delegates staging to the agent, and it never runs `git 
   recorded as `undeclared_file_touched`, so the run-close gate never sees it (#98).
 - **R9.17** Commit messages come from the plan front-matter where declared, falling back to a
   `--message` argument. Plans already specify them; this places them under plan review.
+  With no message declared, a phase commits as `test: <title>` (RED), `feat: <title>`,
+  `refactor: <title>` or `test: pin <title>`. The pin default first drops a leading `pin`,
+  `pin:` or `pin -` (any case) from the title (#231).
 - **R9.18** Ordering within `advance` is: run suites → verdict → stage → commit → record
   transition. A failed commit means no transition, so the ledger cannot record progress that is
   absent from git.
