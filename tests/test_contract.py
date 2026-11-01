@@ -293,3 +293,64 @@ cycles:
         3: {"pin": "p", "refactor": "f"},
         4: {"refactor": "f"},
     }
+
+
+_KIND_LINES = {
+    "standard": ["project: backend", 'test: "tests/a.py::test_x"'],
+    "contract": [
+        'projects: ["backend", "frontend"]',
+        "contract_cycle: true",
+        'tests: ["backend::tests/a.py::test_c", "frontend::b.test.ts > c"]',
+    ],
+    "pin": ["project: backend", "pin_cycle: true", 'test: "tests/a.py::test_x"'],
+    "refactor": ["project: backend", "refactor_cycle: true"],
+}
+
+
+def _one_cycle(kind: str, keys: list[str]) -> str:
+    lines = [f"    {line}" for line in _KIND_LINES[kind]]
+    lines += [f'    {key}: "x"' for key in keys]
+    return "---\ncycles:\n  - n: 1\n" + "\n".join(lines) + "\n---\n"
+
+
+def _refusal(body: str) -> str | None:
+    try:
+        parse(body, "tasks/p.md")
+    except ContractError as exc:
+        return str(exc)
+    return None
+
+
+def test_a_commit_key_for_a_phase_the_cycle_kind_never_enters_is_refused():
+    pin_tail = (
+        "which commits only under commit_pin and commit_refactor."
+        " Declare the message as commit_pin."
+    )
+    ref_tail = "which commits only under commit_refactor. Declare the message as commit_refactor."
+    std_tail = (
+        "which commits only under commit_red, commit_green and commit_refactor."
+        " Declare the message as commit_red."
+    )
+    cases = [
+        ("pin", ["commit_red"]),
+        ("pin", ["commit_green"]),
+        ("pin", ["commit_red", "commit_pin"]),
+        ("refactor", ["commit_red"]),
+        ("refactor", ["commit_green"]),
+        ("refactor", ["commit_pin"]),
+        ("refactor", ["commit_pin", "commit_green"]),
+        ("standard", ["commit_pin"]),
+        ("contract", ["commit_pin"]),
+    ]
+    expected = [
+        "cycle 1: commit_red has no effect on a pin cycle, " + pin_tail,
+        "cycle 1: commit_green has no effect on a pin cycle, " + pin_tail,
+        "cycle 1: commit_red has no effect on a pin cycle, " + pin_tail,
+        "cycle 1: commit_red has no effect on a refactor cycle, " + ref_tail,
+        "cycle 1: commit_green has no effect on a refactor cycle, " + ref_tail,
+        "cycle 1: commit_pin has no effect on a refactor cycle, " + ref_tail,
+        "cycle 1: commit_green has no effect on a refactor cycle, " + ref_tail,
+        "cycle 1: commit_pin has no effect on a standard cycle, " + std_tail,
+        "cycle 1: commit_pin has no effect on a contract cycle, " + std_tail,
+    ]
+    assert [_refusal(_one_cycle(k, keys)) for k, keys in cases] == expected
