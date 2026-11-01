@@ -187,3 +187,13 @@ def test_the_last_close_records_the_declared_paths_no_commit_of_the_run_touched(
     _start(repo, BY_HAND)
     _deliver_add(repo, during_green=by_hand)
     assert _untouched(repo) == [(None, ["backend/app/never.py", "docs/never.md"])]
+
+
+def test_a_last_close_that_blocks_still_records_the_untouched_paths(repo):
+    _start(repo, NEVER_ONE)
+    (repo / "notes.md").write_text("scratch\n")
+    close = _deliver_add(repo)
+    assert (close["next_action"]["verb"], _untouched(repo)) == (
+        "blocked",
+        [(None, ["backend/app/never.py"])],
+    )
