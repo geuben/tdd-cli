@@ -536,6 +536,11 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
             commit=sha,
         )
 
+    # R7.11a: the regeneration above ran after advance's own check.
+    changed_refs = engine.touched_reference_paths(cycle)
+    if changed_refs:
+        return _reference_paths_blocked(engine, cycle, changed_refs)
+
     regenerated = artifact_outcome.regenerated
 
     # §6.1 — when nothing changed since GREEN, the cycle's own suites just passed on an
