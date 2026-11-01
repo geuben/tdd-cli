@@ -90,6 +90,7 @@ class PlanContract:
     cycles: list[DeclaredCycle]
     annotation_keys: list[str]
     ancillary_files: list[str] = field(default_factory=list)
+    reference_paths: list[str] = field(default_factory=list)
     blob_sha: str | None = None
     commit_sha: str | None = None
 
