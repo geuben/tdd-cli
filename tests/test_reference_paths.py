@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import shutil
 
-from conftest import git, run_cli, write_plan
+from conftest import git, run_cli, run_cli_text, write_plan
 from tddcli import gitutil
 from tddcli.contract import ContractError, parse
 from tddcli.ledger import Ledger
@@ -217,3 +217,14 @@ def test_a_reference_path_regenerated_at_close_blocks_the_run(repo, tmp_path):
         out["result"].get("kind"),
         out["result"].get("paths"),
     ) == ("blocked", "reference_path_touched", ["schema/openapi.json"])
+
+
+def test_the_friction_log_shows_reference_path_touched_in_the_cycle_section(repo):
+    _commit_reference(repo)
+    _start(repo, PLAN_ADD)
+    _red(repo)
+    _touch(repo)
+    run_cli(repo, "advance")
+    text = run_cli_text(repo, "log", "render")
+    section = text.split("### Cycle 1", 1)[1].split("\n## ", 1)[0]
+    assert f'- **Event — reference_path_touched:** ["{REFERENCE}"]' in section
