@@ -321,12 +321,17 @@ def parse(text: str, plan_path: str, config: Config | None = None) -> PlanContra
     if not isinstance(anc, list) or not all(isinstance(p, str) for p in anc):
         raise ContractError("ancillary_files must be a list of strings")
 
+    refs = data.get("reference_paths", [])
+    if not isinstance(refs, list) or not all(isinstance(p, str) for p in refs):
+        raise ContractError("reference_paths must be a list of strings")
+
     return PlanContract(
         plan_path=plan_path,
         status="declared",
         cycles=cycles,
         annotation_keys=keys,
         ancillary_files=anc,
+        reference_paths=refs,
     )
 
 

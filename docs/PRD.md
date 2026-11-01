@@ -460,6 +460,14 @@ annotation_keys: ["literal_detail_handlers_kept"]
   never reads breaks R9.17 without a word. The refusal names the key to use (#231).
 - **R7.11** Editing front-matter mid-run changes the plan blob and raises `plan_blob_changed`,
   which is the backstop against escaping a contract by corrupting it.
+- **R7.11a** `reference_paths` (top-level, optional) lists repo-relative paths the run must not
+  write: golden or reference files produced independently of the code under test. Paths match
+  exactly. A value that is not a list of strings fails registration (R7.10). At every `advance`,
+  and again after a close regenerates artifacts, a listed path that differs from the run's start
+  (changed in the worktree, or committed since `start_sha`) records `reference_path_touched` on
+  the cycle, adds a blocker of that kind and ends the run `blocked`, before anything is staged.
+  Pre-existing dirt (R9.21) is not counted. A sensitivity mutation is never checked: `advance`
+  refuses while one is open, and `sensitivity end` restores the tree (#235).
 
 ---
 

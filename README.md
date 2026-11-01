@@ -273,6 +273,11 @@ and is staged into the GREEN/REFACTOR phase commit alongside the cycle's own fil
 not on the list still fires `undeclared_file_touched` exactly as today. This is a
 plan-level list only; per-cycle overrides are a planned follow-up.
 
+`reference_paths` — a plan-level list of repo-root-relative paths the run must not write:
+golden or reference files produced independently of the code under test, which a test
+compares against. Paths match exactly. Changing one in any phase blocks the run (see
+"Reference paths are read-only" below).
+
 ### Run-close gate for undeclared file touches
 
 When the last declared cycle closes, the tool gathers every path that appeared in any
