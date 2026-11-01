@@ -115,3 +115,24 @@ def test_a_mutation_that_does_not_bite_is_rejected(repo):
     out = run_cli(repo, "sensitivity", "check")
     assert out["ok"] is False
     assert "pins nothing" in out["error"]
+
+
+def test_plan_register_refuses_a_pin_cycle_that_declares_commit_red(repo):
+    body = """---
+cycles:
+  - n: 1
+    project: backend
+    pin_cycle: true
+    title: "pin: greet says hello"
+    test: "tests/test_greet.py::test_greet_returns_hello"
+    commit_red: "test(greet): pin that greet says hello"
+---
+"""
+    plan = write_plan(repo, body)
+    out = run_cli(repo, "plan", "register", plan)
+    assert (out["ok"], out.get("error")) == (
+        False,
+        "malformed plan contract: cycle 1: commit_red has no effect on a pin cycle,"
+        " which commits only under commit_pin and commit_refactor."
+        " Declare the message as commit_pin.",
+    )
