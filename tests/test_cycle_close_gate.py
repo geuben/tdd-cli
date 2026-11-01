@@ -119,3 +119,18 @@ def test_committing_or_discarding_the_held_path_lets_the_cycle_close(repo, tmp_p
         )
 
     assert outcomes == {"commit": (2, "write_test", True), "discard": (2, "write_test", True)}
+
+
+def test_unblocking_with_the_path_still_dirty_holds_the_close_again(repo):
+    """An unblock does not excuse the path: the next advance is held again."""
+    _start(repo, TWO)
+    _close_cycle_one(repo)
+    run_cli(repo, "resume", "--unblock", "--note", "leaving notes.md")
+    again = run_cli(repo, "advance")
+    run = _metrics(repo)
+
+    assert (again["next_action"]["verb"], again["result"].get("paths"), run["blockers"]) == (
+        "blocked",
+        ["notes.md"],
+        {"undeclared_file_uncommitted": 2},
+    )
