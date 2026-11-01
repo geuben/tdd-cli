@@ -731,10 +731,10 @@ def cmd_plan_register(args) -> Envelope:
             )
 
     existing = ledger.contract_by_blob(rel, parsed.blob_sha)
-    contract_id = (
-        existing["id"]
-        if existing
-        else ledger.register_contract(
+    if existing:
+        contract_id = existing["id"]
+    else:
+        contract_id = ledger.register_contract(
             plan_path=rel,
             blob_sha=parsed.blob_sha,
             commit_sha=parsed.commit_sha,
@@ -743,7 +743,8 @@ def cmd_plan_register(args) -> Envelope:
             annotation_keys=json.dumps(parsed.annotation_keys),
             ancillary_files=json.dumps(parsed.ancillary_files),
         )
-    )
+        if parsed.reference_paths:
+            ledger.add_reference_paths(contract_id, parsed.reference_paths)
     return Envelope(
         result={
             "contract_id": contract_id,

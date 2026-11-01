@@ -157,6 +157,13 @@ CREATE TABLE IF NOT EXISTS plan_contract (
     source TEXT NOT NULL DEFAULT 'local'
 );
 
+-- A plan's reference_paths (R7.11a): paths its run must not write.
+CREATE TABLE IF NOT EXISTS plan_reference_path (
+    id INTEGER PRIMARY KEY,
+    contract_id INTEGER NOT NULL REFERENCES plan_contract(id),
+    path TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS run (
     id INTEGER PRIMARY KEY,
     plan_contract_id INTEGER NOT NULL REFERENCES plan_contract(id),
@@ -500,6 +507,7 @@ GUEST_WRITES = frozenset(
         "add_blocker",
         "add_cycle",
         "add_note",
+        "add_reference_paths",
         "amend_baseline",
         "cache_baseline",
         "claim",
@@ -1085,8 +1093,16 @@ class Ledger:
             **self._stamp(),
         )
 
+    def add_reference_paths(self, contract_id: int, paths: list[str]) -> None:
+        for path in paths:
+            self.insert("plan_reference_path", contract_id=contract_id, path=path)
+
     def reference_paths(self, contract_id: int) -> list[str]:
-        return []
+        rows = self.all(
+            "SELECT path FROM plan_reference_path WHERE contract_id = ? ORDER BY id",
+            (contract_id,),
+        )
+        return [r["path"] for r in rows]
 
     # -- runs ----------------------------------------------------------------
 
