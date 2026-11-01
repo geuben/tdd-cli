@@ -205,9 +205,13 @@ an auditor compares them against reality.
 Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mismatch`,
 `off_protocol_invocation`, `stale_artifact`, `artifact_stale_inherited`, `plan_blob_changed`,
 `executor_unknown`, `artifact_regenerate_failed`, `baseline_late_probe`,
-`baseline_late_probe_unobserved`, `flaky_pre_existing`, `ignored_paths_dirty`.
+`baseline_late_probe_unobserved`, `flaky_pre_existing`, `ignored_paths_dirty`,
+`red_on_dirty_tree`.
 
 `flaky_pre_existing` is an untouched pre-existing failure that passed when rerun alone (R9.1f).
+`red_on_dirty_tree` names the changed paths a RED commit left out, so the RED verdict
+was taken on a tree that differs from the RED commit (#234). It leaves out paths git or
+`tdd.toml` ignores, and dirt that was there before the run.
 
 ### Blocker
 Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `context_exhausted`,

@@ -6,6 +6,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`red_on_dirty_tree` integrity event** (#234). When a RED commit leaves changed paths
+  out (implementation written during RED, paths outside the cycle's projects, ancillary or
+  generated paths), `tdd advance` records them on the cycle, so the friction log shows the
+  RED verdict ran on a tree that differs from its commit. Paths git ignores are not named.
+  It blocks nothing.
+
 ### Fixed
 
 - **A flagged undeclared edit can no longer cross into the next cycle** (#234). When a

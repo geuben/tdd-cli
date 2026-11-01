@@ -134,6 +134,13 @@ def _stage_and_commit(
                 _detail,
             )
     paths = staging.paths_for_phase(phase, classification)
+    if phase == staging.RED:
+        # The RED verdict ran on this tree; name what its commit leaves out (#234).
+        left = sorted(set(changed) - set(paths) - set(classification.ignored))
+        if left:
+            engine.ledger.event(
+                engine.run["id"], cycle["id"], "red_on_dirty_tree", json.dumps(left)
+            )
     message = staging.default_message(phase, declared, cycle["ordinal"])
     sha, staged = staging.commit(engine.worktree, paths, message, engine.trailers(cycle, phase))
     if sha:
