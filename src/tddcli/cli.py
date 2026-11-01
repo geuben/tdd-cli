@@ -1311,6 +1311,7 @@ def cmd_cycle_skip(args) -> Envelope:
     ledger.skip_cycle(cycle["id"], from_phase=cycle["phase"], to_phase=SKIPPED, reason=args.reason)
     nxt_declared = next((c for c in engine.declared if c.ordinal > cycle["ordinal"]), None)
     if nxt_declared is None:
+        engine.record_untouched_declared()
         ledger.end_run(run["id"], "complete")
         return Envelope(
             run={"id": run["id"], "cycle": cycle["ordinal"], "phase": SKIPPED},
