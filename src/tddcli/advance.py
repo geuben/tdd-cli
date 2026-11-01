@@ -601,6 +601,8 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     # The last cycle settles the run's outcome before ending it: a run is never ended
     # complete and then reopened as blocked.
     last = not any(c.ordinal > cycle["ordinal"] for c in engine.declared)
+    if last:
+        engine.record_untouched_declared()
     blocking = engine.close_undeclared_gate(cycle) if last else []
     if blocking:
         engine.ledger.add_blocker(

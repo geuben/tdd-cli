@@ -643,6 +643,22 @@ class Engine:
             )
         return sorted(p for p in flagged if p in dirty)
 
+    def record_untouched_declared(self) -> list[str]:
+        """Record the declared paths no commit of the run touched (#232); a nudge, never a gate."""
+        start_sha = self.run["start_sha"]
+        if not start_sha:
+            return []
+        declared = set(self.ancillary_files)
+        for cycle in self.declared:
+            declared.update(cycle.files, cycle.stub_expected)
+        committed = gitutil.paths_committed_since(self.worktree, start_sha)
+        untouched = sorted(declared - committed)
+        if untouched:
+            self.ledger.event(
+                self.run["id"], None, "declared_file_untouched", json.dumps(untouched)
+            )
+        return untouched
+
     def record_commit(self, cycle_row, phase: str, sha: str, message: str, files: list[str]):
         self.ledger.record_commit(
             self.run["id"], cycle_row["id"], phase=phase, sha=sha, message=message, files=files
