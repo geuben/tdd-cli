@@ -484,6 +484,17 @@ def _handle_sensitivity(engine: Engine, cycle) -> Envelope:
     )
 
 
+def untouched_sentence(paths: list[str]) -> str:
+    """The `complete` reply's nudge for declared paths no commit touched (#232)."""
+    if not paths:
+        return ""
+    listed = ", ".join(f"`{p}`" for p in paths)
+    return (
+        f" Declared but untouched by any commit of this run: {listed}."
+        " A plan may over-declare: say in the closing note why each was not needed."
+    )
+
+
 def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     declared = engine.declared_for(cycle["ordinal"])
     missing = engine.missing_annotations(cycle)
@@ -601,8 +612,7 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     # The last cycle settles the run's outcome before ending it: a run is never ended
     # complete and then reopened as blocked.
     last = not any(c.ordinal > cycle["ordinal"] for c in engine.declared)
-    if last:
-        engine.record_untouched_declared()
+    untouched = engine.record_untouched_declared() if last else []
     blocking = engine.close_undeclared_gate(cycle) if last else []
     if blocking:
         engine.ledger.add_blocker(
@@ -645,7 +655,8 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
             next_action=NextAction(
                 Verb.COMPLETE,
                 "All declared cycles are complete."
-                ' Before rendering, record a closing narrative with `tdd note "<hardest cycle and why, plan inaccuracies, deviations>"`.'
+                + untouched_sentence(untouched)
+                + ' Before rendering, record a closing narrative with `tdd note "<hardest cycle and why, plan inaccuracies, deviations>"`.'
                 " Then run `tdd log render`.",
             ),
         )
