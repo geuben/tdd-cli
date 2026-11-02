@@ -273,6 +273,11 @@ and is staged into the GREEN/REFACTOR phase commit alongside the cycle's own fil
 not on the list still fires `undeclared_file_touched` exactly as today. This is a
 plan-level list only; per-cycle overrides are a planned follow-up.
 
+`reference_paths` — a plan-level list of repo-root-relative paths the run must not write:
+golden or reference files produced independently of the code under test, which a test
+compares against. Paths match exactly. Changing one in any phase blocks the run (see
+"Reference paths are read-only" below).
+
 ### Run-close gate for undeclared file touches
 
 When the last declared cycle closes, the tool gathers every path that appeared in any
@@ -308,6 +313,19 @@ and `ancillary_files`. A commit made by hand counts, and so does removing or ren
 the file. Paths git ignores are left out. The `complete` reply names the paths and asks
 for a `tdd note` on why each was not needed. A plan may over-declare, so this blocks
 nothing.
+
+### Reference paths are read-only
+
+A plan that lists `reference_paths` relies on files produced independently of the code
+under test. At every `tdd advance`, any of them that differs from the run's start (changed
+in the worktree, or committed since the run started) stops the run before anything is
+staged. The cycle records a `reference_path_touched` integrity event and a blocker of the
+same kind, the run outcome is `blocked`, and `next_action.verb` is `"blocked"`, with
+`result.kind` and `result.paths`. The same check runs again after a close regenerates
+artifacts. To go on, restore the paths to their content at the run's start, then
+`tdd resume --unblock --note "..."`; while a path still differs, the next `advance` blocks
+again. A sensitivity check may mutate a reference file: `advance` is refused while the check
+is open, and `sensitivity end` restores it.
 
 ### Abandoning a run
 
@@ -535,7 +553,9 @@ and is never reclassified as a pin.
 
 - **Stages and commits.** The staged set is derived from the phase: RED takes tests and
   declared stubs, GREEN takes the rest. This makes "implementation written during RED" an
-  exact, language-independent detection with no source parsing.
+  exact, language-independent detection with no source parsing. A GREEN that stages only test
+  files (golden files filled with the producer's own output look exactly like this) records a
+  `green_without_implementation` nudge, and the reply asks for a `tdd note` saying why.
 - **Regenerates stale artifacts**, in their own commit, so hand-written and generated changes
   stay separately reviewable.
 - **Resolves executor identity** from the session transcript. It is never an argument.
@@ -808,7 +828,8 @@ The CLI cannot compel an agent — only the harness can.
 
 **Hard gates here:** phase is never caller-supplied; a cycle cannot close over a stale
 artifact; a passed-on-arrival cycle cannot close without a verified sensitivity check;
-`advance` refuses an unchanged tree unless `--retry`.
+`advance` refuses an unchanged tree unless `--retry`; a path in the plan's
+`reference_paths` cannot change during its run.
 
 **Recorded, never blocked mid-run:** non-stub writes during RED, undeclared file touches,
 scope divergence, extra attempts. Prevention rules with edge cases produce false denials,

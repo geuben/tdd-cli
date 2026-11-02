@@ -102,6 +102,16 @@ class Engine:
     def authored_changes(self, cycle_row) -> set[str]:
         return {p for p in gitutil.changed_paths(self.worktree) if p not in self.excluded}
 
+    def touched_reference_paths(self, cycle_row) -> list[str]:
+        """R7.11a: the plan's reference paths that differ from the run's start."""
+        refs = self.ledger.reference_paths(self.contract_row["id"])
+        if not refs:
+            return []
+        changed = self.authored_changes(cycle_row)
+        if self.run["start_sha"]:
+            changed |= gitutil.committed_since(self.worktree, self.run["start_sha"])
+        return sorted(set(refs) & changed)
+
     def trailers(self, cycle_row, phase: str) -> dict[str, str]:
         return {
             "TDD-Run": str(self.run["id"]),

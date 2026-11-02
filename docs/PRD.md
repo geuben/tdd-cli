@@ -206,7 +206,8 @@ Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mism
 `off_protocol_invocation`, `stale_artifact`, `artifact_stale_inherited`, `plan_blob_changed`,
 `executor_unknown`, `artifact_regenerate_failed`, `baseline_late_probe`,
 `baseline_late_probe_unobserved`, `flaky_pre_existing`, `ignored_paths_dirty`,
-`declared_file_untouched`, `red_on_dirty_tree`.
+`green_without_implementation`, `reference_path_touched`, `declared_file_untouched`,
+`red_on_dirty_tree`.
 
 `flaky_pre_existing` is an untouched pre-existing failure that passed when rerun alone (R9.1f).
 `red_on_dirty_tree` names the changed paths a RED commit left out, so the RED verdict
@@ -215,7 +216,10 @@ was taken on a tree that differs from the RED commit (#234). It leaves out paths
 
 ### Blocker
 Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `context_exhausted`,
-`pre_existing_failure`.
+`pre_existing_failure`, `reference_path_touched`.
+
+`reference_path_touched` is raised by the tool, not filed with `tdd blocker`: the run changed a
+path its plan declares read-only (R7.11a).
 
 `pre_existing_failure` is failing-but-not-caused-here: a flake, or something the baseline missed.
 Without it the only available label is `regression`, which records a defect the run introduced —
@@ -475,6 +479,14 @@ annotation_keys: ["literal_detail_handlers_kept"]
   never reads breaks R9.17 without a word. The refusal names the key to use (#231).
 - **R7.11** Editing front-matter mid-run changes the plan blob and raises `plan_blob_changed`,
   which is the backstop against escaping a contract by corrupting it.
+- **R7.11a** `reference_paths` (top-level, optional) lists repo-relative paths the run must not
+  write: golden or reference files produced independently of the code under test. Paths match
+  exactly. A value that is not a list of strings fails registration (R7.10). At every `advance`,
+  and again after a close regenerates artifacts, a listed path that differs from the run's start
+  (changed in the worktree, or committed since `start_sha`) records `reference_path_touched` on
+  the cycle, adds a blocker of that kind and ends the run `blocked`, before anything is staged.
+  Pre-existing dirt (R9.21) is not counted. A sensitivity mutation is never checked: `advance`
+  refuses while one is open, and `sensitivity end` restores the tree (#235).
 
 ---
 
@@ -866,6 +878,12 @@ The CLI stages; it never delegates staging to the agent, and it never runs `git 
   existing file remains implementation. Without this, an undeclared `stub_expected` makes the
   tool instruct the agent and then convict it for complying, and an alarm that fires on correct
   work is one that gets ignored.
+- **R9.14b** If GREEN's staged set is non-empty and every path in it is a test (R9.13's
+  `test_paths`), the cycle records `green_without_implementation` with the staged paths. A
+  declared stub, an implementation file or an ancillary file in the set is implementation, so it
+  does not fire. It is a nudge, not a gate: a cycle whose fix really is test support is legitimate
+  (#141), so the reply asks for a `tdd note` saying why. A GREEN that fills golden files with the
+  producer's own output looks exactly like this (#235).
 - **R9.15** Nothing outside a registered project root is ever staged. Plan files, friction logs
   and repository documentation are committed separately, at plan completion. Paths the agent
   supplies for these — `log render --out` — are resolved from the worktree root, never the
@@ -1051,6 +1069,7 @@ The CLI cannot compel an agent. Only the harness can. The division:
 - A cycle cannot close with a stale declared artifact.
 - A cycle that passed on arrival cannot close without a sensitivity check or waiver.
 - `advance` refuses when nothing changed since the previous invocation.
+- A plan's `reference_paths` cannot change during its run (R7.11a).
 
 **Recorded, never blocked** (per P2): non-stub writes during RED, undeclared file touches,
 scope divergence, test modifications, extra attempts. A flagged path still uncommitted
