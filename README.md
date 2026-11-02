@@ -287,6 +287,14 @@ When the last declared cycle closes, the tool gathers every path that appeared i
   emitted (visible in `tdd metrics` and the friction log) and the run completes. The event
   makes a silent drop visible without blocking, since the file is already gone.
 
+Every earlier cycle gets the same check when it closes, over the paths flagged during
+that cycle (#234). A flagged path still dirty holds the close. The `advance` reply is
+`blocked`, with `result.kind` `undeclared_file_uncommitted` and `result.paths`. The run
+ends `blocked` and the cycle stays open. Commit each path in a commit of its own, or
+discard it (revert or delete it). Then run `tdd resume --unblock --note "..."` and
+`tdd advance`. That advance checks again, so a path still dirty holds the close again. A
+stray edit cannot carry into the next cycle's RED run or GREEN commit.
+
 Paths git's ignore rules match are build output, tracked or not. They are never staged,
 never fire `undeclared_file_touched`, and so never reach this gate. When the last cycle
 closes, any of them still dirty are named once, in an `ignored_paths_dirty` event on that
@@ -347,6 +355,15 @@ but its *contents* are opaque to the tool — any key/value pairs are accepted a
 round-tripped intact through `cycles_to_json`/`cycles_from_json`. Use it for
 authored-at-plan-time metadata that external tooling (e.g. a behaviour-coverage checker)
 needs to read back. Other unknown per-cycle keys are silently ignored.
+
+A cycle commits only in the phases its kind has, so it may declare only those phases'
+messages: `commit_red`, `commit_green` and `commit_refactor` on a standard or contract
+cycle, `commit_pin` and `commit_refactor` on a pin cycle, and `commit_refactor` on a
+refactor cycle. Any other `commit_*` key would never be used, so `tdd plan register`
+refuses the plan as malformed and names the key to use. With no message declared, a phase
+commits as `test: <title>`, `feat: <title>`, `refactor: <title>` or `test: pin <title>`. The
+pin default first drops a leading `pin`, `pin:` or `pin -` (any case) from the title, so
+`pin: x` commits as `test: pin x`.
 
 Absent front-matter is legitimate — the run proceeds as `undeclared` with
 `--allow-undeclared`, and fidelity metrics are unavailable. **Malformed** front-matter
@@ -796,8 +813,8 @@ artifact; a passed-on-arrival cycle cannot close without a verified sensitivity 
 **Recorded, never blocked mid-run:** non-stub writes during RED, undeclared file touches,
 scope divergence, extra attempts. Prevention rules with edge cases produce false denials,
 and a blocked agent improvises around them — putting it right back in the reporting path
-the tool exists to keep it out of. Undeclared file touches are an exception at run close:
-see the run-close gate above.
+the tool exists to keep it out of. Undeclared file touches are an exception when a cycle
+or the run closes: see the run-close gate above.
 
 **Delegated to hooks:** a Stop hook that queries `tdd status` and refuses to let an agent
 stop while a run is live; a Bash hook redirecting bare `pytest`/`vitest` through `tdd advance`.

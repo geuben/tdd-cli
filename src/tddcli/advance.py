@@ -134,6 +134,13 @@ def _stage_and_commit(
                 _detail,
             )
     paths = staging.paths_for_phase(phase, classification)
+    if phase == staging.RED:
+        # The RED verdict ran on this tree; name what its commit leaves out (#234).
+        left = sorted(set(changed) - set(paths) - set(classification.ignored))
+        if left:
+            engine.ledger.event(
+                engine.run["id"], cycle["id"], "red_on_dirty_tree", json.dumps(left)
+            )
     message = staging.default_message(phase, declared, cycle["ordinal"])
     sha, staged = staging.commit(engine.worktree, paths, message, engine.trailers(cycle, phase))
     if sha:
@@ -495,6 +502,22 @@ def untouched_sentence(paths: list[str]) -> str:
     )
 
 
+def _undeclared_blocked(engine: Engine, cycle, paths: list[str], sha, detail: str) -> Envelope:
+    """The `undeclared_file_uncommitted` envelope, from a cycle close or the run close."""
+    return Envelope(
+        run={
+            "id": engine.run["id"],
+            "plan": engine.contract_row["plan_path"],
+            "cycle": cycle["ordinal"],
+            "of": len(engine.declared),
+            "phase": "BLOCKED",
+            "executor": engine.run["executor_model"],
+        },
+        result={"kind": "undeclared_file_uncommitted", "paths": paths, "commit": sha},
+        next_action=NextAction(Verb.BLOCKED, detail),
+    )
+
+
 def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     declared = engine.declared_for(cycle["ordinal"])
     missing = engine.missing_annotations(cycle)
@@ -612,6 +635,23 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     # The last cycle settles the run's outcome before ending it: a run is never ended
     # complete and then reopened as blocked.
     last = not any(c.ordinal > cycle["ordinal"] for c in engine.declared)
+    if not last:
+        held = engine.cycle_undeclared_gate(cycle)
+        if held:
+            engine.ledger.add_blocker(
+                engine.run["id"], cycle["id"], "undeclared_file_uncommitted", json.dumps(held)
+            )
+            engine.ledger.end_run(engine.run["id"], "blocked")
+            return _undeclared_blocked(
+                engine,
+                cycle,
+                held,
+                sha,
+                f"Cycle {cycle['ordinal']} cannot close: {len(held)} file(s) it flagged"
+                f" are uncommitted: {held}. Commit each in a commit of its own, or discard"
+                " it (revert or delete it), then `tdd resume --unblock --note ...`, then"
+                " `tdd advance`.",
+            )
     untouched = engine.record_untouched_declared() if last else []
     blocking = engine.close_undeclared_gate(cycle) if last else []
     if blocking:
@@ -621,26 +661,14 @@ def _handle_refactor(engine: Engine, cycle, retried: bool) -> Envelope:
     nxt = engine.close_cycle(cycle, outcome="blocked" if blocking else "complete")
     if nxt is None:
         if blocking:
-            return Envelope(
-                run={
-                    "id": engine.run["id"],
-                    "plan": engine.contract_row["plan_path"],
-                    "cycle": cycle["ordinal"],
-                    "of": len(engine.declared),
-                    "phase": "BLOCKED",
-                    "executor": engine.run["executor_model"],
-                },
-                result={
-                    "kind": "undeclared_file_uncommitted",
-                    "paths": blocking,
-                    "commit": sha,
-                },
-                next_action=NextAction(
-                    Verb.BLOCKED,
-                    f"Run reached its last cycle but {len(blocking)} flagged file(s) are"
-                    f" uncommitted: {blocking}. Commit them, or"
-                    " `tdd resume --unblock --note ...` to discard.",
-                ),
+            return _undeclared_blocked(
+                engine,
+                cycle,
+                blocking,
+                sha,
+                f"Run reached its last cycle but {len(blocking)} flagged file(s) are"
+                f" uncommitted: {blocking}. Commit them, or"
+                " `tdd resume --unblock --note ...` to discard.",
             )
         return Envelope(
             run={

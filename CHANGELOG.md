@@ -15,6 +15,30 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   count as touched; skipped cycles' paths and paths git ignores are left out. The
   `complete` reply names them and asks for a `tdd note` on why each was not needed, and
   the friction log's Plan fidelity section lists them per cycle. It blocks nothing.
+- **`red_on_dirty_tree` integrity event** (#234). When a RED commit leaves changed paths
+  out (implementation written during RED, paths outside the cycle's projects, ancillary or
+  generated paths), `tdd advance` records them on the cycle, so the friction log shows the
+  RED verdict ran on a tree that differs from its commit. Paths git ignores are not named.
+  It blocks nothing.
+
+### Fixed
+
+- **A flagged undeclared edit can no longer cross into the next cycle** (#234). When a
+  cycle other than the last closes with a path it flagged `undeclared_file_touched` still
+  dirty, `tdd advance` now records an `undeclared_file_uncommitted` blocker, ends the run
+  `blocked` and leaves the cycle open. Commit or discard the path, `tdd resume --unblock
+  --note ...`, then `tdd advance` again, which checks again. Before this, the edit ran in
+  the next cycle's RED and could land in its GREEN commit. The run-close gate at the last
+  cycle is unchanged.
+- **A `commit_*` key a cycle never uses is refused at registration** (#231). A pin cycle
+  commits only under `commit_pin` and `commit_refactor`, a refactor cycle only under
+  `commit_refactor`, and a standard or contract cycle never under `commit_pin`. A plan
+  that declared another key, most often a pin's message under `commit_red`, registered
+  and then committed with the default message instead. `tdd plan register` now refuses it
+  as a malformed contract and names the key to use.
+- **The default pin commit message no longer doubles `pin`** (#231). A pin cycle with no
+  `commit_pin` whose title starts with `pin`, `pin:` or `pin -` commits as
+  `test: pin <rest of the title>`, not `test: pin pin: …`.
 
 ## [0.17.0] - 2026-10-30
 

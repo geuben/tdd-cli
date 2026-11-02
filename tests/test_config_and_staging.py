@@ -286,6 +286,45 @@ def test_commit_message_prefers_the_plan(cfg):
     assert staging.default_message(staging.GREEN, d, 1).startswith("feat:")
 
 
+def test_a_pin_message_is_left_alone_unless_its_default_title_leads_with_the_word_pin():
+    rows = [
+        (staging.PIN, {"title": "pinned x"}, 1, "test: pin pinned x"),
+        (staging.PIN, {"title": "pins x"}, 1, "test: pin pins x"),
+        (staging.PIN, {"title": "spin x"}, 1, "test: pin spin x"),
+        (staging.PIN, {"title": "pin-x"}, 1, "test: pin pin-x"),
+        (staging.PIN, {"title": "pin"}, 1, "test: pin pin"),
+        (staging.PIN, {"title": "pin:"}, 1, "test: pin pin:"),
+        (staging.PIN, {"title": "pin -"}, 1, "test: pin pin -"),
+        (staging.PIN, {"title": "pin  -"}, 1, "test: pin pin  -"),
+        (staging.PIN, {"title": "pin :"}, 1, "test: pin pin :"),
+        (staging.PIN, {"title": "pin pin x"}, 1, "test: pin pin x"),
+        (staging.PIN, {"title": ""}, 3, "test: pin cycle 3"),
+        (staging.PIN, {"title": "pin: y", "commit_messages": {"pin": "pin: x"}}, 1, "pin: x"),
+        (staging.REFACTOR, {"title": "pin: x"}, 1, "refactor: pin: x"),
+    ]
+    assert [
+        staging.default_message(phase, declared(kind="pin", **kw), ordinal)
+        for phase, kw, ordinal, _ in rows
+    ] == [expected for *_, expected in rows]
+
+
+def test_the_default_pin_message_drops_a_leading_pin_from_the_title():
+    rows = [
+        (
+            "pin: an unknown payload routes to the default action",
+            "test: pin an unknown payload routes to the default action",
+        ),
+        ("pin:x", "test: pin x"),
+        ("Pin x", "test: pin x"),
+        ("PIN - x", "test: pin x"),
+        ("pin -x", "test: pin x"),
+        ("pin  :  x", "test: pin x"),
+    ]
+    assert [
+        staging.default_message(staging.PIN, declared(kind="pin", title=t), 1) for t, _ in rows
+    ] == [expected for _, expected in rows]
+
+
 def test_upstream_producer_roots_includes_self_and_upstream_producers(cfg):
     assert cfg.upstream_producer_roots("frontend") == ["backend", "frontend"]
     assert cfg.upstream_producer_roots("backend") == ["backend"]
