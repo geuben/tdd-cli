@@ -46,6 +46,7 @@ from . import service as service_mod
 from . import target_lint as target_lint_mod
 from .adapters.base import FAILED, NOT_COLLECTED
 from .advance import advance as do_advance
+from .advance import untouched_sentence
 from .envelope import (
     ENVELOPE_VERSION,
     VERB_SET_VERSION,
@@ -1311,13 +1312,15 @@ def cmd_cycle_skip(args) -> Envelope:
     ledger.skip_cycle(cycle["id"], from_phase=cycle["phase"], to_phase=SKIPPED, reason=args.reason)
     nxt_declared = next((c for c in engine.declared if c.ordinal > cycle["ordinal"]), None)
     if nxt_declared is None:
+        untouched = engine.record_untouched_declared()
         ledger.end_run(run["id"], "complete")
         return Envelope(
             run={"id": run["id"], "cycle": cycle["ordinal"], "phase": SKIPPED},
             next_action=NextAction(
                 Verb.COMPLETE,
                 "Final cycle skipped; run complete."
-                ' Before rendering, record a closing narrative with `tdd note "<hardest cycle and why, plan inaccuracies, deviations>"`.'
+                + untouched_sentence(untouched)
+                + ' Before rendering, record a closing narrative with `tdd note "<hardest cycle and why, plan inaccuracies, deviations>"`.'
                 " Then run `tdd log render`.",
             ),
         )

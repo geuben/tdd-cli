@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -642,6 +643,35 @@ class Engine:
                 self.run["id"], cycle_row["id"], "ignored_paths_dirty", json.dumps(sorted(ignored))
             )
         return sorted(p for p in flagged if p in dirty)
+
+    def record_untouched_declared(self) -> list[str]:
+        """Record the declared paths no commit of the run touched (#232); a nudge, never a gate."""
+        start_sha = self.run["start_sha"]
+        if not start_sha:
+            return []
+        # Each declared path, as the plan writes it, with every form it may be committed
+        # under: a cycle's path may be written from its project root (decision 3).
+        forms: dict[str, set[str]] = {p: {os.path.normpath(p)} for p in self.ancillary_files}
+        skipped = {
+            c["ordinal"] for c in self.ledger.cycles(self.run["id"]) if c["phase"] == SKIPPED
+        }
+        for cycle in self.declared:
+            if cycle.ordinal in skipped:
+                continue
+            roots = self.roots(cycle.projects)
+            for p in [*cycle.files, *cycle.stub_expected]:
+                forms.setdefault(p, set()).update(
+                    {os.path.normpath(p)} | {os.path.normpath(os.path.join(r, p)) for r in roots}
+                )
+        every_form = sorted(set().union(*forms.values()))
+        seen = gitutil.paths_committed_since(self.worktree, start_sha)
+        seen |= gitutil.ignored_paths(self.worktree, every_form)
+        untouched = sorted(p for p, f in forms.items() if not f & seen)
+        if untouched:
+            self.ledger.event(
+                self.run["id"], None, "declared_file_untouched", json.dumps(untouched)
+            )
+        return untouched
 
     def cycle_undeclared_gate(self, cycle_row) -> list[str]:
         """Paths this cycle flagged `undeclared_file_touched` that are still dirty (#234).
