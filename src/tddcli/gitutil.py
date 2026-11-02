@@ -125,6 +125,15 @@ def ignored_paths(worktree: Path, paths: Sequence[str]) -> set[str]:
     return {p for p in out.split("\0") if p}
 
 
+def paths_committed_since(worktree: Path, sha: str) -> set[str]:
+    """Every path any commit in `sha..HEAD` names, hand commits and removals included (#232).
+
+    `--no-renames` because rename detection names only the new path of a rename.
+    """
+    out = git(worktree, "log", "--no-renames", "--format=", "--name-only", "-z", f"{sha}..HEAD")
+    return {p.strip() for p in out.split("\0") if p.strip()}
+
+
 def is_dirty(worktree: Path) -> bool:
     return bool(status_porcelain(worktree))
 

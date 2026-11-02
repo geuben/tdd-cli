@@ -292,10 +292,27 @@ When the last declared cycle closes, the tool gathers every path that appeared i
   emitted (visible in `tdd metrics` and the friction log) and the run completes. The event
   makes a silent drop visible without blocking, since the file is already gone.
 
+Every earlier cycle gets the same check when it closes, over the paths flagged during
+that cycle (#234). A flagged path still dirty holds the close. The `advance` reply is
+`blocked`, with `result.kind` `undeclared_file_uncommitted` and `result.paths`. The run
+ends `blocked` and the cycle stays open. Commit each path in a commit of its own, or
+discard it (revert or delete it). Then run `tdd resume --unblock --note "..."` and
+`tdd advance`. That advance checks again, so a path still dirty holds the close again. A
+stray edit cannot carry into the next cycle's RED run or GREEN commit.
+
 Paths git's ignore rules match are build output, tracked or not. They are never staged,
 never fire `undeclared_file_touched`, and so never reach this gate. When the last cycle
 closes, any of them still dirty are named once, in an `ignored_paths_dirty` event on that
 cycle. It is an informational line in the friction log and blocks nothing.
+
+The reverse is reported too. When the last cycle closes, by `tdd advance` or by a final
+`tdd cycle skip`, any path the plan declares that no commit since `run start` touched is
+recorded in one `declared_file_untouched` event. The declared paths are a delivered
+cycle's `files` or `stub_expected`, written from the repository or the project root,
+and `ancillary_files`. A commit made by hand counts, and so does removing or renaming
+the file. Paths git ignores are left out. The `complete` reply names the paths and asks
+for a `tdd note` on why each was not needed. A plan may over-declare, so this blocks
+nothing.
 
 ### Reference paths are read-only
 
@@ -394,7 +411,9 @@ suite time and its share, per phase and per cycle.
 Plan fidelity also warns, one line per key, of a declared check that never ran: an
 `annotation_keys` entry none of whose cycles was delivered (skipped and never-reached
 cycles do not count), e.g. ``- **Declared check never ran:** `artifact_verify` (applies to
-cycles 12, 19)``.
+cycles 12, 19)``. It also names each declared path no commit of the run touched, in the cycle
+that declared it (``- **Declared but untouched:** `src/x.py` ``), or, for an
+`ancillary_files` path, on a ``- **Declared but untouched (ancillary_files):** `` line.
 
 Every observable fact in it is projected from recorded events. The agent that did the
 work cannot compose it — that is what makes it worth reading, and why the log is
@@ -815,8 +834,8 @@ artifact; a passed-on-arrival cycle cannot close without a verified sensitivity 
 **Recorded, never blocked mid-run:** non-stub writes during RED, undeclared file touches,
 scope divergence, extra attempts. Prevention rules with edge cases produce false denials,
 and a blocked agent improvises around them — putting it right back in the reporting path
-the tool exists to keep it out of. Undeclared file touches are an exception at run close:
-see the run-close gate above.
+the tool exists to keep it out of. Undeclared file touches are an exception when a cycle
+or the run closes: see the run-close gate above.
 
 **Delegated to hooks:** a Stop hook that queries `tdd status` and refuses to let an agent
 stop while a run is live; a Bash hook redirecting bare `pytest`/`vitest` through `tdd advance`.

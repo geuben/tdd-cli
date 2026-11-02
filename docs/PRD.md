@@ -206,9 +206,13 @@ Typed: `test_removed`, `test_weakened`, `undeclared_file_touched`, `restore_mism
 `off_protocol_invocation`, `stale_artifact`, `artifact_stale_inherited`, `plan_blob_changed`,
 `executor_unknown`, `artifact_regenerate_failed`, `baseline_late_probe`,
 `baseline_late_probe_unobserved`, `flaky_pre_existing`, `ignored_paths_dirty`,
-`green_without_implementation`, `reference_path_touched`.
+`green_without_implementation`, `reference_path_touched`, `declared_file_untouched`,
+`red_on_dirty_tree`.
 
 `flaky_pre_existing` is an untouched pre-existing failure that passed when rerun alone (R9.1f).
+`red_on_dirty_tree` names the changed paths a RED commit left out, so the RED verdict
+was taken on a tree that differs from the RED commit (#234). It leaves out paths git or
+`tdd.toml` ignores, and dirt that was there before the run.
 
 ### Blocker
 Typed: `regression`, `target_unfixable`, `bad_red`, `plan_defect`, `tooling`, `context_exhausted`,
@@ -449,6 +453,18 @@ annotation_keys: ["literal_detail_handlers_kept"]
   never-reached cycles count as not executed), the friction log's Plan fidelity section
   carries, after `Never reached`, the line
   ``- **Declared check never ran:** `<key>` (applies to cycles <n>, <n>)``, ordinals ascending.
+- **R7.5b** A declared file no commit touched is surfaced, not hidden (#232). When the
+  last cycle closes, by `tdd advance` (whether the run completes or blocks) or by
+  `tdd cycle skip`, the tool takes every declared path. These are each delivered cycle's
+  `files` and `stub_expected`, read as written and under each of the cycle's project
+  roots, and `ancillary_files`. It drops the paths git's ignore rules match, and those
+  that any commit from `run.start_sha` to `HEAD` touched, a removal or rename included.
+  What is left, as the plan writes it, is recorded in one run-level
+  `declared_file_untouched` event. The `complete` reply names it and asks for a closing
+  note on why each path was not needed. It blocks nothing. The friction log's Plan
+  fidelity section carries ``- **Declared but untouched:** `<path>` `` in each cycle that
+  declares the path, and ``- **Declared but untouched (ancillary_files):** `<path>` ``,
+  before `Unblocks`, for a path no delivered cycle declares.
 - **R7.9** **Absent** front-matter is legitimate (pre-existing plans, exploratory work). The
   contract is recorded as `undeclared`, plan-fidelity metrics are unavailable, and `run start`
   requires a human-supplied `--allow-undeclared`.
@@ -875,6 +891,13 @@ The CLI stages; it never delegates staging to the agent, and it never runs `git 
 - **R9.16** Files modified inside a project root matching neither classification are left
   unstaged and recorded as `undeclared_file_touched`, and named in `next_action`. Per P2 this
   does not block.
+  A flagged path still dirty when its cycle closes is the exception (#234). Unless the
+  cycle is the run's last, `advance` records an `undeclared_file_uncommitted` blocker
+  naming the paths and ends the run `blocked`. The cycle stays open in `AWAITING_REFACTOR`.
+  Whoever unblocks it commits each path in a commit of its own or discards it, then
+  `tdd resume --unblock --note ...`. The next `advance` checks again. At the last cycle the
+  run-close gate decides, over every path the run flagged, and an unblock completes the
+  run.
   A path git's ignore rules match is build output whether or not it is tracked (`git
   check-ignore --no-index`). Like a `config.is_ignored` path, it is never staged and never
   recorded as `undeclared_file_touched`, so the run-close gate never sees it (#98).
@@ -1049,7 +1072,8 @@ The CLI cannot compel an agent. Only the harness can. The division:
 - A plan's `reference_paths` cannot change during its run (R7.11a).
 
 **Recorded, never blocked** (per P2): non-stub writes during RED, undeclared file touches,
-scope divergence, test modifications, extra attempts.
+scope divergence, test modifications, extra attempts. A flagged path still uncommitted
+when its cycle or the run closes is the exception (R9.16).
 
 **Delegated to harness hooks** (specified here, implemented by the consumer):
 - **H1 — Stop hook.** On agent stop, query `tdd status`; if the run is live, block and return
