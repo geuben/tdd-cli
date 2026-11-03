@@ -6,6 +6,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-03
+
 ### Added
 
 - **A GREEN that stages only test files is flagged** (#235). When every path GREEN commits
