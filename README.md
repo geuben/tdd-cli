@@ -407,7 +407,7 @@ skipped vs never-reached cycles, and unblocks with their notes) and, per cycle: 
 runs by phase, the first-run outcome against expectation, sensitivity checks, commits,
 and integrity events, and the failures each suite invocation saw, with the phase that
 failed and the first line of its message. A `## Time` section says where the run's time went: the wall clock,
-suite time and its share, per phase and per cycle.
+suite time and its share, per phase, per project and per cycle.
 Plan fidelity also warns, one line per key, of a declared check that never ran: an
 `annotation_keys` entry none of whose cycles was delivered (skipped and never-reached
 cycles do not count), e.g. ``- **Declared check never ran:** `artifact_verify` (applies to
@@ -438,8 +438,8 @@ rendered, never written. Judgement enters in exactly two ways:
   narrative as the agent's opinion.
 
 `tdd metrics` is the quantitative companion: attempts per cycle, RED-first violation
-rate, fidelity, blockers, unblocks, and suite time per phase against the run's wall
-clock. Cross-plan aggregates are deliberately labelled
+rate, fidelity, blockers, unblocks, and suite time per phase and per project against the
+run's wall clock. Cross-plan aggregates are deliberately labelled
 non-comparable — cycle difficulty varies too much — so compare runs of the same contract
 only (e.g. the same plan executed by two models).
 

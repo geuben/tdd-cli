@@ -6,6 +6,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Suite time per project** (#249). Each run in `tdd metrics` (and `tdd ledger metrics`
+  and the report socket's `metrics`) carries `time.by_project`: each project's suite
+  `runs`, `suite_s` and `by_phase`, over every invocation of the run. A close sweep's
+  time counts under the project it ran, not the cycle that triggered it, and the
+  projects sum to `time.suite_s`. A run with no suite runs has `{}`. The friction log's
+  `## Time` section gains a per-project table. With a ledger service, upgrade the host
+  with or before its guests: a 0.18.0 host refuses the new `suite_time_by_project` read,
+  made by `tdd metrics` and `tdd log render`, with `method_not_allowed`.
+
 ## [0.18.0] - 2026-11-03
 
 ### Added
