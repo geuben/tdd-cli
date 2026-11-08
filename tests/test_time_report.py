@@ -226,6 +226,10 @@ TIME_SECTION = """
 | AWAITING_IMPL | 3 | 1.7 | 34.0 |
 | CLOSE_SWEEP | 2 | 1.0 | 30.0 |
 
+| Project | Suite runs | Suite (min) | Average (s) |
+|---|---|---|---|
+| p | 7 | 3.7 | 31.7 |
+
 | Cycle | Wall (min) | Suite (min) | Suite runs |
 |---|---|---|---|
 | 1 | 4.0 | 1.5 | 3 |
@@ -240,3 +244,34 @@ def test_the_friction_log_carries_a_time_section(tmp_path, ledger_home):
 
     section = text.split("\n## Time\n", 1)[1].split("\n## ", 1)[0] if "\n## Time\n" in text else ""
     assert section.strip() == TIME_SECTION.strip()
+
+
+SPLIT_TIME_SECTION = """
+- Wall clock: 10.0 min. Suite: 3.3 min (33%).
+
+| Phase | Suite runs | Suite (min) | Average (s) |
+|---|---|---|---|
+| AWAITING_TEST | 2 | 0.7 | 21.0 |
+| AWAITING_IMPL | 2 | 0.8 | 24.0 |
+| CLOSE_SWEEP | 3 | 1.8 | 36.0 |
+
+| Project | Suite runs | Suite (min) | Average (s) |
+|---|---|---|---|
+| client | 4 | 1.8 | 27.0 |
+| server | 3 | 1.5 | 30.0 |
+
+| Cycle | Wall (min) | Suite (min) | Suite runs |
+|---|---|---|---|
+| 1 | 4.0 | 2.5 | 4 |
+| 2 | — | 0.8 | 3 |
+"""
+
+
+def test_the_friction_log_tables_suite_time_by_project(tmp_path, ledger_home):
+    ledger, run_id = _split_ledger(tmp_path)
+
+    text = render.friction_log(ledger, ledger.one("SELECT * FROM run WHERE id = ?", (run_id,)))
+
+    # server's rows were recorded first; the table is in name order.
+    section = text.split("\n## Time\n", 1)[1].split("\n## ", 1)[0] if "\n## Time\n" in text else ""
+    assert section.strip() == SPLIT_TIME_SECTION.strip()
