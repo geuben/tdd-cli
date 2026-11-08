@@ -6,6 +6,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-08
+
 ### Added
 
 - **Suite time per project** (#249). Each run in `tdd metrics` (and `tdd ledger metrics`
