@@ -186,6 +186,15 @@ def test_metrics_reports_each_cycles_time(tmp_path, ledger_home):
     assert m["time"].get("cycles") == CYCLES
 
 
+def test_metrics_by_project_is_empty_for_a_run_with_no_invocations(tmp_path, ledger_home):
+    ledger, run_id = _ledger(tmp_path)
+    ledger._write("DELETE FROM invocation WHERE run_id = ?", (run_id,))
+
+    m = render.metrics(ledger, "/wt")["runs"][0]
+
+    assert m["time"].get("by_project") == {}
+
+
 def test_metrics_measures_a_live_runs_wall_clock_to_now(tmp_path, ledger_home):
     ledger, run_id = _ledger(tmp_path)
     ledger._write("UPDATE run SET ended_at = NULL, outcome = NULL WHERE id = ?", (run_id,))
