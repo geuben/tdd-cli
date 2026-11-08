@@ -364,8 +364,8 @@ def _time_summary(ledger: Ledger, run) -> dict:
 
 
 def _time_section(summary: dict) -> list[str]:
-    """The friction log's `## Time`: the run's split, then per phase, then #145's
-    per-cycle table."""
+    """The friction log's `## Time`: the run's split, then per phase, per project (#249)
+    and #145's per-cycle table."""
     share = summary["suite_share"]
     lines = [
         "## Time",
@@ -380,6 +380,11 @@ def _time_section(summary: dict) -> list[str]:
     for phase, p in summary["by_phase"].items():
         lines.append(
             f"| {phase} | {p['runs']} | {p['suite_s'] / 60:.1f} | {p['suite_s'] / p['runs']:.1f} |"
+        )
+    lines += ["", "| Project | Suite runs | Suite (min) | Average (s) |", "|---|---|---|---|"]
+    for project, p in summary["by_project"].items():
+        lines.append(
+            f"| {project} | {p['runs']} | {p['suite_s'] / 60:.1f} | {p['suite_s'] / p['runs']:.1f} |"
         )
     lines += ["", "| Cycle | Wall (min) | Suite (min) | Suite runs |", "|---|---|---|---|"]
     for c in summary["cycles"]:
