@@ -315,12 +315,20 @@ PHASE_ORDER = ("AWAITING_TEST", "AWAITING_PIN", "SENSITIVITY", "AWAITING_IMPL", 
 def _time_summary(ledger: Ledger, run) -> dict:
     """Where a run's time went (#147): its wall clock, and the suite's share of it by
     phase. One source for `tdd metrics` and the friction log, so they cannot disagree.
-    Every invocation of the run counts, so the phases sum to the suite total."""
+    Every invocation of the run counts, so the phases sum to the suite total, and so do
+    the projects: a close sweep counts under the project it ran, not the cycle (#249)."""
     rows = ledger.suite_time_by_phase(run["id"])
     by_phase = {r["phase_at"]: {"runs": r["n"], "suite_s": r["ms"] / 1000} for r in rows}
 
     def order(phase: str) -> tuple:
         return (PHASE_ORDER.index(phase), "") if phase in PHASE_ORDER else (len(PHASE_ORDER), phase)
+
+    by_project: dict[str, dict] = {}
+    for r in ledger.suite_time_by_project(run["id"]):
+        p = by_project.setdefault(r["project"], {"runs": 0, "suite_s": 0.0, "by_phase": {}})
+        p["runs"] += r["n"]
+        p["suite_s"] += r["ms"] / 1000
+        p["by_phase"][r["phase_at"]] = {"runs": r["n"], "suite_s": r["ms"] / 1000}
 
     cycles = [
         {
@@ -341,13 +349,23 @@ def _time_summary(ledger: Ledger, run) -> dict:
         "suite_s": suite,
         "suite_share": suite / wall if wall else None,
         "by_phase": {phase: by_phase[phase] for phase in sorted(by_phase, key=order)},
+        "by_project": {
+            name: {
+                **by_project[name],
+                "by_phase": {
+                    phase: by_project[name]["by_phase"][phase]
+                    for phase in sorted(by_project[name]["by_phase"], key=order)
+                },
+            }
+            for name in sorted(by_project)
+        },
         "cycles": cycles,
     }
 
 
 def _time_section(summary: dict) -> list[str]:
-    """The friction log's `## Time`: the run's split, then per phase, then #145's
-    per-cycle table."""
+    """The friction log's `## Time`: the run's split, then per phase, per project (#249)
+    and #145's per-cycle table."""
     share = summary["suite_share"]
     lines = [
         "## Time",
@@ -362,6 +380,11 @@ def _time_section(summary: dict) -> list[str]:
     for phase, p in summary["by_phase"].items():
         lines.append(
             f"| {phase} | {p['runs']} | {p['suite_s'] / 60:.1f} | {p['suite_s'] / p['runs']:.1f} |"
+        )
+    lines += ["", "| Project | Suite runs | Suite (min) | Average (s) |", "|---|---|---|---|"]
+    for project, p in summary["by_project"].items():
+        lines.append(
+            f"| {project} | {p['runs']} | {p['suite_s'] / 60:.1f} | {p['suite_s'] / p['runs']:.1f} |"
         )
     lines += ["", "| Cycle | Wall (min) | Suite (min) | Suite runs |", "|---|---|---|---|"]
     for c in summary["cycles"]:
@@ -380,6 +403,17 @@ def _time_json(summary: dict) -> dict:
         "by_phase": {
             phase: {"runs": p["runs"], "suite_s": round(p["suite_s"], 1)}
             for phase, p in summary["by_phase"].items()
+        },
+        "by_project": {
+            name: {
+                "runs": p["runs"],
+                "suite_s": round(p["suite_s"], 1),
+                "by_phase": {
+                    phase: {"runs": ph["runs"], "suite_s": round(ph["suite_s"], 1)}
+                    for phase, ph in p["by_phase"].items()
+                },
+            }
+            for name, p in summary["by_project"].items()
         },
         "cycles": [
             {

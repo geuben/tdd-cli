@@ -371,6 +371,9 @@ with no offset, a bare date or anything else is refused with `reason: "bad_since
 read as local time. Every run in `metrics`, here and in `tdd metrics`, carries
 `time.cycles`: each cycle's `ordinal`, `opened_at`, `closed_at`, `wall_clock_s`, `suite_s`
 and suite `runs`, with `closed_at` and `wall_clock_s` null while the cycle is open.
+It also carries `time.by_project`: each project's suite `runs`, `suite_s` and `by_phase`,
+over every invocation of the run, so a close sweep counts under the project it ran and the
+projects sum to `time.suite_s`.
 
 ### A read-only report socket for dashboards
 

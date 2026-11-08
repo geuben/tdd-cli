@@ -495,6 +495,7 @@ GUEST_READS = frozenset(
         "run_target_tests",
         "runs_in",
         "suite_time_by_phase",
+        "suite_time_by_project",
         "unclosed_cycle",
     }
 )
@@ -1637,6 +1638,14 @@ class Ledger:
         return self.all(
             "SELECT phase_at, COUNT(*) n, SUM(duration_ms) ms FROM invocation"
             " WHERE run_id = ? GROUP BY phase_at",
+            (run_id,),
+        )
+
+    def suite_time_by_project(self, run_id: int) -> list[sqlite3.Row]:
+        """(project, phase_at, n, ms) over every invocation of the run."""
+        return self.all(
+            "SELECT project, phase_at, COUNT(*) n, SUM(duration_ms) ms FROM invocation"
+            " WHERE run_id = ? GROUP BY project, phase_at",
             (run_id,),
         )
 
