@@ -195,6 +195,18 @@ def test_metrics_by_project_is_empty_for_a_run_with_no_invocations(tmp_path, led
     assert m["time"].get("by_project") == {}
 
 
+def test_metrics_by_project_sums_to_the_suite_total(tmp_path, ledger_home):
+    ledger, _ = _split_ledger(tmp_path)
+
+    t = render.metrics(ledger, "/wt")["runs"][0]["time"]
+
+    # The left side comes from suite_time_by_project, the right from suite_time_by_phase.
+    assert (
+        sum(p["suite_s"] for p in t["by_project"].values()),
+        sum(p["runs"] for p in t["by_project"].values()),
+    ) == (t["suite_s"], sum(p["runs"] for p in t["by_phase"].values()))
+
+
 def test_metrics_measures_a_live_runs_wall_clock_to_now(tmp_path, ledger_home):
     ledger, run_id = _ledger(tmp_path)
     ledger._write("UPDATE run SET ended_at = NULL, outcome = NULL WHERE id = ?", (run_id,))
