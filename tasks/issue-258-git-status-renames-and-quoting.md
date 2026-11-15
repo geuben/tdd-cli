@@ -16,6 +16,7 @@ cycles:
     test: "tests/test_status_paths.py::test_every_rename_and_copy_form_is_two_dirty_paths"
     files: ["src/tddcli/gitutil.py"]
     commit_pin: "test: pin that every rename and copy form is two dirty paths"
+    commit_refactor: "refactor: tidy the rename-form table"
   - n: 3
     project: tddcli
     title: "a git mv inside the cycle's root commits at GREEN, and staged names both paths"
